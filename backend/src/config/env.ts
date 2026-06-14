@@ -16,6 +16,10 @@ const EnvSchema = z.object({
 
   // Telegram
   TELEGRAM_BOT_TOKEN: z.string().optional(),
+  // Webhook (optional; default is long polling). Minimal in M6 — hardened webhook
+  // routing + secret-token validation land in M8 with the Hono admin server.
+  TELEGRAM_USE_WEBHOOK: z.string().default(""),
+  TELEGRAM_WEBHOOK_URL: z.string().optional(),
 
   // LLM providers
   OPENROUTER_API_KEY: z.string().optional(),
@@ -35,6 +39,8 @@ const EnvSchema = z.object({
 export type Env = z.infer<typeof EnvSchema> & {
   /** Parsed numeric admin ids from ADMIN_USER_IDS. */
   adminUserIds: number[];
+  /** True when the bot should run in webhook mode (vs long polling). */
+  telegramUseWebhook: boolean;
 };
 
 // Secrets that MUST be present in production — fail-fast on boot if missing.
@@ -65,13 +71,15 @@ function parseEnv(): Env {
     .map(Number)
     .filter((n) => Number.isFinite(n));
 
+  const telegramUseWebhook = ["1", "true", "yes"].includes(e.TELEGRAM_USE_WEBHOOK.trim().toLowerCase());
+
   // DEBUG: report which keys are present by NAME only — never values.
   const present = Object.entries(e)
     .filter(([, v]) => v !== undefined && v !== "")
     .map(([k]) => k);
   log.debug({ present, adminCount: adminUserIds.length }, "environment validated");
 
-  return { ...e, adminUserIds };
+  return { ...e, adminUserIds, telegramUseWebhook };
 }
 
 /** Validated environment, loaded once at import. */
