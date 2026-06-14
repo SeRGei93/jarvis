@@ -1,5 +1,6 @@
 import { Mastra } from "@mastra/core";
 import { LibSQLStore, LibSQLVector } from "@mastra/libsql";
+import { createConversationMemory } from "./memory/history.js";
 import { env } from "../config/env.js";
 import { logger } from "../pkg/logger.js";
 
@@ -29,4 +30,10 @@ export const mastra = new Mastra({
   logger: false,
 });
 
-log.info("mastra instance constructed (storage + vector)");
+/**
+ * Conversation-history memory (libSQL, plaintext). lastMessages defaults to 15;
+ * the composition root rebuilds it from settings.agent.max_history at startup.
+ */
+export const conversationMemory = createConversationMemory(storage, 15);
+
+log.info("mastra instance constructed (storage + vector + memory)");
