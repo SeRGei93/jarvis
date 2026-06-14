@@ -1,0 +1,49 @@
+{
+  "name": "jarvis",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Personalized AI assistant for Telegram (TypeScript + Mastra). Port of avocado-ai (Go).",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed": "tsx src/db/seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@ai-sdk/google": "^3.0.82",
+    "@ai-sdk/openai": "^3.0.71",
+    "@ai-sdk/openai-compatible": "^2.0.50",
+    "@ai-sdk/xai": "^3.0.95",
+    "@mastra/core": "^1.42.0",
+    "@mastra/libsql": "^1.13.0",
+    "@mastra/mcp": "^1.10.0",
+    "@mastra/memory": "^1.20.3",
+    "@openrouter/ai-sdk-provider": "^2.9.1",
+    "ai": "^6.0.204",
+    "drizzle-orm": "^0.45.2",
+    "grammy": "^1.43.0",
+    "hono": "^4.12.25",
+    "node-cron": "^4.2.1",
+    "pino": "^10.3.1",
+    "pino-pretty": "^13.1.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "@types/node-cron": "^3.0.11",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
