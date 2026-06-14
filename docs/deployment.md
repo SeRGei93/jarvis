@@ -98,8 +98,14 @@ make local-down   # stop
 The bot works immediately (polling needs no public URL). `http://localhost:8080/health`
 returns `ok`. The admin Mini App is served too, but it only authenticates when
 opened from inside Telegram over HTTPS — in a plain browser `initData` is empty,
-so you'll see "Нет доступа". To exercise the admin UI locally, expose `:8080` via
+so you'll see "Нет доступа". To exercise the admin UI locally, expose the port via
 an HTTPS tunnel (`cloudflared`/`ngrok`) and set that URL as the Mini App in @BotFather.
+
+If port 8080 is already taken on your host, override it: `LOCAL_PORT=8081 make local`.
+
+> The external MCP `search` server is a separate service (ROADMAP §9) and is **not**
+> bundled in the image — locally those tools degrade to none (`mcpTools: 0`), which
+> is best-effort by design; the core bot/LLM/memory/skills work without it.
 
 ## Make targets
 

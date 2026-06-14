@@ -24,5 +24,6 @@ services:
     volumes:
       - ./data/db:/data
     ports:
-      - "8080:8080"
+      # host port is overridable: `LOCAL_PORT=8081 make local` if 8080 is taken.
+      - "${LOCAL_PORT:-8080}:8080"
     restart: unless-stopped
