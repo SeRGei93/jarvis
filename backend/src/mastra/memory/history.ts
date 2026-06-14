@@ -55,6 +55,20 @@ export async function resolveThreadId(db: Db, sessionId: number): Promise<string
   return threadId;
 }
 
+/**
+ * Start a fresh conversation thread for a session (the `/new` command). Mastra
+ * Memory exposes no delete API, so instead of clearing `mastra_messages` we point
+ * the session at a brand-new thread id; `resolveThreadId` reads `sessions.threadId`
+ * first, so the next turn sees an empty history. Old messages are orphaned but
+ * invisible (plaintext, low volume). Parity with Go StartNewSession (history reset).
+ */
+export async function rotateThread(db: Db, sessionId: number): Promise<string> {
+  const threadId = `${threadIdForSession(sessionId)}-${randomUUID()}`;
+  await db.update(sessions).set({ threadId, updatedAt: new Date() }).where(eq(sessions.id, sessionId));
+  log.info({ sessionId, threadId }, "thread rotated (new session)");
+  return threadId;
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // Message I/O over Mastra Memory (mastra_threads / mastra_messages).
 // Assistant replies carry their producing skill in content.metadata.skill so

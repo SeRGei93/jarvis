@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "../db/schema.js";
 import { usageStats } from "../db/schema.js";
@@ -56,5 +56,24 @@ export class UsageService {
       .where(and(eq(usageStats.userId, userId), eq(usageStats.date, date)))
       .limit(1);
     return row ?? { cost: 0, requests: 0 };
+  }
+
+  /**
+   * Sum cost/requests across all days on or after `sinceDate` ('YYYY-MM-DD').
+   * One aggregate query (used by the `/usage [days]` command) instead of N
+   * per-day reads. Lexical date comparison is correct for ISO 'YYYY-MM-DD'.
+   */
+  async getUsageSince(
+    userId: number,
+    sinceDate: string,
+  ): Promise<{ cost: number; requests: number }> {
+    const [row] = await this.db
+      .select({
+        cost: sql<number>`coalesce(sum(${usageStats.cost}), 0)`,
+        requests: sql<number>`coalesce(sum(${usageStats.requests}), 0)`,
+      })
+      .from(usageStats)
+      .where(and(eq(usageStats.userId, userId), gte(usageStats.date, sinceDate)));
+    return { cost: Number(row?.cost ?? 0), requests: Number(row?.requests ?? 0) };
   }
 }

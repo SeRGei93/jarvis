@@ -177,6 +177,25 @@ export class MemoryService {
     return true;
   }
 
+  /**
+   * Delete all session-scoped memories for one session (rows + their vectors).
+   * Used by the `/new` command; permanent (long-term) facts are left untouched.
+   * Returns the number of memories removed.
+   */
+  async deleteSessionMemories(userId: number, sessionId: number): Promise<number> {
+    const where = and(
+      eq(memories.userId, userId),
+      eq(memories.sessionId, sessionId),
+      eq(memories.scope, "session"),
+    );
+    const rows = await this.db.select({ id: memories.id }).from(memories).where(where);
+    if (rows.length === 0) return 0;
+    await this.db.delete(memories).where(where);
+    for (const r of rows) await this.deleteVector(r.id);
+    log.info({ userId, sessionId, removed: rows.length }, "session memories cleared");
+    return rows.length;
+  }
+
   private async trimPermanent(userId: number): Promise<void> {
     const perm = await this.db
       .select({ id: memories.id })
