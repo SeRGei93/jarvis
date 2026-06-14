@@ -162,7 +162,7 @@ export class MemoryService {
       .select()
       .from(memories)
       .where(and(eq(memories.userId, userId), eq(memories.scope, "permanent")))
-      .orderBy(desc(memories.createdAt));
+      .orderBy(desc(memories.id));
   }
 
   /** Delete a memory (only the owner's). Returns true if a row was removed. */
@@ -182,7 +182,7 @@ export class MemoryService {
       .select({ id: memories.id })
       .from(memories)
       .where(and(eq(memories.userId, userId), eq(memories.scope, "permanent")))
-      .orderBy(desc(memories.createdAt));
+      .orderBy(desc(memories.id));
     if (perm.length <= MAX_PERMANENT_MEMORIES) return;
     const toDelete = perm.slice(MAX_PERMANENT_MEMORIES).map((r) => r.id);
     await this.db.delete(memories).where(inArray(memories.id, toDelete));
