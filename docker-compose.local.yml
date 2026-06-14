@@ -1,0 +1,28 @@
+# Local testing WITHOUT a domain / TLS — just the app on :8080.
+#
+# The Telegram bot runs in polling mode (no public URL needed), so you can chat
+# with it immediately. The admin API + Mini App are at http://localhost:8080, but
+# the Mini App only fully authenticates when opened from inside Telegram over
+# HTTPS (a plain browser has no initData → "Нет доступа", which is expected).
+#
+#   make local        # build + run
+#   make local-logs   # follow logs
+#   make local-down   # stop
+#
+# Reuses the same root .env as the full deploy (only the app service runs here —
+# no nginx, no certbot, no DOMAIN required).
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: development # pretty logs; dev doesn't hard-require secrets
+      LIBSQL_URL: file:/data/avocado.db
+    volumes:
+      - ./data/db:/data
+    ports:
+      - "8080:8080"
+    restart: unless-stopped

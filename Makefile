@@ -3,7 +3,7 @@ SHELL   := /bin/bash
 COMPOSE := docker compose
 
 .DEFAULT_GOAL := help
-.PHONY: help env build ssl up down restart logs ps deploy rebuild
+.PHONY: help env build ssl up down restart logs ps deploy rebuild local local-logs local-down
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -38,3 +38,12 @@ deploy: ## First-time deploy: env + build + SSL + start everything
 
 rebuild: ## Rebuild the app image and restart just the app
 	@$(COMPOSE) build app && $(COMPOSE) up -d app
+
+local: ## Local test WITHOUT a domain/TLS — app only on :8080 (bot polling)
+	@mkdir -p data/db && $(COMPOSE) -f docker-compose.local.yml up -d --build
+
+local-logs: ## Follow the local app logs
+	@$(COMPOSE) -f docker-compose.local.yml logs -f --tail=100
+
+local-down: ## Stop the local app
+	@$(COMPOSE) -f docker-compose.local.yml down

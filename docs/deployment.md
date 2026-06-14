@@ -82,6 +82,25 @@ TELEGRAM_BOT_TOKEN=... OPENROUTER_API_KEY=... ADMIN_USER_IDS=123 \
 ./deploy/deploy.sh all
 ```
 
+## Local testing (no domain)
+
+To try it on your machine without a domain, TLS, or nginx — just the app on
+`:8080` (bot in polling mode):
+
+```bash
+# fill the root .env first (at minimum TELEGRAM_BOT_TOKEN, OPENROUTER_API_KEY,
+# ADMIN_USER_IDS) — `make env` or copy .env.example
+make local        # build + run app on http://localhost:8080
+make local-logs   # follow logs
+make local-down   # stop
+```
+
+The bot works immediately (polling needs no public URL). `http://localhost:8080/health`
+returns `ok`. The admin Mini App is served too, but it only authenticates when
+opened from inside Telegram over HTTPS — in a plain browser `initData` is empty,
+so you'll see "Нет доступа". To exercise the admin UI locally, expose `:8080` via
+an HTTPS tunnel (`cloudflared`/`ngrok`) and set that URL as the Mini App in @BotFather.
+
 ## Make targets
 
 | Target | Action |
