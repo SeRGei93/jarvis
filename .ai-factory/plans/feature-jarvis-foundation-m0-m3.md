@@ -5,9 +5,9 @@ Created: 2026-06-14 · Refined: 2026-06-14 (/aif-improve, верификация
 Источник: первые 4 пункта `.ai-factory/ROADMAP.md` (Milestones **0–3**)
 
 > Цель: переписать Avocado AI (Go) на **TypeScript + Mastra.ai**. Этот план покрывает фундамент:
-> каркас проекта, БД и настройки в libSQL, LLM-слой и память. Новый проект — соседняя папка
-> **`/Users/serg/GolandProjects/jarvis`** (отдельный git-репозиторий; Go-проект `avocado-ai` остаётся
-> нетронутым до переключения, Milestone 10).
+> каркас проекта, БД и настройки в libSQL, LLM-слой и память. Это целевой репозиторий `jarvis`;
+> референс для миграции — Go-проект в соседней папке **`/Users/serg/GolandProjects/avocado-ai`**
+> (остаётся нетронутым до переключения, Milestone 10).
 
 ## Структура (monorepo)
 Проект `jarvis/` — монорепо:

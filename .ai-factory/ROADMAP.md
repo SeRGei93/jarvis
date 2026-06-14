@@ -1,6 +1,6 @@
 # Project Roadmap — Avocado AI → jarvis (TypeScript + Mastra)
 
-> Переписать Avocado AI с Go на **TypeScript + Mastra.ai**, уйти от PostgreSQL к **libSQL/Turso** (реляционка + векторный поиск в одном движке), перенести максимум настроек в БД (в `.env` — только секреты) и добавить **админку в виде Telegram Mini App**. Новый проект — соседняя папка `/Users/serg/GolandProjects/jarvis` (Go-репозиторий остаётся до переключения).
+> Переписать Avocado AI с Go на **TypeScript + Mastra.ai**, уйти от PostgreSQL к **libSQL/Turso** (реляционка + векторный поиск в одном движке), перенести максимум настроек в БД (в `.env` — только секреты) и добавить **админку в виде Telegram Mini App**. Это целевой репозиторий `jarvis`; референс для миграции — Go-проект в соседней папке `/Users/serg/GolandProjects/avocado-ai` (остаётся нетронутым до переключения).
 
 ## Milestones
 
@@ -86,7 +86,7 @@
 
 ## 2. Структура проекта
 
-> Новый проект — соседняя папка `/Users/serg/GolandProjects/jarvis` (Go-проект `avocado-ai` остаётся нетронутым до переключения).
+> Это целевой репозиторий `jarvis`. Референс (исходник) для миграции — Go-проект `avocado-ai` в соседней папке `/Users/serg/GolandProjects/avocado-ai` (остаётся нетронутым до переключения).
 
 ```
 jarvis/
