@@ -1,0 +1,174 @@
+import { z } from "zod";
+
+// ══════════════════════════════════════════════════════════════════════════
+// Invariant constants — parity with the Go version (exact values).
+// ══════════════════════════════════════════════════════════════════════════
+/** Embedding dimension (intfloat/multilingual-e5-large). */
+export const EMBEDDING_DIM = 1024;
+/** Cosine similarity at/above which a new memory is considered a duplicate. */
+export const DUPLICATE_SIMILARITY_THRESHOLD = 0.92;
+/** Max permanent memories kept per user (oldest trimmed beyond this). */
+export const MAX_PERMANENT_MEMORIES = 50;
+/** Auto-complete onboarding once a user has sent this many messages. */
+export const ONBOARDING_MESSAGE_THRESHOLD = 4;
+/** Switch from "load all" to RAG once a user has this many regular facts. */
+export const RAG_THRESHOLD = 10;
+/** Default number of memories retrieved by RAG (configurable via settings). */
+export const RAG_TOP_K = 10;
+
+// ══════════════════════════════════════════════════════════════════════════
+// Enums
+// ══════════════════════════════════════════════════════════════════════════
+export const MemoryCategory = z.enum([
+  "preference",
+  "fact",
+  "instruction",
+  "lesson",
+  "reflection",
+  "strategy",
+]);
+export type MemoryCategory = z.infer<typeof MemoryCategory>;
+
+export const MemoryScope = z.enum(["permanent", "session"]);
+export type MemoryScope = z.infer<typeof MemoryScope>;
+
+export const MessageRole = z.enum(["user", "assistant", "system"]);
+export type MessageRole = z.infer<typeof MessageRole>;
+
+// ══════════════════════════════════════════════════════════════════════════
+// Entities
+// ══════════════════════════════════════════════════════════════════════════
+export const User = z.object({
+  id: z.number().int(),
+  name: z.string().default(""),
+  displayName: z.string().default(""),
+  city: z.string().default(""),
+  timezone: z.string().default(""),
+  language: z.string().default(""),
+  onboarded: z.boolean().default(false),
+  createdAt: z.date().optional(),
+  updatedAt: z.date().optional(),
+});
+export type User = z.infer<typeof User>;
+
+export const UserChannel = z.object({
+  id: z.number().int(),
+  userId: z.number().int(),
+  provider: z.string(),
+  externalId: z.string(),
+  createdAt: z.date().optional(),
+});
+export type UserChannel = z.infer<typeof UserChannel>;
+
+export const Session = z.object({
+  id: z.number().int(),
+  chatId: z.number().int(),
+  userId: z.number().int().nullable().optional(),
+  model: z.string(),
+  /** Mastra Memory thread id (null until a thread is created). */
+  threadId: z.string().nullable().optional(),
+  createdAt: z.date().optional(),
+  updatedAt: z.date().optional(),
+});
+export type Session = z.infer<typeof Session>;
+
+export const Memory = z.object({
+  id: z.number().int(),
+  userId: z.number().int(),
+  category: MemoryCategory,
+  scope: MemoryScope,
+  sessionId: z.number().int().nullable().optional(),
+  content: z.string(),
+  /** 1024-dim vector; absent if embedding generation failed. */
+  embedding: z.array(z.number()).length(EMBEDDING_DIM).nullable().optional(),
+  createdAt: z.date().optional(),
+  updatedAt: z.date().optional(),
+});
+export type Memory = z.infer<typeof Memory>;
+
+export const BotIdentity = z.object({
+  userId: z.number().int(),
+  botName: z.string().default(""),
+  vibe: z.string().default(""),
+  systemPromptOverride: z.string().default(""),
+});
+export type BotIdentity = z.infer<typeof BotIdentity>;
+
+export const Skill = z.object({
+  name: z.string(),
+  description: z.string().default(""),
+  allowedTools: z.array(z.string()).default([]),
+  model: z.string().default(""),
+  /** null -> use agent.default_temperature. */
+  temperature: z.number().nullable().optional(),
+  /** Tri-state: null -> provider default, false -> off, true -> on. */
+  reasoning: z.boolean().nullable().optional(),
+  /** false -> cron-only, not offered to the router. */
+  routable: z.boolean().default(true),
+  prompt: z.string().default(""),
+  metadata: z.record(z.string(), z.string()).default({}),
+});
+export type Skill = z.infer<typeof Skill>;
+
+export const CronTask = z.object({
+  id: z.number().int(),
+  userId: z.number().int(),
+  sessionId: z.number().int(),
+  name: z.string(),
+  description: z.string().default(""),
+  prompt: z.string().default(""),
+  skillName: z.string().default(""),
+  schedule: z.string().default(""),
+  scheduledAt: z.date().nullable().optional(),
+  isActive: z.boolean().default(true),
+  lastRunAt: z.date().nullable().optional(),
+  lastRunStatus: z.string().nullable().optional(),
+  lastRunError: z.string().nullable().optional(),
+  notificationChatId: z.number().int().nullable().optional(),
+  createdAt: z.date().optional(),
+  updatedAt: z.date().optional(),
+});
+export type CronTask = z.infer<typeof CronTask>;
+
+export const UsageStat = z.object({
+  id: z.number().int(),
+  userId: z.number().int(),
+  date: z.string(), // 'YYYY-MM-DD'
+  cost: z.number().default(0),
+  requests: z.number().int().default(0),
+});
+export type UsageStat = z.infer<typeof UsageStat>;
+
+export const SubscriptionPlan = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  hourlyLimit: z.number().int(),
+  maxTasks: z.number().int().default(3),
+});
+export type SubscriptionPlan = z.infer<typeof SubscriptionPlan>;
+
+/** A conversation message. `skill` tags which skill produced an assistant reply. */
+export const Message = z.object({
+  role: MessageRole,
+  content: z.string(),
+  skill: z.string().nullable().optional(),
+  createdAt: z.date().optional(),
+});
+export type Message = z.infer<typeof Message>;
+
+// ══════════════════════════════════════════════════════════════════════════
+// Domain helpers (entity-owned business logic, parity with Go entities)
+// ══════════════════════════════════════════════════════════════════════════
+/** Onboarding ("preference") facts are always loaded, never RAG-gated. */
+export function isOnboarding(m: Pick<Memory, "category">): boolean {
+  return m.category === "preference";
+}
+
+export function isRegularFact(m: Pick<Memory, "category">): boolean {
+  return m.category !== "preference";
+}
+
+/** Parity with Go User.ShouldAutoCompleteOnboarding. */
+export function shouldAutoCompleteOnboarding(onboarded: boolean, messageCount: number): boolean {
+  return !onboarded && messageCount >= ONBOARDING_MESSAGE_THRESHOLD;
+}

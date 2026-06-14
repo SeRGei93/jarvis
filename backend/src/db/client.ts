@@ -1,5 +1,6 @@
 import { createClient, type Client } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
+import * as schema from "./schema.js";
 import { env } from "../config/env.js";
 import { logger } from "../pkg/logger.js";
 
@@ -11,11 +12,8 @@ export const libsql: Client = createClient({
   authToken: env.LIBSQL_AUTH_TOKEN,
 });
 
-/**
- * Drizzle ORM handle over libSQL. The schema is attached in a later task
- * (db/schema.ts) — for now this is a bare client used to verify connectivity.
- */
-export const db = drizzle(libsql);
+/** Drizzle ORM handle over libSQL, typed with the full schema. */
+export const db = drizzle(libsql, { schema });
 
 const mode = env.LIBSQL_URL.startsWith("file:") ? "file" : "turso";
 log.info({ mode }, "libSQL connected");
