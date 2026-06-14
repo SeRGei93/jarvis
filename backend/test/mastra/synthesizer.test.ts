@@ -33,9 +33,9 @@ describe("synthesize", () => {
   it("streams a merged answer with the synthesizer model and temp 0.3", async () => {
     const { llm, calls } = fakeLlm();
     const onText = vi.fn();
-    const text = await synthesize(llm, { weather: "sunny", news: "quiet" }, makeCtx(), onText);
+    const r = await synthesize(llm, { weather: "sunny", news: "quiet" }, makeCtx(), onText);
 
-    expect(text).toBe("MERGED");
+    expect(r.text).toBe("MERGED");
     expect(onText).toHaveBeenCalledWith("MERGED");
     expect(calls[0]!.model).toBe("openrouter:synth");
     expect(calls[0]!.temperature).toBe(SYNTHESIZER_TEMPERATURE);

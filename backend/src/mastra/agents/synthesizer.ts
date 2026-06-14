@@ -29,12 +29,18 @@ export interface SynthesizeContext {
  * Model = synthesizer_model || session.model; temperature 0.3; no tools.
  * Parity with Go handle_message.go prepareMultiSkill/executeMultiSkillStream.
  */
+/** Synthesizer answer plus the LLM cost it incurred (for usage accounting, M5). */
+export interface SynthesizeResult {
+  text: string;
+  cost: number;
+}
+
 export async function synthesize(
   llm: LlmService,
   skillResults: Record<string, string>,
   ctx: SynthesizeContext,
   onText?: StreamCallback,
-): Promise<string> {
+): Promise<SynthesizeResult> {
   const usingRole = ctx.synthesizerModel.length > 0;
   const model = usingRole ? ctx.synthesizerModel : ctx.sessionModel;
 
@@ -56,5 +62,5 @@ export async function synthesize(
     onText,
   );
   log.debug({ model, cost: res.cost, finishReason: res.finishReason }, "synthesize done");
-  return res.text;
+  return { text: res.text, cost: res.cost ?? 0 };
 }

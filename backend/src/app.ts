@@ -11,6 +11,9 @@ import { ProfileExtractor } from "./mastra/memory/profile-extractor.js";
 import { SkillRouter } from "./mastra/agents/router.js";
 import { LoopGuard } from "./mastra/agents/loop-guard.js";
 import { createConversationMemory } from "./mastra/memory/history.js";
+import { loadMcpTools } from "./mastra/mcp.js";
+import { RateLimitService } from "./services/rate-limit.js";
+import { UsageService } from "./services/usage.js";
 import { runChat, type ChatDeps, type ChatResult } from "./mastra/workflows/chat.js";
 import { logger } from "./pkg/logger.js";
 
@@ -33,6 +36,8 @@ export interface ChatService {
     onText?: StreamCallback,
   ): Promise<ChatResult>;
   deps: ChatDeps;
+  /** Release external resources (MCP client) on shutdown. */
+  close(): Promise<void>;
 }
 
 /**
@@ -56,6 +61,12 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
   const router = new SkillRouter(factory, settings);
   const loopGuard = new LoopGuard();
   const memory = createConversationMemory(opts.storage, agentCfg.max_history);
+  const rateLimit = new RateLimitService(opts.db);
+  const usage = new UsageService(opts.db);
+
+  // MCP `search` tools: connect once at boot. Best-effort — an unreachable server
+  // degrades to an empty ToolSet (the chat still works); `mcpClient` is kept for shutdown.
+  const { tools: mcpTools, client: mcpClient } = await loadMcpTools(settings);
 
   const deps: ChatDeps = {
     db: opts.db,
@@ -67,17 +78,26 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
     profileExtractor,
     loopGuard,
     memory,
+    rateLimit,
+    usage,
+    mcpTools,
   };
 
   const routableCount = (await skills.getRoutableSkills()).length;
   const activeRoles = Object.entries(roles)
     .filter(([, ref]) => typeof ref === "string" && ref.length > 0)
     .map(([role]) => role); // role names only — model refs are not secrets, but keep the log compact
-  log.info({ routableSkills: routableCount, activeRoles, maxHistory: agentCfg.max_history }, "chat service ready");
+  log.info(
+    { routableSkills: routableCount, activeRoles, maxHistory: agentCfg.max_history, mcpTools: Object.keys(mcpTools).length },
+    "chat service ready",
+  );
 
   return {
     deps,
     handleUserMessage: (userId, chatId, text, onText) =>
       runChat(deps, { userId, chatId, text }, onText),
+    close: async () => {
+      if (mcpClient) await mcpClient.disconnect();
+    },
   };
 }

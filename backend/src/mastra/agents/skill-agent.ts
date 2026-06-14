@@ -1,13 +1,26 @@
+import type { ToolSet } from "ai";
+import type { LibSQLDatabase } from "drizzle-orm/libsql";
+import * as schema from "../../db/schema.js";
 import type { StreamCallback } from "../llm.js";
 import { LlmService } from "../llm.js";
 import { MemoryService, type StoredMemory } from "../memory/memory-service.js";
 import type { Message, Skill, User, BotIdentity } from "../../domain/entities.js";
+import type { SettingsService } from "../../config/settings.js";
 import { resolveTools } from "../tools/registry.js";
+import { listReferences } from "../tools/skill-ref.js";
 import { LoopGuard } from "./loop-guard.js";
 import { buildSystemPrompt, buildSubAgentPrompt } from "./prompt-builder.js";
 import { logger } from "../../pkg/logger.js";
 
+/** A skill agent's answer plus the LLM cost it incurred (for usage accounting, M5). */
+export interface SkillRunResult {
+  text: string;
+  cost: number;
+}
+
 const log = logger.child({ mod: "skill-agent" });
+
+type Db = LibSQLDatabase<typeof schema>;
 
 /** Everything a skill agent needs that comes from the surrounding conversation. */
 export interface SkillRunContext {
@@ -24,6 +37,15 @@ export interface SkillRunContext {
   defaultModel: string;
   /** agent.default_temperature — used when the skill leaves temperature null. */
   defaultTemperature: number;
+  // ── tool context (M5): threaded into resolveTools for built-in + MCP tools ──
+  chatId: number;
+  sessionId: number;
+  db: Db;
+  settings: SettingsService;
+  /** Adapted MCP `search` ToolSet (bare names); {} when MCP disabled. */
+  mcpTools: ToolSet;
+  /** Optional override for the skill-references filesystem root (Task 6). */
+  skillsRoot?: string;
 }
 
 export interface SkillAgentDeps {
@@ -52,21 +74,23 @@ export async function runSkillStreaming(
   skill: Skill,
   ctx: SkillRunContext,
   onText?: StreamCallback,
-): Promise<string> {
+): Promise<SkillRunResult> {
   const model = resolveModel(skill, ctx);
   const temperature = resolveTemperature(skill, ctx);
-  const tools = resolveTools(skill.allowedTools, { mem: ctx.mem, userId: ctx.userId });
+  const tools = resolveTools(skill.allowedTools, ctx);
+  const references = listReferences(skill.name, ctx.skillsRoot);
   const system = buildSystemPrompt({
     prompts: ctx.prompts,
     user: ctx.user,
     memories: ctx.memories,
     skill: promptSkill(skill),
     identity: ctx.identity,
+    references,
   });
   const messages: Message[] = [...ctx.history, { role: "user", content: ctx.userMessage }];
 
   log.debug(
-    { skill: skill.name, model, temperature, tools: Object.keys(tools), mode: "single" },
+    { skill: skill.name, model, temperature, tools: Object.keys(tools), refs: references.length, mode: "single" },
     "skill agent start",
   );
   const res = await deps.llm.stream(
@@ -74,7 +98,7 @@ export async function runSkillStreaming(
     onText,
   );
   log.debug({ skill: skill.name, cost: res.cost, finishReason: res.finishReason }, "skill agent done");
-  return res.text;
+  return { text: res.text, cost: res.cost ?? 0 };
 }
 
 /**
@@ -85,22 +109,24 @@ export async function runSkillSubAgent(
   deps: SkillAgentDeps,
   skill: Skill,
   ctx: SkillRunContext,
-): Promise<string> {
+): Promise<SkillRunResult> {
   deps.loopGuard.check(skill.name, ctx.userMessage);
 
   const model = resolveModel(skill, ctx);
   const temperature = resolveTemperature(skill, ctx);
-  const tools = resolveTools(skill.allowedTools, { mem: ctx.mem, userId: ctx.userId });
+  const tools = resolveTools(skill.allowedTools, ctx);
+  const references = listReferences(skill.name, ctx.skillsRoot);
   const system = buildSubAgentPrompt({
     prompts: { integrity: ctx.prompts.integrity },
     user: ctx.user,
     memories: ctx.memories,
     skill: promptSkill(skill),
+    references,
   });
   const messages: Message[] = [{ role: "user", content: ctx.userMessage }];
 
   log.debug(
-    { skill: skill.name, model, temperature, tools: Object.keys(tools), mode: "sub" },
+    { skill: skill.name, model, temperature, tools: Object.keys(tools), refs: references.length, mode: "sub" },
     "skill agent start",
   );
   const res = await deps.llm.generate({
@@ -112,5 +138,5 @@ export async function runSkillSubAgent(
     reasoning: skill.reasoning ?? null,
   });
   log.debug({ skill: skill.name, cost: res.cost, finishReason: res.finishReason }, "skill agent done");
-  return res.text;
+  return { text: res.text, cost: res.cost ?? 0 };
 }

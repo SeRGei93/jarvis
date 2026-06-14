@@ -1,4 +1,5 @@
 import type { Memory } from "@mastra/memory";
+import type { ToolSet } from "ai";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "../../db/schema.js";
 import type { Message, Skill } from "../../domain/entities.js";
@@ -17,6 +18,8 @@ import {
   type SkillRunContext,
 } from "../agents/skill-agent.js";
 import { synthesize } from "../agents/synthesizer.js";
+import { RateLimitService } from "../../services/rate-limit.js";
+import { UsageService } from "../../services/usage.js";
 import {
   ensureThread,
   saveUserMessage,
@@ -32,6 +35,8 @@ type Db = LibSQLDatabase<typeof schema>;
 const FALLBACK_SKILL = "research";
 /** Shown to the user when generation fails or no skill could produce a result. */
 const FALLBACK_REPLY = "Не удалось сформировать ответ. Попробуйте переформулировать запрос.";
+/** Shown to the user when the hourly message rate limit is exceeded. */
+const RATE_LIMIT_REPLY = "Слишком много сообщений за последний час. Попробуйте чуть позже.";
 
 /** All collaborators the chat workflow orchestrates (wired by the composition root). */
 export interface ChatDeps {
@@ -45,6 +50,12 @@ export interface ChatDeps {
   loopGuard: LoopGuard;
   /** Mastra conversation memory (threads/messages). */
   memory: Memory;
+  /** Hourly message rate limit (onboarding-bypassed). */
+  rateLimit: RateLimitService;
+  /** Per-user cost/request accounting. */
+  usage: UsageService;
+  /** Adapted MCP `search` ToolSet (bare names), assembled once at boot; {} when disabled. */
+  mcpTools?: ToolSet;
 }
 
 export interface ChatInput {
@@ -86,6 +97,13 @@ export async function runChat(
   const ctx = await loadContext(deps.db, deps.settings, userId, chatId);
   await ensureThread(deps.memory, ctx.threadId, ctx.resourceId);
 
+  // 2a. hourly rate limit (onboarding users are bypassed inside the service).
+  const rl = await deps.rateLimit.checkAndConsume(userId);
+  if (!rl.allowed) {
+    log.warn({ userId, limit: rl.limit }, "message rejected by rate limit");
+    return { text: RATE_LIMIT_REPLY, skills: [], rejected: true };
+  }
+
   // 3. history BEFORE the current turn + previousSkills.
   const agentCfg = await deps.settings.getAgent();
   const recent = await getRecentMessages(deps.memory, ctx.threadId, ctx.resourceId, agentCfg.max_history);
@@ -124,12 +142,18 @@ export async function runChat(
     userId,
     defaultModel: roles.default,
     defaultTemperature: agentCfg.default_temperature,
+    chatId,
+    sessionId: ctx.session.id,
+    db: deps.db,
+    settings: deps.settings,
+    mcpTools: deps.mcpTools ?? {},
   };
 
   // 6. run: single → stream directly; multi → sub-agents in parallel → synthesize.
   //    Any failure (no skill / all sub-agents fail / model error) degrades to a
   //    user-facing fallback instead of throwing, so the caller always has a reply.
   let answer: string;
+  let cost = 0; // accumulated LLM cost across all legs (single, sub-agents, synthesis).
   if (resolved.length === 0) {
     log.warn({ userId }, "no skill resolved; using fallback reply");
     answer = FALLBACK_REPLY;
@@ -138,25 +162,31 @@ export async function runChat(
       if (resolved.length === 1) {
         const skill = resolved[0]!;
         log.debug({ skill: skill.name, path: "single" }, "executing");
-        answer = await runSkillStreaming({ llm: deps.llm, loopGuard: deps.loopGuard }, skill, agentCtx, onText);
+        const r = await runSkillStreaming({ llm: deps.llm, loopGuard: deps.loopGuard }, skill, agentCtx, onText);
+        answer = r.text;
+        cost += r.cost;
       } else {
         log.debug({ skills: resolved.map((s) => s.name), path: "multi" }, "executing");
         const results = await Promise.all(
           resolved.map(async (s) => {
             try {
-              return [s.name, await runSkillSubAgent({ llm: deps.llm, loopGuard: deps.loopGuard }, s, agentCtx)] as const;
+              const r = await runSkillSubAgent({ llm: deps.llm, loopGuard: deps.loopGuard }, s, agentCtx);
+              return [s.name, r] as const;
             } catch (err) {
               log.warn({ skill: s.name, reason: err instanceof Error ? err.message : String(err) }, "sub-agent failed");
-              return [s.name, ""] as const;
+              return [s.name, { text: "", cost: 0 }] as const;
             }
           }),
         );
-        const skillResults = Object.fromEntries(results.filter(([, t]) => t.length > 0));
+        for (const [, r] of results) cost += r.cost;
+        const skillResults = Object.fromEntries(
+          results.filter(([, r]) => r.text.length > 0).map(([name, r]) => [name, r.text]),
+        );
         if (Object.keys(skillResults).length === 0) {
           log.warn({ userId }, "all sub-agents failed; using fallback reply");
           answer = FALLBACK_REPLY;
         } else {
-          answer = await synthesize(
+          const synth = await synthesize(
             deps.llm,
             skillResults,
             {
@@ -171,6 +201,8 @@ export async function runChat(
             },
             onText,
           );
+          answer = synth.text;
+          cost += synth.cost;
         }
       }
     } catch (err) {
@@ -178,6 +210,9 @@ export async function runChat(
       answer = FALLBACK_REPLY;
     }
   }
+
+  // 6a. record usage for this turn (one request; accumulated cost may be 0).
+  await deps.usage.recordUsage(userId, cost);
 
   // 7. persist the assistant turn, tagged with the primary skill.
   const skillTag = resolved[0]?.name ?? null;

@@ -36,6 +36,11 @@ function makeCtx(over: Partial<SkillRunContext> = {}): SkillRunContext {
     userId: 1,
     defaultModel: "openrouter:default",
     defaultTemperature: 0.4,
+    chatId: 100,
+    sessionId: 7,
+    db: {} as unknown as SkillRunContext["db"],
+    settings: {} as unknown as SkillRunContext["settings"],
+    mcpTools: {},
     ...over,
   };
 }
@@ -64,9 +69,9 @@ describe("runSkillStreaming (single-skill path)", () => {
     const deps = { llm, loopGuard: new LoopGuard(() => 0) };
     const onText = vi.fn();
 
-    const text = await runSkillStreaming(deps, makeSkill(), makeCtx(), onText);
+    const r = await runSkillStreaming(deps, makeSkill(), makeCtx(), onText);
 
-    expect(text).toBe("ANSWER");
+    expect(r.text).toBe("ANSWER");
     expect(onText).toHaveBeenCalledWith("ANSWER");
     const { method, opts } = calls[0]!;
     expect(method).toBe("stream");
@@ -91,9 +96,9 @@ describe("runSkillSubAgent (multi-skill leg)", () => {
     const { llm, calls } = fakeLlm();
     const deps = { llm, loopGuard: new LoopGuard(() => 0) };
 
-    const text = await runSkillSubAgent(deps, makeSkill(), makeCtx());
+    const r = await runSkillSubAgent(deps, makeSkill(), makeCtx());
 
-    expect(text).toBe("ANSWER");
+    expect(r.text).toBe("ANSWER");
     const { method, opts } = calls[0]!;
     expect(method).toBe("generate");
     expect(opts.system).toContain("[SKILL: research]");

@@ -30,6 +30,7 @@
     "@mastra/memory": "^1.20.3",
     "@openrouter/ai-sdk-provider": "^2.9.1",
     "ai": "^6.0.204",
+    "cron-parser": "^5.5.0",
     "drizzle-orm": "^0.45.2",
     "grammy": "^1.43.0",
     "hono": "^4.12.25",

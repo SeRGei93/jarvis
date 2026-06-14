@@ -8,8 +8,10 @@ import { SkillRouter, type RouteModelFn } from "../../src/mastra/agents/router.j
 import { MemoryService, type Embedder } from "../../src/mastra/memory/memory-service.js";
 import { ProfileExtractor, type ExtractFn } from "../../src/mastra/memory/profile-extractor.js";
 import { LoopGuard } from "../../src/mastra/agents/loop-guard.js";
+import { RateLimitService } from "../../src/services/rate-limit.js";
+import { UsageService } from "../../src/services/usage.js";
 import { createConversationMemory, getRecentMessages, threadIdForSession, resourceIdForUser } from "../../src/mastra/memory/history.js";
-import { users, skills, prompts } from "../../src/db/schema.js";
+import { users, skills, prompts, usageStats, subscriptionPlans, userSubscriptions } from "../../src/db/schema.js";
 import type { SettingsService } from "../../src/config/settings.js";
 import type { ModelFactory } from "../../src/mastra/models.js";
 import type { LlmService, LlmResult } from "../../src/mastra/llm.js";
@@ -80,6 +82,8 @@ function makeDeps(
     profileExtractor: new ProfileExtractor(factory, settings, extractFn),
     loopGuard: new LoopGuard(() => 0),
     memory: createConversationMemory(new LibSQLStore({ id: "chat-test", url: t.url }), 15),
+    rateLimit: new RateLimitService(t.db),
+    usage: new UsageService(t.db),
   };
   return { deps, llmCalls };
 }
@@ -188,5 +192,39 @@ describe("runChat", () => {
     const res = await runChat(deps, { userId: 1, chatId: 100, text: "hi" });
     expect(res.rejected).toBe(false);
     expect(res.text).toMatch(/Не удалось/);
+  });
+
+  it("records usage after a successful turn", async () => {
+    t = await createTestDb();
+    await seed(t.db);
+    await t.db.insert(users).values({ id: 1, name: "Alex", onboarded: true });
+    const { deps } = makeDeps(t, async () => ["chat"]);
+
+    await runChat(deps, { userId: 1, chatId: 100, text: "hi there" });
+
+    const rows = await t.db.select().from(usageStats).where(eq(usageStats.userId, 1));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.requests).toBe(1); // one request recorded (fake LLM reports no cost)
+  });
+
+  it("rejects over the hourly rate limit without routing", async () => {
+    t = await createTestDb();
+    await seed(t.db);
+    await t.db.insert(users).values({ id: 1, name: "Alex", onboarded: true });
+    const [plan] = await t.db
+      .insert(subscriptionPlans)
+      .values({ name: "lim", hourlyLimit: 1, maxTasks: 3 })
+      .returning();
+    await t.db.insert(userSubscriptions).values({ userId: 1, planId: plan!.id });
+    const { deps, llmCalls } = makeDeps(t, async () => ["chat"]);
+
+    const r1 = await runChat(deps, { userId: 1, chatId: 100, text: "first" });
+    expect(r1.rejected).toBe(false);
+    expect(llmCalls.stream).toBe(1);
+
+    const r2 = await runChat(deps, { userId: 1, chatId: 100, text: "second" });
+    expect(r2.rejected).toBe(true);
+    expect(r2.skills).toEqual([]);
+    expect(llmCalls.stream).toBe(1); // no model call on the rejected turn
   });
 });

@@ -50,6 +50,7 @@ function main(): void {
     shuttingDown = true;
     log.info({ signal }, "graceful shutdown");
     server.close(() => {
+      void chatService?.close().catch(() => {}); // best-effort MCP disconnect
       libsql.close();
       log.info("shutdown complete");
       process.exit(0);
