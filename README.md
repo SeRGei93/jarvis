@@ -22,6 +22,8 @@ npm run dev                 # start the single-process service
 - **Consolidated memory** — long-term facts via LibSQLVector RAG (per-user, dedup, cap) plus Mastra Memory for dialogue history.
 - **Tools & MCP** — skills get built-in tools (currency, cron tasks, profile, skill references) plus the external MCP `search` server, with hourly rate limits and per-user usage accounting. See [Tools & MCP](docs/tools.md).
 - **Telegram bot** — a grammY bot (polling, or optional webhook) with throttled `editMessageText` streaming, markdown→MarkdownV2, voice→speech, commands, and an allowlist. See [Telegram Bot](docs/telegram.md).
+- **Cron scheduler** — `node-cron` polls run due `cron_tasks` through the chat pipeline and deliver the result to Telegram (`now` / `once` / recurring). See [Cron Scheduler](docs/scheduler.md).
+- **Admin Mini App** — a Telegram Mini App (React + Vite + Mantine) edits the DB-backed config (skills/models/settings/prompts/plans/users/usage/mcp) via a Hono API, gated by `initData` HMAC + `ADMIN_USER_IDS`. See [Admin Mini App](docs/admin.md).
 - **Multi-provider LLM** — Vercel AI SDK v6 (`provider:model` factory) with watchdog, retries/fallback, and cost extraction ported 1:1 from the Go `LLMAdapter`.
 - **Single process** — bot + cron + admin API in one Node service over libSQL (no SQLite single-writer problem); Turso-ready.
 
@@ -52,11 +54,13 @@ const result = await chat.handleUserMessage(userId, chatId, "what's the weather 
 | [Chat Pipeline](docs/chat-pipeline.md) | route → runSkills → synthesize, agents, memory, entry point |
 | [Tools & MCP](docs/tools.md) | built-in tools, MCP `search`, rate limit & usage |
 | [Telegram Bot](docs/telegram.md) | grammY transport, streaming, voice, commands, allowlist |
+| [Cron Scheduler](docs/scheduler.md) | node-cron polls, due tasks → chat pipeline → notify |
 | [Configuration](docs/configuration.md) | `.env` secrets and DB-backed settings |
+| [Admin Mini App](docs/admin.md) | Hono admin API, `initData` auth, the React Mini App |
 
 ## Project Status
 
-Migration milestones **0–6 complete** (scaffold, DB + settings, LLM layer, memory, skills + chat workflow, tools + MCP, Telegram bot). Roadmap and remaining milestones (M7 cron scheduler → M10 cutover) live in `.ai-factory/ROADMAP.md`.
+Migration milestones **0–8 complete** (scaffold, DB + settings, LLM layer, memory, skills + chat workflow, tools + MCP, Telegram bot, cron scheduler, admin Mini App). Roadmap and remaining milestones (M9 deploy + data migration → M10 cutover) live in `.ai-factory/ROADMAP.md`.
 
 ## License
 

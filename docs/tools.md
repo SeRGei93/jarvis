@@ -58,7 +58,7 @@ Sources: NBRB (`api.nbrb.by`, official), Belarusbank (`belarusbank.by/api`, buy/
 | `task_list` / `task_get` | — / `task_id` | list / fetch the user's tasks |
 | `task_update` / `task_delete` / `task_toggle` | `task_id` (+ fields / `is_active`) | edit, delete, enable/disable |
 
-`schedule` accepts `now` (immediate background), `once` (with a future `scheduled_at`, RFC3339), or a 5-field cron expression. Recurring schedules are validated with `cron-parser` and must be **at least 1 hour** apart. `task_create` enforces the user's plan `max_tasks` limit. Tasks are stored in `cron_tasks`; actual execution lands in **M7** (cron scheduler).
+`schedule` accepts `now` (immediate background), `once` (with a future `scheduled_at`, RFC3339), or a 5-field cron expression. Recurring schedules are validated with `cron-parser` and must be **at least 1 hour** apart. `task_create` enforces the user's plan `max_tasks` limit. Tasks are stored in `cron_tasks` and executed by the [Cron Scheduler](scheduler.md).
 
 ### Profile
 

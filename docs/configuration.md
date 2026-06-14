@@ -1,4 +1,4 @@
-[← Telegram Bot](telegram.md) · [Back to README](../README.md)
+[← Cron Scheduler](scheduler.md) · [Back to README](../README.md)
 
 # Configuration
 
@@ -71,7 +71,7 @@ Subscription plans gate two limits, both enforced per `userId`:
 - **Task cap** — `task_create` refuses to create a task once the user has `max_tasks` active ones (default 3).
 - **Usage** — `UsageService.recordUsage(userId, cost)` upserts the day's `usage_stats` row after every answered turn.
 
-Schedule validation for cron tasks uses the `cron-parser` dependency (recurring schedules must be ≥ 1 hour apart); the scheduler that *runs* tasks arrives in M7.
+Schedule validation for cron tasks uses the `cron-parser` dependency (recurring schedules must be ≥ 1 hour apart); the scheduler that *runs* tasks is the [Cron Scheduler](scheduler.md).
 
 ## See Also
 

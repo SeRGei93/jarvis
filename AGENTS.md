@@ -3,7 +3,7 @@
 > Project map for AI agents. Keep this file up-to-date as the project evolves.
 
 ## Overview
-Telegram AI assistant — a TypeScript + Mastra rewrite of avocado-ai (Go). Monorepo: `backend/` (Node service) + `frontend/` (admin Mini App, M8). Migration **milestones 0–6 done**.
+Telegram AI assistant — a TypeScript + Mastra rewrite of avocado-ai (Go). Monorepo: `backend/` (Node service) + `frontend/` (admin Mini App — React + Vite + Mantine). Migration **milestones 0–8 done**.
 
 ## Tech Stack
 Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + LibSQLVector) · `drizzle-orm` 0.45 · Vercel AI SDK v6 · zod v4 · grammY (polling + opt. webhook) · `marked` (md→MarkdownV2) · node-cron (M7) · Hono (M8) · pino · vitest.
@@ -17,11 +17,16 @@ Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + Lib
 | `mastra/` | `models`, `llm`, `strip-leaked-tools`, `embeddings`, `speech`, `agents/{router,prompt-builder,skill-agent,synthesizer,loop-guard}`, `memory/{memory-service,profile-extractor,history}`, `tools/{memory-tools,registry}`, `workflows/chat`, `index` |
 | `services/` | `skill-service`, `conversation-context`, `rate-limit`, `usage` |
 | `telegram/` | `bot`, `stream`, `format`, `voice`, `messenger`, `identity`, `commands`, `errors` (grammY transport, M6) |
+| `scheduler/` | `schedule`, `executor`, `scheduler` (node-cron), `wiring` — due cron tasks → chat pipeline → notify (M7) |
+| `admin/` | `app` (Hono), `auth` (Telegram `initData` HMAC + `ADMIN_USER_IDS`), `api/{settings,models,mcp,skills,prompts,users,plans,usage}` (M8) |
 | `pkg/` | `logger`, `promptguard`, `bootstrap-env` |
 | `app.ts` | composition root — `createChatService()` → `handleUserMessage()` |
-| `server.ts` | single-process entry point (health server + ChatService + grammY bot start) |
+| `server.ts` | single-process entry (Hono via `@hono/node-server`: `/health` + webhook + `/admin/api` + static Mini App; + ChatService + grammY bot + cron scheduler) |
 | `seed/` | bundled `config.yaml` + `skills/` + `prompts/` (first-run seed) |
 | `test/` | vitest (unit + libSQL integration); `helpers/libsql.ts` harness |
+
+## Structure (`frontend/src/`)
+Vite + React 18 + Mantine 7 + `@twa-dev/sdk`, HashRouter. `lib/api` (typed client, sends `Authorization: tma <initData>`), `lib/types`, `lib/theme` (Telegram themeParams), `nav` (section registry — single source of truth), `components/{Layout,AuthGate,AccessDenied}`, `screens/` (Skills/Models/Settings/Prompts/Plans/Users/Usage/Mcp). Dev proxies `/admin/api`→:8080; `npm run build` → `dist/`, served by the backend (single origin).
 
 ## Commands (run in `backend/`)
 | Command | Purpose |
@@ -51,7 +56,9 @@ Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + Lib
 | Chat Pipeline | `docs/chat-pipeline.md` | route → runSkills → synthesize, agents, memory |
 | Tools & MCP | `docs/tools.md` | built-in tools, MCP `search`, rate limit & usage |
 | Telegram Bot | `docs/telegram.md` | grammY transport, streaming, voice, commands, allowlist |
+| Cron Scheduler | `docs/scheduler.md` | node-cron polls, due tasks → chat pipeline → notify |
 | Configuration | `docs/configuration.md` | `.env` secrets and DB-backed settings |
+| Admin Mini App | `docs/admin.md` | Hono admin API, `initData` auth, React Mini App (M8) |
 
 ## Next
-**M7** — cron scheduler: node-cron executor + task notifications (via the M6 `Messenger`). M5/M6 left `cron_tasks` CRUD + schedule validation and the notification send-path ready.
+**M9** — deploy & data migration: multi-stage Dockerfile (build frontend → serve from the single backend container), npm-scripts, Postgres → libSQL data migration script.

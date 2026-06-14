@@ -1,8 +1,8 @@
-[← Tools & MCP](tools.md) · [Back to README](../README.md) · [Configuration →](configuration.md)
+[← Tools & MCP](tools.md) · [Back to README](../README.md) · [Cron Scheduler →](scheduler.md)
 
 # Telegram Bot
 
-The user-facing transport (Milestone 6). A [grammY](https://grammy.dev) bot turns Telegram updates into calls to `ChatService.handleUserMessage` and streams the reply back. It runs in the **same process** as the health server (and, later, the cron scheduler) — no second port, one libSQL/Mastra stack. Code lives in `backend/src/telegram/`.
+The user-facing transport (Milestone 6). A [grammY](https://grammy.dev) bot turns Telegram updates into calls to `ChatService.handleUserMessage` and streams the reply back. It runs in the **same process** as the health server and the [cron scheduler](scheduler.md) — no second port, one libSQL/Mastra stack. Code lives in `backend/src/telegram/`.
 
 The bot adds **no** security or accounting logic of its own: prompt-guard, the hourly rate limit, and usage recording all live inside `runChat` (see [Chat Pipeline](chat-pipeline.md)). The bot resolves the user, streams, and shows whatever `handleUserMessage` returns.
 
@@ -85,7 +85,7 @@ An `authorize` middleware reads `telegram_allowed_users` from settings (`setting
 
 ## Notifications (Messenger)
 
-`messenger.ts` wraps `bot.api` with `sendMessage` (format + split + plain fallback), `sendTyping`, and `startTypingLoop` (re-sends typing every 4s). It is the non-streaming send path used for command replies today and for **cron notifications in M7**.
+`messenger.ts` wraps `bot.api` with `sendMessage` (format + split + plain fallback), `sendTyping`, and `startTypingLoop` (re-sends typing every 4s). It is the non-streaming send path used for command replies and for [cron notifications](scheduler.md#notifications).
 
 ## Webhook (optional, minimal)
 

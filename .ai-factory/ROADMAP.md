@@ -11,8 +11,8 @@
 - [x] **4. Скилы и воркфлоу** — фабрика skill-agent из БД, агент-роутер, синтезатор, chat workflow (single + multi), promptguard
 - [x] **5. Инструменты и MCP** — currency, tasks (cron CRUD), memory-tools, profile-tools, skill-ref; MCPClient (только сервер `search`)
 - [x] **6. Telegram-бот** — grammY: polling/webhook, троттлинг-стриминг `editMessageText`, голос→speech, markdown-формат, команды, messenger для уведомлений
-- [ ] **7. Cron-планировщик** — node-cron, исполнитель задач, нотификации пользователю
-- [ ] **8. Админка (Mini App)** — Hono-API (CRUD skills/models/settings/prompts/plans/users/usage/mcp) + React Mini App + auth по `initData`
+- [x] **7. Cron-планировщик** — node-cron, исполнитель задач, нотификации пользователю
+- [x] **8. Админка (Mini App)** — Hono-API (CRUD skills/models/settings/prompts/plans/users/usage/mcp) + React Mini App + auth по `initData`
 - [ ] **9. Деплой и миграция данных** — Dockerfile (1 контейнер), npm-scripts, скрипт переноса данных Postgres → libSQL
 - [ ] **10. Паритет и переключение** — debug-harness, unit/integration тесты, сверка поведения с Go, вывод Go из эксплуатации
 
@@ -27,6 +27,8 @@
 | 4. Скилы и воркфлоу | 2026-06-14 |
 | 5. Инструменты и MCP | 2026-06-14 |
 | 6. Telegram-бот | 2026-06-14 |
+| 7. Cron-планировщик | 2026-06-14 |
+| 8. Админка (Mini App) | 2026-06-14 |
 
 ---
 

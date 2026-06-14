@@ -24,6 +24,7 @@
     "@ai-sdk/openai": "^3.0.71",
     "@ai-sdk/openai-compatible": "^2.0.50",
     "@ai-sdk/xai": "^3.0.95",
+    "@hono/node-server": "^1.19.14",
     "@mastra/core": "^1.42.0",
     "@mastra/libsql": "^1.13.0",
     "@mastra/mcp": "^1.10.0",

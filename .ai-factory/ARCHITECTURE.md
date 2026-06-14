@@ -23,12 +23,15 @@ jarvis/
       app.ts     composition root — createChatService() wires handleUserMessage()
       telegram/  bot (grammY wiring), stream (throttled editMessageText), format (md→MarkdownV2 + split),
                  voice (→speech), messenger (notify), identity (user/channel), commands, errors
-      scheduler/ [M7]
-      admin/     [M8] api (Hono), auth (Telegram initData)
-      server.ts  single-process entry (health server + best-effort ChatService init)
+      scheduler/ schedule (pure due/notify rules), executor (poll due cron_tasks → chat pipeline → notify),
+                 scheduler (node-cron driver: 60s/5s polls), wiring (ChatService+Notifier → Scheduler)
+      admin/     app (Hono: /health + webhook + /admin/api + static Mini App), auth (initData HMAC + ADMIN_USER_IDS),
+                 api/ (settings, models, mcp, skills, prompts, users, plans, usage — CRUD + cache invalidation)
+      server.ts  single-process entry (Hono via @hono/node-server: health + webhook + admin API + static)
+                 + best-effort ChatService init + grammY bot + cron scheduler
     seed/        bundled config.yaml + skills/ + prompts/ (first-run seed source)
     test/        vitest — unit + libSQL integration; test/helpers/libsql.ts harness
-  frontend/      [M8] React + Vite Mini App
+  frontend/      React + Vite + Mantine Mini App (@twa-dev/sdk, HashRouter); built to dist/, served by backend
   docker-compose.yaml
 ```
 
@@ -46,6 +49,7 @@ jarvis/
 - **No session encryption** — messages stored plaintext in libSQL.
 - **Config in DB** — `.env` = secrets only; `SettingsService` caches + hot-reloads.
 - **ESM/NodeNext** — relative imports carry `.js` extensions; dev via `tsx`, prod via `node dist`.
+- **Admin Mini App, one origin (M8)** — the Hono admin API (`/admin/api`) and the built React Mini App share the single backend HTTP server (`@hono/node-server`); auth = Telegram `initData` HMAC-SHA256 + `ADMIN_USER_IDS` (deny-by-default, distinct from the in-DB chat allowlist). Admin writes call `SettingsService`/`SkillService` `invalidate()` for hot-reload. Routers are mounted from `admin/api/index.ts`; handlers read deps + `adminUserId` from Hono context.
 
 ## Parity Constants (verified against Go)
-dedup `0.92` · permanent cap `50` · onboarding `@4` msgs · RAG threshold/topK `10` · embedding dim `1024` · watchdog `30s` · llm_request `300s` · maxSteps `30` · maxRetries `3` · sub-agent loop cap `2`@`5min` · synthesizer temp `0.3` · sub-agent model `skill.model || roles.default`. No automatic memory extraction (only `remember` + onboarding). MCP `search` only. `exec` tool not ported.
+dedup `0.92` · permanent cap `50` · onboarding `@4` msgs · RAG threshold/topK `10` · embedding dim `1024` · watchdog `30s` · llm_request `300s` · maxSteps `30` · maxRetries `3` · sub-agent loop cap `2`@`5min` · synthesizer temp `0.3` · sub-agent model `skill.model || roles.default` · cron poll `60s`/`5s` · task watchdog `llm_request+30s`. No automatic memory extraction (only `remember` + onboarding). MCP `search` only. `exec` tool not ported.

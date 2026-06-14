@@ -2,10 +2,20 @@
 #
 # Layout:
 #   backend/   Node + Mastra service (Telegram bot + cron + admin API, one process)
-#   frontend/  Admin Mini App (React + Vite) — built as static assets
+#   frontend/  Admin Mini App (React + Vite) — built to static assets
 #
-# NOTE: Dockerfiles are added in milestone 9. Until then, run locally with
-#       `cd backend && npm run dev`. This file is the deployment scaffold.
+# Single-container model (M8): the admin Mini App is built to `frontend/dist` and
+# served as static by the backend's Hono server (GET / + /assets/*), so there is
+# NO separate frontend container — the one backend process hosts API + Mini App.
+#
+#   Local dev (two terminals, hot reload):
+#     cd backend  && npm run dev      # API + bot + cron on :8080
+#     cd frontend && npm run dev      # Vite Mini App on :5173 (proxies /admin/api → :8080)
+#   Static (single origin):
+#     cd frontend && npm run build    # → frontend/dist (served by the backend)
+#
+# NOTE: the multi-stage Dockerfile (build frontend → copy dist → run backend) is
+#       added in milestone 9; this file is the deployment scaffold.
 
 services:
   backend:
@@ -22,15 +32,6 @@ services:
     ports:
       - "8080:8080"
     restart: unless-stopped
-
-  # Admin Mini App — enabled in milestone 8.
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #   ports:
-  #     - "5173:5173"
-  #   depends_on:
-  #     - backend
 
 volumes:
   jarvis-data:
