@@ -78,6 +78,9 @@ export function createStreamer(
   let sending = false;
   let firstChunkFired = false;
   let finalized = false;
+  // Tracks the in-flight stream edit so finalize can wait for it (a late edit must
+  // not land after the final message and leave it stuck on a partial chunk + cursor).
+  let pending: Promise<void> = Promise.resolve();
 
   const fireFirstChunk = (): void => {
     if (firstChunkFired) return;
@@ -117,7 +120,7 @@ export function createStreamer(
     if (endsWithIncompleteLink(acc)) return;
     // Throttle edits only — the first chunk is sent immediately.
     if (messageId !== undefined && now() - lastSentAt < throttleMs) return;
-    void flush(acc);
+    pending = flush(acc);
   };
 
   async function editWithFallback(id: number, text: string): Promise<void> {
@@ -140,6 +143,7 @@ export function createStreamer(
 
   async function finalize(fullText: string): Promise<void> {
     finalized = true;
+    await pending.catch(() => {}); // let the last in-flight stream edit settle (sets messageId)
     fireFirstChunk(); // ensure typing stops even when nothing streamed
     const parts = splitMessage(toTelegramMarkdown(fullText), TELEGRAM_MAX_MESSAGE_LEN);
     if (parts.length === 0) parts.push(""); // always replace the cursor with something

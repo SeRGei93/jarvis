@@ -129,6 +129,34 @@ describe("createStreamer — finalize", () => {
     expect(edits.some((c) => c.parse === undefined && c.messageId === 100)).toBe(true); // plain retry
   });
 
+  it("waits for an in-flight stream send before finalizing (no duplicate, no stuck cursor)", async () => {
+    // Gate the first sendMessage so it is still in flight when finalize runs.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const gatedApi = {
+      calls: [] as Call[],
+      async sendMessage(_c: number, text: string, other?: { parse_mode?: "MarkdownV2" }) {
+        gatedApi.calls.push({ op: "send", text, parse: other?.parse_mode });
+        await gate;
+        return { message_id: 100 };
+      },
+      async editMessageText(_c: number, messageId: number, text: string, other?: { parse_mode?: "MarkdownV2" }) {
+        gatedApi.calls.push({ op: "edit", text, parse: other?.parse_mode, messageId });
+        return true;
+      },
+    };
+    const s = createStreamer(gatedApi, 42, { now: () => clock });
+
+    s.onText("hi"); // starts the (gated) first send
+    const fin = s.finalize("final answer"); // must await the in-flight send
+    release(); // let the stream send resolve -> messageId = 100
+    await fin;
+
+    // Exactly one send (the stream one); finalize edited that message, did not send a duplicate.
+    expect(gatedApi.calls.filter((c) => c.op === "send")).toHaveLength(1);
+    expect(gatedApi.calls.some((c) => c.op === "edit" && c.messageId === 100)).toBe(true);
+  });
+
   it("sends a new message when nothing was streamed", async () => {
     let firstCount = 0;
     const s = createStreamer(api, 7, { now: () => clock, onFirstChunk: () => firstCount++ });
