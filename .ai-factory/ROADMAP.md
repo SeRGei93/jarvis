@@ -10,7 +10,7 @@
 - [x] **3. Память** — `memories` + LibSQLVector RAG, classifier permanent/session, sensitivity-фильтр, дедуп, cap; profile-extractor (онбординг); Mastra Memory для истории диалога
 - [x] **4. Скилы и воркфлоу** — фабрика skill-agent из БД, агент-роутер, синтезатор, chat workflow (single + multi), promptguard
 - [x] **5. Инструменты и MCP** — currency, tasks (cron CRUD), memory-tools, profile-tools, skill-ref; MCPClient (только сервер `search`)
-- [ ] **6. Telegram-бот** — grammY: polling/webhook, троттлинг-стриминг `editMessageText`, голос→speech, markdown-формат, команды, messenger для уведомлений
+- [x] **6. Telegram-бот** — grammY: polling/webhook, троттлинг-стриминг `editMessageText`, голос→speech, markdown-формат, команды, messenger для уведомлений
 - [ ] **7. Cron-планировщик** — node-cron, исполнитель задач, нотификации пользователю
 - [ ] **8. Админка (Mini App)** — Hono-API (CRUD skills/models/settings/prompts/plans/users/usage/mcp) + React Mini App + auth по `initData`
 - [ ] **9. Деплой и миграция данных** — Dockerfile (1 контейнер), npm-scripts, скрипт переноса данных Postgres → libSQL
@@ -26,6 +26,7 @@
 | 3. Память | 2026-06-14 |
 | 4. Скилы и воркфлоу | 2026-06-14 |
 | 5. Инструменты и MCP | 2026-06-14 |
+| 6. Telegram-бот | 2026-06-14 |
 
 ---
 

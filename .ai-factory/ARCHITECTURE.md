@@ -21,7 +21,8 @@ jarvis/
       pkg/       logger (pino + redact), promptguard, bootstrap-env
       services/  skill-service, conversation-context, rate-limit, usage
       app.ts     composition root — createChatService() wires handleUserMessage()
-      telegram/  [M6] bot, stream, format, voice, messenger
+      telegram/  bot (grammY wiring), stream (throttled editMessageText), format (md→MarkdownV2 + split),
+                 voice (→speech), messenger (notify), identity (user/channel), commands, errors
       scheduler/ [M7]
       admin/     [M8] api (Hono), auth (Telegram initData)
       server.ts  single-process entry (health server + best-effort ChatService init)

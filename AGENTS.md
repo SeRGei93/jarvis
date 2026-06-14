@@ -3,10 +3,10 @@
 > Project map for AI agents. Keep this file up-to-date as the project evolves.
 
 ## Overview
-Telegram AI assistant — a TypeScript + Mastra rewrite of avocado-ai (Go). Monorepo: `backend/` (Node service) + `frontend/` (admin Mini App, M8). Migration **milestones 0–4 done**.
+Telegram AI assistant — a TypeScript + Mastra rewrite of avocado-ai (Go). Monorepo: `backend/` (Node service) + `frontend/` (admin Mini App, M8). Migration **milestones 0–6 done**.
 
 ## Tech Stack
-Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + LibSQLVector) · `drizzle-orm` 0.45 · Vercel AI SDK v6 · zod v4 · grammY (M6) · node-cron (M7) · Hono (M8) · pino · vitest.
+Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + LibSQLVector) · `drizzle-orm` 0.45 · Vercel AI SDK v6 · zod v4 · grammY (polling + opt. webhook) · `marked` (md→MarkdownV2) · node-cron (M7) · Hono (M8) · pino · vitest.
 
 ## Structure (`backend/src/`)
 | Dir | Contents |
@@ -15,10 +15,11 @@ Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + Lib
 | `db/` | `schema` (14 tables), `migrations/`, `client`, `vector`, `migrate`, `seed` |
 | `domain/` | `entities` (+ constants), `memory-classifier`, `sensitivity-filter` |
 | `mastra/` | `models`, `llm`, `strip-leaked-tools`, `embeddings`, `speech`, `agents/{router,prompt-builder,skill-agent,synthesizer,loop-guard}`, `memory/{memory-service,profile-extractor,history}`, `tools/{memory-tools,registry}`, `workflows/chat`, `index` |
-| `services/` | `skill-service`, `conversation-context` (rate-limit/usage → M5) |
+| `services/` | `skill-service`, `conversation-context`, `rate-limit`, `usage` |
+| `telegram/` | `bot`, `stream`, `format`, `voice`, `messenger`, `identity`, `commands`, `errors` (grammY transport, M6) |
 | `pkg/` | `logger`, `promptguard`, `bootstrap-env` |
 | `app.ts` | composition root — `createChatService()` → `handleUserMessage()` |
-| `server.ts` | single-process entry point (health server + best-effort ChatService init) |
+| `server.ts` | single-process entry point (health server + ChatService + grammY bot start) |
 | `seed/` | bundled `config.yaml` + `skills/` + `prompts/` (first-run seed) |
 | `test/` | vitest (unit + libSQL integration); `helpers/libsql.ts` harness |
 
@@ -49,7 +50,8 @@ Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + Lib
 | Architecture | `docs/architecture.md` | Layering, structure, dependency rules |
 | Chat Pipeline | `docs/chat-pipeline.md` | route → runSkills → synthesize, agents, memory |
 | Tools & MCP | `docs/tools.md` | built-in tools, MCP `search`, rate limit & usage |
+| Telegram Bot | `docs/telegram.md` | grammY transport, streaming, voice, commands, allowlist |
 | Configuration | `docs/configuration.md` | `.env` secrets and DB-backed settings |
 
 ## Next
-**M5** — tools + MCP: currency, tasks (cron CRUD), profile-tools, skill-ref; MCPClient (`search` server only). M4 wired a tool-resolver seam (`mastra/tools/registry`); only memory tools are live so far.
+**M7** — cron scheduler: node-cron executor + task notifications (via the M6 `Messenger`). M5/M6 left `cron_tasks` CRUD + schedule validation and the notification send-path ready.

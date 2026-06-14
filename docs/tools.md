@@ -1,4 +1,4 @@
-[← Chat Pipeline](chat-pipeline.md) · [Back to README](../README.md) · [Configuration →](configuration.md)
+[← Chat Pipeline](chat-pipeline.md) · [Back to README](../README.md) · [Telegram Bot →](telegram.md)
 
 # Tools & MCP
 

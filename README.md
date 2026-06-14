@@ -21,6 +21,7 @@ npm run dev                 # start the single-process service
 - **Config in the database** — model roles, timeouts, agent params, skills, and prompts are rows in libSQL, hot-reloaded by `SettingsService`. See [Configuration](docs/configuration.md).
 - **Consolidated memory** — long-term facts via LibSQLVector RAG (per-user, dedup, cap) plus Mastra Memory for dialogue history.
 - **Tools & MCP** — skills get built-in tools (currency, cron tasks, profile, skill references) plus the external MCP `search` server, with hourly rate limits and per-user usage accounting. See [Tools & MCP](docs/tools.md).
+- **Telegram bot** — a grammY bot (polling, or optional webhook) with throttled `editMessageText` streaming, markdown→MarkdownV2, voice→speech, commands, and an allowlist. See [Telegram Bot](docs/telegram.md).
 - **Multi-provider LLM** — Vercel AI SDK v6 (`provider:model` factory) with watchdog, retries/fallback, and cost extraction ported 1:1 from the Go `LLMAdapter`.
 - **Single process** — bot + cron + admin API in one Node service over libSQL (no SQLite single-writer problem); Turso-ready.
 
@@ -50,11 +51,12 @@ const result = await chat.handleUserMessage(userId, chatId, "what's the weather 
 | [Architecture](docs/architecture.md) | Layering, structure, dependency rules |
 | [Chat Pipeline](docs/chat-pipeline.md) | route → runSkills → synthesize, agents, memory, entry point |
 | [Tools & MCP](docs/tools.md) | built-in tools, MCP `search`, rate limit & usage |
+| [Telegram Bot](docs/telegram.md) | grammY transport, streaming, voice, commands, allowlist |
 | [Configuration](docs/configuration.md) | `.env` secrets and DB-backed settings |
 
 ## Project Status
 
-Migration milestones **0–5 complete** (scaffold, DB + settings, LLM layer, memory, skills + chat workflow, tools + MCP). Roadmap and remaining milestones (M6 Telegram bot → M10 cutover) live in `.ai-factory/ROADMAP.md`.
+Migration milestones **0–6 complete** (scaffold, DB + settings, LLM layer, memory, skills + chat workflow, tools + MCP, Telegram bot). Roadmap and remaining milestones (M7 cron scheduler → M10 cutover) live in `.ai-factory/ROADMAP.md`.
 
 ## License
 

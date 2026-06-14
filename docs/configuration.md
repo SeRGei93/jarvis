@@ -1,4 +1,4 @@
-[← Tools & MCP](tools.md) · [Back to README](../README.md)
+[← Telegram Bot](telegram.md) · [Back to README](../README.md)
 
 # Configuration
 
