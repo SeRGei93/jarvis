@@ -1,0 +1,74 @@
+default_model: openrouter:google/gemini-3.1-flash-lite
+router_model: openrouter:openai/gpt-oss-120b:nitro
+embedding_model: openrouter:intfloat/multilingual-e5-large
+error_correction_model: openrouter:google/gemini-3-flash-preview
+speech_model: openrouter:google/gemini-3.1-flash-lite
+synthesizer_model: openrouter:google/gemini-3-flash-preview
+
+telegram:
+  allowed_users: []
+
+session_storage:
+  path: /root/.avocado/sessions
+
+agent:
+  max_history: 15
+  default_temperature: 0.4
+  rag:
+    enabled: true
+    top_k: 10
+  memory_extraction:
+    interval: 5
+    analyze_last: 5
+
+# Таймауты LLM-вызовов. Значения в формате Go duration: 300s, 5m, 1h30m.
+# Если поле пропущено — применяется дефолт (см. ниже).
+timeouts:
+  # Общий таймаут на один LLM-вызов (от первого запроса до последнего чанка стрима).
+  # Увеличить для моделей с research-режимом (DeepSeek v4, GPT-5 reasoning, Gemini Thinking).
+  # Default: 300s.
+  llm_request: 300s
+
+  # Таймаут HTTP-клиента для провайдеров (OpenRouter, Z.AI, xAI).
+  # Должен быть >= llm_request, иначе HTTP оборвётся раньше общего таймаута
+  # и watchdog не успеет среагировать. Default: 300s.
+  http_client: 300s
+
+  # Watchdog: если между чанками стрима / tool calls тишина дольше этого окна,
+  # текущая попытка отменяется и происходит переключение на error_correction_model.
+  # Сбрасывается каждым чанком — НЕ путать с llm_request (общим таймаутом).
+  # Default: 30s.
+  llm_activity: 30s
+
+models:
+  # OpenRouter
+  - openrouter:openai/gpt-oss-120b:nitro
+  - openrouter:openai/gpt-5-nano
+  - openrouter:google/gemini-3-flash-preview
+  - openrouter:google/gemini-3.1-flash-lite
+  - openrouter:deepseek/deepseek-v3.2
+  - openrouter:deepseek/deepseek-v4-flash:nitro
+  - openrouter:google/gemma-3-27b-it
+  - openrouter:qwen/qwen3.5-flash-02-23
+  - openrouter:minimax/minimax-m2.7
+  # Z.AI
+  - zai:glm-5
+  - zai:glm-4.7-Flash
+
+mcp_servers:
+  search:
+    command: "npx"
+    args:
+      - "-y"
+      - "mcp-remote"
+      - "http://host.docker.internal:3000/mcp"
+      - "--allow-http"
+    env: {}
+  memory:
+    command: "npx"
+    args:
+      - "-y"
+      - "mcp-remote"
+      - "http://host.docker.internal:3001/mcp"
+      - "--allow-http"
+    env: {}
