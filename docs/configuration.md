@@ -1,4 +1,4 @@
-[← Chat Pipeline](chat-pipeline.md) · [Back to README](../README.md)
+[← Tools & MCP](tools.md) · [Back to README](../README.md)
 
 # Configuration
 
@@ -33,7 +33,9 @@ Seeded from `backend/seed/config.yaml` into the `settings` table (key → JSON).
 | `timeouts` | `{ llm_request, http_client, llm_activity }` | Go-style durations (`300s`, `30s`) |
 | `agent` | `{ max_history, default_temperature, rag_top_k }` | defaults `15` / `0.4` / `10` |
 | `telegram_allowed_users` | `number[]` | empty = open to all |
-| `mcp_servers` | `{ search?: { command, args, env? } }` | only the `search` server is kept |
+| `mcp_servers` | `{ search?: { command, args, env? } }` | only the `search` server is kept (see [Tools & MCP](tools.md#mcp-search)) |
+
+The `search` server's `http_client` timeout (from `timeouts`) is also the global timeout passed to the MCP client and the per-source timeout for the `currency_rates` tool.
 
 ### How settings drive the chat pipeline
 
@@ -54,7 +56,25 @@ Seeded from `backend/seed/config.yaml` into the `settings` table (key → JSON).
 
 A skill row carries: `name`, `description`, `allowed_tools` (JSON), `model`, `temperature`, `reasoning` (tri-state), `routable`, `prompt`, `metadata`. Editing these rows changes behaviour without a redeploy — `SettingsService.invalidate()` / `SkillService.invalidate()` drop the caches.
 
+## Plans, rate limit, and usage
+
+Subscription plans gate two limits, both enforced per `userId`:
+
+| Table | Columns | Drives |
+|-------|---------|--------|
+| `subscription_plans` | `name`, `hourly_limit`, `max_tasks` | the hourly message cap and the cron-task cap |
+| `user_subscriptions` | `user_id`, `plan_id` | which plan a user is on |
+| `message_rate_limits` | `(user_id, window_start)`, `count` | the sliding hourly window |
+| `usage_stats` | `(user_id, date)`, `cost`, `requests` | per-day cost + request accounting |
+
+- **Rate limit** — `RateLimitService` truncates the clock to the hour and increments the window counter; when `count > hourly_limit` the turn is rejected before routing. A user with no subscription falls back to the `free` plan, then to a default of 30/hour. `hourly_limit = 0` means unlimited. Un-onboarded users are never limited.
+- **Task cap** — `task_create` refuses to create a task once the user has `max_tasks` active ones (default 3).
+- **Usage** — `UsageService.recordUsage(userId, cost)` upserts the day's `usage_stats` row after every answered turn.
+
+Schedule validation for cron tasks uses the `cron-parser` dependency (recurring schedules must be ≥ 1 hour apart); the scheduler that *runs* tasks arrives in M7.
+
 ## See Also
 
+- [Tools & MCP](tools.md) — how `mcp_servers` and plan limits drive the agent's tools
 - [Getting Started](getting-started.md) — creating and seeding the database
 - [Chat Pipeline](chat-pipeline.md) — how roles and agent params are consumed at runtime

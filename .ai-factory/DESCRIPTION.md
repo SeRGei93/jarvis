@@ -4,7 +4,7 @@
 Personalized AI assistant for Telegram — a TypeScript rewrite of **avocado-ai** (Go) on the **Mastra.ai** framework. Multi-provider LLM, skill-based routing, long-term memory with semantic search, tools, MCP, cron. Configuration (model roles, timeouts, skills, prompts, plans, MCP servers) lives in the **database** and is editable from a Telegram Mini App admin; `.env` holds only secrets.
 
 ## Status
-Migration **milestones 0–4 complete** (каркас, БД+настройки, LLM-слой, память, скилы+chat workflow). Source of truth: `.ai-factory/ROADMAP.md` (milestones 0→10). Next: **M5** — tools + MCP (currency, tasks/cron, profile, skill-ref; MCPClient `search`). Note: M4 wires a tool-resolver seam but only memory tools are live; the rest land in M5.
+Migration **milestones 0–5 complete** (каркас, БД+настройки, LLM-слой, память, скилы+chat workflow, инструменты+MCP). Source of truth: `.ai-factory/ROADMAP.md` (milestones 0→10). Next: **M6** — Telegram-бот (grammY: polling/webhook, троттлинг-стриминг, голос, команды). M5 landed: built-in tools (currency, tasks/cron CRUD, profile, skill-ref), MCPClient `search` (adapted into the AI-SDK ToolSet), and the rate-limit + usage services.
 
 ## Monorepo
 - **`backend/`** — Node + Mastra service (Telegram bot + cron + admin API in one process).
@@ -18,7 +18,7 @@ Migration **milestones 0–4 complete** (каркас, БД+настройки, 
 - **ORM / migrations:** `drizzle-orm` 0.45 + `drizzle-kit` (dialect `turso`)
 - **LLM:** Vercel AI SDK **v6** — `@openrouter/ai-sdk-provider`, `@ai-sdk/openai|google|xai`, `@ai-sdk/openai-compatible` (Z.AI)
 - **MCP:** `@mastra/mcp` — server `search` only
-- **Telegram:** grammY *(M6)* · **Cron:** node-cron *(M7)* · **HTTP/Admin:** Hono *(M8)*
+- **Cron:** `cron-parser` (schedule validation, M5) + node-cron *(execution, M7)* · **Telegram:** grammY *(M6)* · **HTTP/Admin:** Hono *(M8)*
 - **Validation:** zod v4 · **Logging:** pino (structured JSON) · **Tests:** vitest
 - **Deploy:** Docker (single container), optional Turso
 

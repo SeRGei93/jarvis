@@ -1,8 +1,8 @@
-[← Architecture](architecture.md) · [Back to README](../README.md) · [Configuration →](configuration.md)
+[← Architecture](architecture.md) · [Back to README](../README.md) · [Tools & MCP →](tools.md)
 
 # Chat Pipeline
 
-How `jarvis` turns one incoming user message into a streamed reply (Milestone 4). The pipeline is a flat async orchestrator, `runChat` in `src/mastra/workflows/chat.ts`, parity with the Go `HandleMessageUseCase`.
+How `jarvis` turns one incoming user message into a streamed reply. The pipeline is a flat async orchestrator, `runChat` in `src/mastra/workflows/chat.ts`, parity with the Go `HandleMessageUseCase`.
 
 ## Entry point
 
@@ -18,22 +18,24 @@ handleUserMessage(userId: number, chatId: number, text: string, onText?: (acc: s
 ## The turn, step by step
 
 ```
-text ─▶ promptguard ─▶ loadContext ─▶ history + memories ─▶ route ─┬─ single ─▶ stream
-                                                                    └─ multi  ─▶ sub-agents ▶ synthesize
-                                                                                    │
-                                       persist (user + assistant) ◀────────────────┘
-                                                                    │
-                                                          onboarding auto-complete
+text ─▶ promptguard ─▶ loadContext ─▶ rate-limit ─▶ history + memories ─▶ route ─┬─ single ─▶ stream
+                                                                                  └─ multi  ─▶ sub-agents ▶ synthesize
+                                                                                                  │
+                                  persist (user + assistant) ◀── record usage ◀──────────────────┘
+                                                                  │
+                                                        onboarding auto-complete
 ```
 
 1. **promptguard** — `validateUserMessage(text)` checks length + injection. On failure the workflow returns the canned `userMessage` and stops (no model call).
 2. **conversation-context** — `loadContext(db, settings, userId, chatId)` loads the `User`, gets-or-creates the `Session` (model defaults to `roles.default`), loads the optional `BotIdentity`, and resolves the Mastra thread / resource ids. The Mastra thread is ensured to exist.
-3. **history + previousSkills** — `getRecentMessages(...)` reads the last `agent.max_history` messages; `derivePreviousSkills(...)` collects the skill tags from prior assistant turns (newest-first). The current user message is then persisted.
-4. **memories + prompts** — `MemoryService.loadRelevant(userId, text)` returns the RAG-selected long-term facts; the SOUL/FORMAT/INTEGRITY/SYNTHESIZER bodies are loaded from the `prompts` table.
-5. **route** — `SkillRouter.resolveSkills(...)`. If the user is not onboarded, `onboarding` is forced and the router is bypassed; otherwise the router model returns 1–4 routable skills (falling back to `research`).
-6. **run** — see below.
-7. **persist** — the assistant reply is saved to Mastra Memory, tagged in `content.metadata.skill` with the primary skill.
-8. **onboarding auto-complete** — once the message count reaches `4`, `ProfileExtractor.applyOnboarding(...)` extracts the profile, fills empty user fields, marks the user onboarded, and upserts the bot identity.
+3. **rate-limit** — `RateLimitService.checkAndConsume(userId)` enforces the hourly window from the user's plan (`hourly_limit`). Un-onboarded users are bypassed; over the limit the turn is rejected (canned reply, no routing). See [Tools & MCP](tools.md#rate-limit--usage).
+4. **history + previousSkills** — `getRecentMessages(...)` reads the last `agent.max_history` messages; `derivePreviousSkills(...)` collects the skill tags from prior assistant turns (newest-first). The current user message is then persisted.
+5. **memories + prompts** — `MemoryService.loadRelevant(userId, text)` returns the RAG-selected long-term facts; the SOUL/FORMAT/INTEGRITY/SYNTHESIZER bodies are loaded from the `prompts` table.
+6. **route** — `SkillRouter.resolveSkills(...)`. If the user is not onboarded, `onboarding` is forced and the router is bypassed; otherwise the router model returns 1–4 routable skills (falling back to `research`).
+7. **run** — see below; each leg surfaces its LLM `cost`.
+8. **record usage** — `UsageService.recordUsage(userId, cost)` accumulates the turn's cost + request count into `usage_stats`.
+9. **persist** — the assistant reply is saved to Mastra Memory, tagged in `content.metadata.skill` with the primary skill.
+10. **onboarding auto-complete** — once the message count reaches `4`, `ProfileExtractor.applyOnboarding(...)` extracts the profile, fills empty user fields, marks the user onboarded, and upserts the bot identity.
 
 ## Single vs. multi
 
@@ -56,7 +58,7 @@ SOUL  (or BotIdentity.systemPromptOverride)
 [KNOWLEDGE ABOUT USER]    ← RAG memories; reflection/strategy get a "(learned <date>)" suffix
 [DATA INTEGRITY]          ← only if the skill declares tools
 [SKILL: <name>]           ← the skill body
-[SKILL REFERENCES]        ← structural slot, empty until M5
+[SKILL REFERENCES]        ← reference docs from the skill dir (read via read_skill_reference)
 [MESSAGE FORMATTING]      ← FORMAT rules
 [CURRENT DATE & TIME]     ← in the user's timezone (UTC fallback)
 ```
@@ -73,9 +75,9 @@ SOUL  (or BotIdentity.systemPromptOverride)
 | `agents/synthesizer` | merges multi-skill results; model = `synthesizer_model \|\| session.model`, temperature `0.3`, no tools, streams |
 | `agents/loop-guard` | blocks the 3rd identical `skill:md5(query)` within `5min` (`maxLoopCount = 2`) — applied to sub-agents only |
 
-## Tools (M4 seam)
+## Tools
 
-`tools/registry.resolveTools(allowedTools, ctx)` maps a skill's `allowed-tools` to a concrete AI SDK `ToolSet`. **In M4 only the memory tools** (`remember`, `forget`, `list_memories`, `memory_search`) are live; any other name (`web_search`, `currency`, …) is logged at `WARN` and skipped. The full registry + MCP `search` arrive in M5, so skills that need those tools have limited capability until then.
+`tools/registry.resolveTools(allowedTools, ctx)` maps a skill's `allowed-tools` to a concrete AI SDK `ToolSet`, merging the **memory**, **built-in** (currency, cron tasks, profile, skill references), and **MCP `search`** buckets; unknown names are logged at `WARN` and skipped. The MCP `ToolSet` is assembled once at boot and threaded in via `ctx`. Full details — every tool, its inputs, and the MCP adapter — are in [Tools & MCP](tools.md).
 
 ## History I/O
 

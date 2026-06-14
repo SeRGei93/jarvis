@@ -48,6 +48,7 @@ Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + Lib
 | Getting Started | `docs/getting-started.md` | Install, migrate, seed, run, test |
 | Architecture | `docs/architecture.md` | Layering, structure, dependency rules |
 | Chat Pipeline | `docs/chat-pipeline.md` | route → runSkills → synthesize, agents, memory |
+| Tools & MCP | `docs/tools.md` | built-in tools, MCP `search`, rate limit & usage |
 | Configuration | `docs/configuration.md` | `.env` secrets and DB-backed settings |
 
 ## Next

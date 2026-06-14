@@ -15,10 +15,11 @@ jarvis/
                  strip-leaked-tools, embeddings, speech,
                  agents/ (router, prompt-builder, skill-agent, synthesizer, loop-guard),
                  memory/ (memory-service, profile-extractor, history+message I/O),
-                 tools/ (memory-tools, registry — M5-seam), workflows/ (chat),
+                 tools/ (memory-tools, currency, tasks, profile-tools, skill-ref, registry),
+                 mcp (MCPClient `search` → AI-SDK ToolSet), workflows/ (chat),
                  index.ts (Mastra instance: storage+vector)
       pkg/       logger (pino + redact), promptguard, bootstrap-env
-      services/  skill-service, conversation-context; [M5] rate-limit, usage
+      services/  skill-service, conversation-context, rate-limit, usage
       app.ts     composition root — createChatService() wires handleUserMessage()
       telegram/  [M6] bot, stream, format, voice, messenger
       scheduler/ [M7]
