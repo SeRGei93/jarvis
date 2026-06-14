@@ -57,6 +57,7 @@ const result = await chat.handleUserMessage(userId, chatId, "what's the weather 
 | [Cron Scheduler](docs/scheduler.md) | node-cron polls, due tasks → chat pipeline → notify |
 | [Configuration](docs/configuration.md) | `.env` secrets and DB-backed settings |
 | [Admin Mini App](docs/admin.md) | Hono admin API, `initData` auth, the React Mini App |
+| [Deployment](docs/deployment.md) | Docker + nginx + Let's Encrypt, deploy script, Makefile |
 
 ## Project Status
 

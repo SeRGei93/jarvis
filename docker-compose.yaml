@@ -1,37 +1,58 @@
-# jarvis — container orchestration (root of the monorepo).
+# jarvis — production deployment (root of the monorepo).
 #
-# Layout:
-#   backend/   Node + Mastra service (Telegram bot + cron + admin API, one process)
-#   frontend/  Admin Mini App (React + Vite) — built to static assets
+#   app     one Node container: Telegram bot + cron + admin API + Mini App (static)
+#   nginx   TLS termination + reverse-proxy to app:8080, serves the ACME challenge
+#   certbot issues / auto-renews the Let's Encrypt certificate
 #
-# Single-container model (M8): the admin Mini App is built to `frontend/dist` and
-# served as static by the backend's Hono server (GET / + /assets/*), so there is
-# NO separate frontend container — the one backend process hosts API + Mini App.
-#
-#   Local dev (two terminals, hot reload):
-#     cd backend  && npm run dev      # API + bot + cron on :8080
-#     cd frontend && npm run dev      # Vite Mini App on :5173 (proxies /admin/api → :8080)
-#   Static (single origin):
-#     cd frontend && npm run build    # → frontend/dist (served by the backend)
-#
-# NOTE: the multi-stage Dockerfile (build frontend → copy dist → run backend) is
-#       added in milestone 9; this file is the deployment scaffold.
+# First deploy:  make deploy   (provisions .env, builds, issues SSL, starts everything)
+# See docs/deployment.md. Values like DOMAIN / secrets come from the root .env.
 
 services:
-  backend:
+  app:
     build:
-      context: ./backend
+      context: .
+      dockerfile: Dockerfile
     env_file:
-      - ./backend/.env
+      - .env
     environment:
       NODE_ENV: production
-      # libSQL DB file on a named volume so data survives restarts.
+      # libSQL file lives on the shared ./data dir (host-visible, survives redeploys).
       LIBSQL_URL: file:/data/avocado.db
     volumes:
-      - jarvis-data:/data
-    ports:
-      - "8080:8080"
+      - ./data/db:/data
+    expose:
+      - "8080" # internal only — nginx fronts it
     restart: unless-stopped
 
-volumes:
-  jarvis-data:
+  nginx:
+    image: nginx:1.27-alpine
+    environment:
+      DOMAIN: "${DOMAIN:?set DOMAIN in .env, e.g. make env}"
+      # only substitute ${DOMAIN} in templates — leave nginx's own $vars intact
+      NGINX_ENVSUBST_FILTER: DOMAIN
+    volumes:
+      - ./deploy/nginx/templates:/etc/nginx/templates:ro
+      - ./data/letsencrypt:/etc/letsencrypt:ro
+      - ./data/certbot-www:/var/www/certbot:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - app
+    # reload every 6h so renewed certificates are picked up without a restart
+    command: ["/bin/sh", "-c", "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"]
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./data/letsencrypt:/etc/letsencrypt
+      - ./data/certbot-www:/var/www/certbot
+    # initial issuance is done by deploy/init-letsencrypt.sh; this loop renews.
+    entrypoint: ["/bin/sh", "-c", "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done"]
+    restart: unless-stopped
+
+# All persistent state lives in the host-visible ./data directory:
+#   ./data/db          libSQL database file (avocado.db)
+#   ./data/letsencrypt SSL certificates (shared: certbot writes, nginx reads)
+#   ./data/certbot-www ACME http-01 challenge webroot (shared: certbot ↔ nginx)

@@ -13,8 +13,8 @@
 - [x] **6. Telegram-бот** — grammY: polling/webhook, троттлинг-стриминг `editMessageText`, голос→speech, markdown-формат, команды, messenger для уведомлений
 - [x] **7. Cron-планировщик** — node-cron, исполнитель задач, нотификации пользователю
 - [x] **8. Админка (Mini App)** — Hono-API (CRUD skills/models/settings/prompts/plans/users/usage/mcp) + React Mini App + auth по `initData`
-- [ ] **9. Деплой и миграция данных** — Dockerfile (1 контейнер), npm-scripts, скрипт переноса данных Postgres → libSQL
-- [ ] **10. Паритет и переключение** — debug-harness, unit/integration тесты, сверка поведения с Go, вывод Go из эксплуатации
+- [ ] **9. Деплой** — Docker (1 контейнер: сборка фронта → отдача бэкендом) + nginx (reverse-proxy) + Let's Encrypt SSL + deploy-скрипт (генерация `.env`) и Makefile. ~~Миграция данных Postgres → libSQL — НЕ актуальна: запускаем как новый проект.~~
+- [ ] ~~**10. Паритет и переключение**~~ — **НЕ актуально**: новый проект, Go не мигрируем и не выводим из эксплуатации.
 
 ## Completed
 
