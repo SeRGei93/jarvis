@@ -1,7 +1,7 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { SEED_DIR } from "../../db/seed.js";
 import { logger } from "../../pkg/logger.js";
 import type { ToolContext } from "./registry.js";
@@ -59,6 +59,9 @@ function validateReferencePath(refPath: string): string | null {
 /** Build the `read_skill_reference` tool. */
 export function buildSkillRefTools(ctx: ToolContext): ToolSet {
   const root = ctx.skillsRoot ?? defaultSkillsRoot();
+  // Resolved root for containment checks — `skill_name` is LLM-chosen and untrusted,
+  // so the final resolved path must stay inside `root` regardless of either param.
+  const baseResolved = resolve(root);
 
   return {
     read_skill_reference: tool({
@@ -86,6 +89,16 @@ export function buildSkillRefTools(ctx: ToolContext): ToolSet {
         }
 
         const fullPath = join(root, skill_name, ref_path);
+
+        // Defense in depth: `validateReferencePath` only guards `ref_path`, but
+        // `skill_name` is also joined into the path and is LLM-chosen (untrusted).
+        // Reject anything that resolves outside the skills root (e.g. skill_name="../..").
+        const resolved = resolve(fullPath);
+        if (resolved !== baseResolved && !resolved.startsWith(baseResolved + sep)) {
+          const error = `reference path escapes skills root: "${skill_name}/${ref_path}"`;
+          log.warn({ skill_name, ref_path }, "reference path escapes skills root");
+          return { error };
+        }
 
         // Must exist and be a regular file.
         if (!existsSync(fullPath)) {

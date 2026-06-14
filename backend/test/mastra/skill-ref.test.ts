@@ -113,6 +113,26 @@ describe("skill-ref", () => {
     expect(r.error).toContain("references/, scripts/, or assets/");
   });
 
+  it("rejects skill_name traversal that escapes the skills root", async () => {
+    // ref_path is well-formed (allowed prefix, no ".."), but skill_name climbs out
+    // of the skills root into a sibling dir that *does* have a references/ subdir.
+    root = mkdtempSync(join(tmpdir(), "skillref-"));
+    const skillsRoot = join(root, "skills");
+    mkdirSync(join(skillsRoot, "research", "references"), { recursive: true });
+    const secretRefs = join(root, "secret", "references");
+    mkdirSync(secretRefs, { recursive: true });
+    writeFileSync(join(secretRefs, "secret.md"), "TOP SECRET", "utf8");
+
+    const r = (await readTool(skillsRoot).execute!(
+      { skill_name: "../secret", ref_path: "references/secret.md" },
+      opts,
+    )) as { content?: string; error?: string };
+
+    expect(r.content).toBeUndefined();
+    expect(r.error).toBeDefined();
+    expect(r.error).toContain("escapes skills root");
+  });
+
   it("returns an error for a missing (but well-formed) reference path", async () => {
     root = makeFixture();
     const r = (await readTool(root).execute!(

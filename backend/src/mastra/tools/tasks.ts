@@ -336,6 +336,22 @@ export function buildTaskTools(ctx: ToolContext): ToolSet {
         const existing = await getOwnedTask(ctx, task_id);
         if (!existing) return { error: `Task ${task_id} not found` };
 
+        // Re-enabling a disabled task adds to the active count, so enforce the same
+        // per-plan limit as task_create (otherwise the cap is bypassable via toggle).
+        if (is_active && !existing.isActive) {
+          const limit = await maxTasksForUser(ctx);
+          const [{ n }] = await ctx.db
+            .select({ n: count() })
+            .from(cronTasks)
+            .where(and(eq(cronTasks.userId, ctx.userId), eq(cronTasks.isActive, true)));
+          if (n >= limit) {
+            log.warn({ op: "toggle", task_id, userId: ctx.userId, active: n, limit }, "task limit reached");
+            return {
+              error: `Task limit reached: you have ${n} active task(s); your plan allows ${limit}.`,
+            };
+          }
+        }
+
         await ctx.db
           .update(cronTasks)
           .set({ isActive: is_active, updatedAt: new Date() })

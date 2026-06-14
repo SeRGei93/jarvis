@@ -212,7 +212,13 @@ export async function runChat(
   }
 
   // 6a. record usage for this turn (one request; accumulated cost may be 0).
-  await deps.usage.recordUsage(userId, cost);
+  //     Best-effort: the reply may already be streamed to the user, so an accounting
+  //     DB error must never break the turn or skip the assistant-message persist below.
+  try {
+    await deps.usage.recordUsage(userId, cost);
+  } catch (err) {
+    log.warn({ userId, reason: err instanceof Error ? err.message : String(err) }, "usage record failed");
+  }
 
   // 7. persist the assistant turn, tagged with the primary skill.
   const skillTag = resolved[0]?.name ?? null;

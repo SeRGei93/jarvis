@@ -231,4 +231,44 @@ describe("task tools — max_tasks enforcement", () => {
     )) as { error?: string };
     expect(fourth.error).toMatch(/limit/i);
   });
+
+  it("rejects re-enabling a task via task_toggle when it would exceed the plan limit", async () => {
+    t = await createTestDb();
+    const ctx = await seedCtx(1, 100);
+
+    const [plan] = await t.db
+      .insert(subscriptionPlans)
+      .values({ name: "solo", hourlyLimit: 10, maxTasks: 1 })
+      .returning({ id: subscriptionPlans.id });
+    await t.db.insert(userSubscriptions).values({ userId: 1, planId: plan!.id });
+
+    const tools = buildTaskTools(ctx);
+
+    // Create task A (active), then disable it so a second create is allowed.
+    const a = (await tools.task_create!.execute!(
+      { name: "A", prompt: "p", schedule: "0 * * * *" },
+      opts,
+    )) as { task_id?: number };
+    expect(a.task_id).toBeGreaterThan(0);
+
+    await tools.task_toggle!.execute!({ task_id: a.task_id!, is_active: false }, opts);
+
+    // With A disabled, creating B is allowed (active count is 0).
+    const b = (await tools.task_create!.execute!(
+      { name: "B", prompt: "p", schedule: "0 * * * *" },
+      opts,
+    )) as { task_id?: number };
+    expect(b.task_id).toBeGreaterThan(0);
+
+    // Re-enabling A would make 2 active tasks under a 1-task plan — must be rejected.
+    const reEnable = (await tools.task_toggle!.execute!(
+      { task_id: a.task_id!, is_active: true },
+      opts,
+    )) as { error?: string };
+    expect(reEnable.error).toMatch(/limit/i);
+
+    // A stays disabled — only B is active.
+    const rows = await t.db.select().from(cronTasks);
+    expect(rows.filter((r) => r.isActive)).toHaveLength(1);
+  });
 });
