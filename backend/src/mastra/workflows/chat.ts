@@ -1,0 +1,208 @@
+import type { Memory } from "@mastra/memory";
+import type { LibSQLDatabase } from "drizzle-orm/libsql";
+import * as schema from "../../db/schema.js";
+import type { Message, Skill } from "../../domain/entities.js";
+import { shouldAutoCompleteOnboarding } from "../../domain/entities.js";
+import { SettingsService } from "../../config/settings.js";
+import { SkillService, derivePreviousSkills } from "../../services/skill-service.js";
+import { loadContext } from "../../services/conversation-context.js";
+import { SkillRouter } from "../agents/router.js";
+import { LlmService, type StreamCallback } from "../llm.js";
+import { MemoryService } from "../memory/memory-service.js";
+import { ProfileExtractor } from "../memory/profile-extractor.js";
+import { LoopGuard } from "../agents/loop-guard.js";
+import {
+  runSkillStreaming,
+  runSkillSubAgent,
+  type SkillRunContext,
+} from "../agents/skill-agent.js";
+import { synthesize } from "../agents/synthesizer.js";
+import {
+  ensureThread,
+  saveUserMessage,
+  saveAssistant,
+  getRecentMessages,
+} from "../memory/history.js";
+import { validateUserMessage } from "../../pkg/promptguard.js";
+import { logger } from "../../pkg/logger.js";
+
+const log = logger.child({ mod: "chat" });
+
+type Db = LibSQLDatabase<typeof schema>;
+const FALLBACK_SKILL = "research";
+/** Shown to the user when generation fails or no skill could produce a result. */
+const FALLBACK_REPLY = "Не удалось сформировать ответ. Попробуйте переформулировать запрос.";
+
+/** All collaborators the chat workflow orchestrates (wired by the composition root). */
+export interface ChatDeps {
+  db: Db;
+  settings: SettingsService;
+  skills: SkillService;
+  router: SkillRouter;
+  llm: LlmService;
+  memoryService: MemoryService;
+  profileExtractor: ProfileExtractor;
+  loopGuard: LoopGuard;
+  /** Mastra conversation memory (threads/messages). */
+  memory: Memory;
+}
+
+export interface ChatInput {
+  userId: number;
+  chatId: number;
+  text: string;
+}
+
+export interface ChatResult {
+  text: string;
+  /** Skills chosen by the router (empty when rejected). */
+  skills: string[];
+  /** True when promptguard rejected the message (no LLM call was made). */
+  rejected: boolean;
+}
+
+/**
+ * Orchestrate one chat turn: promptguard → context → memories/history → route →
+ * run (single stream | multi sub-agents + synthesize) → persist → onboarding
+ * auto-complete. Parity with Go HandleMessageUseCase. Implemented as a flat async
+ * orchestrator (not Mastra createWorkflow) so token streaming to Telegram (`onText`)
+ * stays first-class — see plan Key Decisions.
+ */
+export async function runChat(
+  deps: ChatDeps,
+  input: ChatInput,
+  onText?: StreamCallback,
+): Promise<ChatResult> {
+  const { userId, chatId, text } = input;
+
+  // 1. promptguard — reject before any model call.
+  const guard = validateUserMessage(text);
+  if (!guard.ok) {
+    log.warn({ userId, reason: guard.reason }, "message rejected by promptguard");
+    return { text: guard.userMessage, skills: [], rejected: true };
+  }
+
+  // 2. conversation context (user / session / identity / thread).
+  const ctx = await loadContext(deps.db, deps.settings, userId, chatId);
+  await ensureThread(deps.memory, ctx.threadId, ctx.resourceId);
+
+  // 3. history BEFORE the current turn + previousSkills.
+  const agentCfg = await deps.settings.getAgent();
+  const recent = await getRecentMessages(deps.memory, ctx.threadId, ctx.resourceId, agentCfg.max_history);
+  const previousSkills = derivePreviousSkills(recent);
+
+  // Persist the user turn (durable even if generation later fails).
+  await saveUserMessage(deps.memory, ctx.threadId, ctx.resourceId, text);
+
+  // 4. relevant long-term memories + core prompt bodies.
+  const [memories, prompts, roles] = await Promise.all([
+    deps.memoryService.loadRelevant(userId, text),
+    deps.skills.getCorePrompts(),
+    deps.settings.getModelRoles(),
+  ]);
+
+  // 5. route (onboarding is forced inside resolveSkills when !onboarded).
+  const routable = await deps.skills.getRoutableSkills();
+  const selected = await deps.router.resolveSkills({
+    skills: routable,
+    recentMessages: recent,
+    userMessage: text,
+    previousSkills,
+    onboarded: ctx.user.onboarded,
+  });
+  const resolved = await resolveSkillObjects(deps.skills, selected);
+  log.debug({ userId, selected, resolved: resolved.map((s) => s.name), onboarded: ctx.user.onboarded }, "routed");
+
+  const agentCtx: SkillRunContext = {
+    user: ctx.user,
+    identity: ctx.identity,
+    memories,
+    prompts: { soul: prompts.soul, format: prompts.format, integrity: prompts.integrity },
+    history: recent,
+    userMessage: text,
+    mem: deps.memoryService,
+    userId,
+    defaultModel: roles.default,
+    defaultTemperature: agentCfg.default_temperature,
+  };
+
+  // 6. run: single → stream directly; multi → sub-agents in parallel → synthesize.
+  //    Any failure (no skill / all sub-agents fail / model error) degrades to a
+  //    user-facing fallback instead of throwing, so the caller always has a reply.
+  let answer: string;
+  if (resolved.length === 0) {
+    log.warn({ userId }, "no skill resolved; using fallback reply");
+    answer = FALLBACK_REPLY;
+  } else {
+    try {
+      if (resolved.length === 1) {
+        const skill = resolved[0]!;
+        log.debug({ skill: skill.name, path: "single" }, "executing");
+        answer = await runSkillStreaming({ llm: deps.llm, loopGuard: deps.loopGuard }, skill, agentCtx, onText);
+      } else {
+        log.debug({ skills: resolved.map((s) => s.name), path: "multi" }, "executing");
+        const results = await Promise.all(
+          resolved.map(async (s) => {
+            try {
+              return [s.name, await runSkillSubAgent({ llm: deps.llm, loopGuard: deps.loopGuard }, s, agentCtx)] as const;
+            } catch (err) {
+              log.warn({ skill: s.name, reason: err instanceof Error ? err.message : String(err) }, "sub-agent failed");
+              return [s.name, ""] as const;
+            }
+          }),
+        );
+        const skillResults = Object.fromEntries(results.filter(([, t]) => t.length > 0));
+        if (Object.keys(skillResults).length === 0) {
+          log.warn({ userId }, "all sub-agents failed; using fallback reply");
+          answer = FALLBACK_REPLY;
+        } else {
+          answer = await synthesize(
+            deps.llm,
+            skillResults,
+            {
+              user: ctx.user,
+              identity: ctx.identity,
+              memories,
+              prompts: { soul: prompts.soul, format: prompts.format, synthesizer: prompts.synthesizer },
+              history: recent,
+              userMessage: text,
+              synthesizerModel: roles.synthesizer,
+              sessionModel: ctx.session.model,
+            },
+            onText,
+          );
+        }
+      }
+    } catch (err) {
+      log.error({ userId, reason: err instanceof Error ? err.message : String(err) }, "generation failed; using fallback reply");
+      answer = FALLBACK_REPLY;
+    }
+  }
+
+  // 7. persist the assistant turn, tagged with the primary skill.
+  const skillTag = resolved[0]?.name ?? null;
+  await saveAssistant(deps.memory, ctx.threadId, ctx.resourceId, answer, skillTag);
+
+  // 8. onboarding auto-complete (msgCount includes the just-saved user + assistant turns).
+  const allMessages: Message[] = [
+    ...recent,
+    { role: "user", content: text },
+    { role: "assistant", content: answer, skill: skillTag },
+  ];
+  if (shouldAutoCompleteOnboarding(ctx.user.onboarded, allMessages.length)) {
+    log.info({ userId, msgCount: allMessages.length }, "auto-completing onboarding");
+    await deps.profileExtractor.applyOnboarding(deps.db, userId, allMessages);
+  }
+
+  return { text: answer, skills: resolved.map((s) => s.name), rejected: false };
+}
+
+/** Resolve skill names to Skill rows; fall back to `research` if nothing resolves. */
+async function resolveSkillObjects(skills: SkillService, names: string[]): Promise<Skill[]> {
+  const resolved = (await Promise.all(names.map((n) => skills.getSkillByName(n)))).filter(
+    (s): s is Skill => s !== null,
+  );
+  if (resolved.length > 0) return resolved;
+  const fallback = await skills.getSkillByName(FALLBACK_SKILL);
+  return fallback ? [fallback] : [];
+}

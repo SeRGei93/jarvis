@@ -7,6 +7,10 @@ import {
   threadIdForSession,
   resourceIdForUser,
   createConversationMemory,
+  ensureThread,
+  saveUserMessage,
+  saveAssistant,
+  getRecentMessages,
 } from "../../src/mastra/memory/history.js";
 import { users, sessions } from "../../src/db/schema.js";
 
@@ -37,5 +41,38 @@ describe("history helpers", () => {
     t = await createTestDb();
     const store = new LibSQLStore({ id: "test-history", url: t.url });
     expect(createConversationMemory(store, 15)).toBeDefined();
+  });
+});
+
+describe("history message I/O", () => {
+  it("saves user + assistant turns and reads them back with skill metadata", async () => {
+    t = await createTestDb();
+    const store = new LibSQLStore({ id: "test-history-io", url: t.url });
+    const memory = createConversationMemory(store, 15);
+    const threadId = threadIdForSession(1);
+    const resourceId = resourceIdForUser(1);
+
+    await ensureThread(memory, threadId, resourceId);
+    await saveUserMessage(memory, threadId, resourceId, "hello");
+    await saveAssistant(memory, threadId, resourceId, "hi there", "chat");
+
+    const msgs = await getRecentMessages(memory, threadId, resourceId, 15);
+    expect(msgs.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(msgs.map((m) => m.content)).toEqual(["hello", "hi there"]);
+    expect(msgs[0]!.skill).toBeNull();
+    expect(msgs[1]!.skill).toBe("chat");
+  });
+
+  it("ensureThread is idempotent", async () => {
+    t = await createTestDb();
+    const store = new LibSQLStore({ id: "test-history-idem", url: t.url });
+    const memory = createConversationMemory(store, 15);
+    const threadId = threadIdForSession(2);
+    const resourceId = resourceIdForUser(2);
+
+    await ensureThread(memory, threadId, resourceId);
+    await ensureThread(memory, threadId, resourceId); // no throw on second call
+    await saveUserMessage(memory, threadId, resourceId, "x");
+    expect((await getRecentMessages(memory, threadId, resourceId, 15)).length).toBe(1);
   });
 });

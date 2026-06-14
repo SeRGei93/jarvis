@@ -4,7 +4,7 @@
 Personalized AI assistant for Telegram — a TypeScript rewrite of **avocado-ai** (Go) on the **Mastra.ai** framework. Multi-provider LLM, skill-based routing, long-term memory with semantic search, tools, MCP, cron. Configuration (model roles, timeouts, skills, prompts, plans, MCP servers) lives in the **database** and is editable from a Telegram Mini App admin; `.env` holds only secrets.
 
 ## Status
-Migration **milestones 0–3 complete** (каркас, БД+настройки, LLM-слой, память). Source of truth: `.ai-factory/ROADMAP.md` (milestones 0→10). Next: **M4** — skill-agent factory + chat workflow.
+Migration **milestones 0–4 complete** (каркас, БД+настройки, LLM-слой, память, скилы+chat workflow). Source of truth: `.ai-factory/ROADMAP.md` (milestones 0→10). Next: **M5** — tools + MCP (currency, tasks/cron, profile, skill-ref; MCPClient `search`). Note: M4 wires a tool-resolver seam but only memory tools are live; the rest land in M5.
 
 ## Monorepo
 - **`backend/`** — Node + Mastra service (Telegram bot + cron + admin API in one process).

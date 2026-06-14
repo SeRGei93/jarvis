@@ -1,10 +1,14 @@
 import { createServer, type Server } from "node:http";
 import { logger } from "./pkg/logger.js";
-import { libsql } from "./db/client.js";
-import { mastra } from "./mastra/index.js";
+import { libsql, db } from "./db/client.js";
+import { mastra, storage, vector } from "./mastra/index.js";
+import { createChatService, type ChatService } from "./app.js";
 
 const log = logger.child({ mod: "server" });
 const PORT = Number(process.env.PORT ?? 8080);
+
+/** Constructed at boot (best-effort); the Telegram bot (M6) drives it. */
+export let chatService: ChatService | undefined;
 
 /**
  * Single-process entry point (ROADMAP §2): eventually hosts the Mastra/admin
@@ -14,6 +18,19 @@ const PORT = Number(process.env.PORT ?? 8080);
 function main(): void {
   // Touch the Mastra instance so storage/vector are constructed at boot.
   void mastra;
+
+  // Wire the chat stack. Best-effort: a fresh DB (not yet migrated/seeded) must
+  // not stop the health server from coming up — M6/cron will call it once ready.
+  createChatService({ db, storage, vector })
+    .then((svc) => {
+      chatService = svc;
+    })
+    .catch((err) => {
+      log.warn(
+        { reason: err instanceof Error ? err.message : String(err) },
+        "chat service init deferred (run migrations/seed?)",
+      );
+    });
 
   const server: Server = createServer((req, res) => {
     if (req.method === "GET" && req.url === "/health") {

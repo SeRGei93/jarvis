@@ -8,7 +8,7 @@
 - [x] **1. БД и настройки** — Drizzle-схема (10 таблиц из Postgres + `settings`/`models`/`skills`/`prompts`), миграции, сид из текущих `config.yaml`/`skills`/`prompts`, `SettingsService` (кэш + hot-reload)
 - [x] **2. LLM-слой** — провайдеры через AI SDK, фабрика модели `provider:model`, стрим + watchdog + ретраи/фолбэк + извлечение cost, embeddings (HTTP к OpenRouter), speech
 - [x] **3. Память** — `memories` + LibSQLVector RAG, classifier permanent/session, sensitivity-фильтр, дедуп, cap; profile-extractor (онбординг); Mastra Memory для истории диалога
-- [ ] **4. Скилы и воркфлоу** — фабрика skill-agent из БД, агент-роутер, синтезатор, chat workflow (single + multi), promptguard
+- [x] **4. Скилы и воркфлоу** — фабрика skill-agent из БД, агент-роутер, синтезатор, chat workflow (single + multi), promptguard
 - [ ] **5. Инструменты и MCP** — currency, tasks (cron CRUD), memory-tools, profile-tools, skill-ref; MCPClient (только сервер `search`)
 - [ ] **6. Telegram-бот** — grammY: polling/webhook, троттлинг-стриминг `editMessageText`, голос→speech, markdown-формат, команды, messenger для уведомлений
 - [ ] **7. Cron-планировщик** — node-cron, исполнитель задач, нотификации пользователю
@@ -24,6 +24,7 @@
 | 1. БД и настройки | 2026-06-14 |
 | 2. LLM-слой | 2026-06-14 |
 | 3. Память | 2026-06-14 |
+| 4. Скилы и воркфлоу | 2026-06-14 |
 
 ---
 
