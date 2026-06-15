@@ -26,7 +26,6 @@ describe("runSeed (code seed -> settings/models/plans)", () => {
     expect(roles.router).toContain("gpt-oss-120b");
 
     const agent = s.find((r) => r.key === SettingKey.Agent)?.value as Record<string, number>;
-    expect(agent.rag_top_k).toBe(10);
     expect(agent.max_history).toBe(15);
 
     const m = await t.db.select().from(models);

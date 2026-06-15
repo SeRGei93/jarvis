@@ -1,8 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createTestDb, type TestDb } from "../helpers/libsql.js";
 import { users } from "../../src/db/schema.js";
-import { MEMORIES_INDEX } from "../../src/db/vector.js";
-import { EMBEDDING_DIM } from "../../src/domain/entities.js";
 
 let t: TestDb | undefined;
 afterEach(() => {
@@ -25,7 +23,7 @@ const EXPECTED_TABLES = [
   "models",
 ];
 
-describe("schema migrations + vector index", () => {
+describe("schema migrations", () => {
   it("creates all 12 tables", async () => {
     t = await createTestDb();
     const res = await t.client.execute("SELECT name FROM sqlite_master WHERE type='table'");
@@ -41,24 +39,5 @@ describe("schema migrations + vector index", () => {
     expect(got[0]?.name).toBe("Тест");
     expect(got[0]?.onboarded).toBe(false);
     expect(got[0]?.city).toBe("");
-  });
-
-  it("vector index accepts 1024-dim vectors and filters by userId", async () => {
-    t = await createTestDb();
-    const vec = Array.from({ length: EMBEDDING_DIM }, (_, i) => (i === 0 ? 1 : 0));
-    await t.vector.upsert({
-      indexName: MEMORIES_INDEX,
-      vectors: [vec, vec],
-      metadata: [{ userId: 1 }, { userId: 2 }],
-      ids: ["m1", "m2"],
-    });
-    const res = await t.vector.query({
-      indexName: MEMORIES_INDEX,
-      queryVector: vec,
-      topK: 5,
-      filter: { userId: 1 },
-    });
-    expect(res).toHaveLength(1);
-    expect(res[0]?.id).toBe("m1");
   });
 });

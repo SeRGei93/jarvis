@@ -3,7 +3,7 @@ import { Bot, webhookCallback } from "grammy";
 import { logger } from "./pkg/logger.js";
 import { env } from "./config/env.js";
 import { libsql, db } from "./db/client.js";
-import { mastra, storage, vector } from "./mastra/index.js";
+import { mastra, storage } from "./mastra/index.js";
 import { createChatService, type ChatService } from "./app.js";
 import { ensurePopulated } from "./content/store.js";
 import {
@@ -134,7 +134,7 @@ async function populateContentStore(): Promise<void> {
  * all on one libSQL/Mastra-backed stack.
  */
 function main(): void {
-  // Touch the Mastra instance so storage/vector are constructed at boot.
+  // Touch the Mastra instance so storage is constructed at boot.
   void mastra;
 
   // The HTTP surface comes up immediately; the chat stack, bot and scheduler are
@@ -151,7 +151,7 @@ function main(): void {
   });
 
   populateContentStore()
-    .then(() => createChatService({ db, storage, vector }))
+    .then(() => createChatService({ db, storage }))
     .then(async (svc) => {
       chatService = svc;
       bot = await startBot(svc).catch((err) => {

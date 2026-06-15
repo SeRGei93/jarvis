@@ -29,11 +29,10 @@ const patchSchema = z
   })
   .refine((o) => Object.keys(o).length > 0, { message: "no fields to update" });
 
-/** All six role slots; each ref is optional/empty (cleared role = ""). */
+/** All five role slots; each ref is optional/empty (cleared role = ""). */
 const rolesSchema = z.object({
   default: z.string().optional(),
   router: z.string().optional(),
-  embedding: z.string().optional(),
   error_correction: z.string().optional(),
   speech: z.string().optional(),
   synthesizer: z.string().optional(),
@@ -175,7 +174,6 @@ export function modelsRoutes(): Hono<AdminEnv> {
     const roles: ModelRoles = {
       default: parsed.data.default ?? "",
       router: parsed.data.router ?? "",
-      embedding: parsed.data.embedding ?? "",
       error_correction: parsed.data.error_correction ?? "",
       speech: parsed.data.speech ?? "",
       synthesizer: parsed.data.synthesizer ?? "",

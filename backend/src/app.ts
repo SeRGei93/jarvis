@@ -1,12 +1,12 @@
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
-import type { LibSQLStore, LibSQLVector } from "@mastra/libsql";
+import type { LibSQLStore } from "@mastra/libsql";
 import * as schema from "./db/schema.js";
 import { SettingsService } from "./config/settings.js";
 import { ModelFactory } from "./mastra/models.js";
 import { LlmService, type StreamCallback } from "./mastra/llm.js";
-import { EmbeddingService } from "./mastra/embeddings.js";
 import { SkillService } from "./services/skill-service.js";
 import { MemoryService } from "./mastra/memory/memory-service.js";
+import { LlmDedupChecker } from "./mastra/memory/dedup.js";
 import { ProfileExtractor } from "./mastra/memory/profile-extractor.js";
 import { SkillRouter } from "./mastra/agents/router.js";
 import { LoopGuard } from "./mastra/agents/loop-guard.js";
@@ -23,7 +23,6 @@ type Db = LibSQLDatabase<typeof schema>;
 export interface ChatServiceOptions {
   db: Db;
   storage: LibSQLStore;
-  vector: LibSQLVector;
   /**
    * Skill/prompt service. Defaults to the file-backed content store
    * (SKILLS_DIR/PROMPTS_DIR); injectable so tests can point at temp dirs.
@@ -61,8 +60,8 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
   // Skills/prompts come from the file-backed content store (SKILLS_DIR/PROMPTS_DIR),
   // not the DB. The store must be populated before this runs (server.ts boot).
   const skills = opts.skills ?? new SkillService();
-  const embedder = new EmbeddingService({ modelRef: roles.embedding ?? "" });
-  const memoryService = new MemoryService(opts.db, opts.vector, embedder, settings);
+  const dedup = new LlmDedupChecker(factory, settings);
+  const memoryService = new MemoryService(opts.db, dedup);
   const profileExtractor = new ProfileExtractor(factory, settings);
   const router = new SkillRouter(factory, settings);
   const loopGuard = new LoopGuard();

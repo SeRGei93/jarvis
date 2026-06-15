@@ -19,8 +19,8 @@ const ctx: ToolContext = {
 
 describe("resolveTools", () => {
   it("resolves known memory tools", () => {
-    const tools = resolveTools(["remember", "memory_search"], ctx);
-    expect(Object.keys(tools).sort()).toEqual(["memory_search", "remember"]);
+    const tools = resolveTools(["remember", "list_memories"], ctx);
+    expect(Object.keys(tools).sort()).toEqual(["list_memories", "remember"]);
   });
 
   it("resolves memory tools and skips unknown names", () => {

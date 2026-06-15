@@ -111,7 +111,7 @@ export async function runChat(
 
   // 4. relevant long-term memories + core prompt bodies.
   const [memories, prompts, roles] = await Promise.all([
-    deps.memoryService.loadRelevant(userId, text),
+    deps.memoryService.loadRelevant(userId),
     deps.skills.getCorePrompts(),
     deps.settings.getModelRoles(),
   ]);

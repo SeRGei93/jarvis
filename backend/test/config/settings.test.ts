@@ -31,7 +31,6 @@ describe("SettingsService", () => {
 
     expect((await svc.getModelRoles()).default).toBe("openrouter:google/gemini-3.1-flash-lite");
     const agent = await svc.getAgent();
-    expect(agent.rag_top_k).toBe(10);
     expect(agent.max_history).toBe(15);
     expect(await svc.getAllowedUsers()).toEqual([]);
     expect((await svc.getTimeouts()).llm_request).toBe("300s");
@@ -65,10 +64,10 @@ describe("SettingsService", () => {
 
     await t.db
       .update(settings)
-      .set({ value: { rag_top_k: 99, max_history: 1, default_temperature: 0.1 } })
+      .set({ value: { max_history: 99, default_temperature: 0.1 } })
       .where(eq(settings.key, SettingKey.Agent));
 
     svc.invalidate();
-    expect((await svc.getAgent()).rag_top_k).toBe(99);
+    expect((await svc.getAgent()).max_history).toBe(99);
   });
 });

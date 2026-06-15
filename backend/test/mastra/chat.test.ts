@@ -4,7 +4,8 @@ import { LibSQLStore } from "@mastra/libsql";
 import { createTestDb, type TestDb } from "../helpers/libsql.js";
 import { runChat, type ChatDeps } from "../../src/mastra/workflows/chat.js";
 import { SkillRouter, type RouteModelFn } from "../../src/mastra/agents/router.js";
-import { MemoryService, type Embedder } from "../../src/mastra/memory/memory-service.js";
+import { MemoryService } from "../../src/mastra/memory/memory-service.js";
+import type { DedupChecker } from "../../src/mastra/memory/dedup.js";
 import { ProfileExtractor, type ExtractFn } from "../../src/mastra/memory/profile-extractor.js";
 import { LoopGuard } from "../../src/mastra/agents/loop-guard.js";
 import { RateLimitService } from "../../src/services/rate-limit.js";
@@ -29,15 +30,14 @@ const settings = {
   getModelRoles: async () => ({
     default: "openrouter:default",
     router: "openrouter:router",
-    embedding: "openrouter:embed",
     error_correction: "openrouter:ec",
     speech: "openrouter:speech",
     synthesizer: "openrouter:synth",
   }),
-  getAgent: async () => ({ max_history: 15, default_temperature: 0.4, rag_top_k: 10 }),
+  getAgent: async () => ({ max_history: 15, default_temperature: 0.4 }),
 } as unknown as SettingsService;
 
-const embedder: Embedder = { generate: async () => new Array(1024).fill(0) };
+const dedup: DedupChecker = { isDuplicate: async () => false };
 
 const SKILLS: SkillInput[] = [
   { name: "chat", description: "small talk", routable: true },
@@ -80,7 +80,7 @@ function makeDeps(
     skills: content!.skills,
     router: new SkillRouter(factory, settings, routeFn),
     llm,
-    memoryService: new MemoryService(t.db, t.vector, embedder, settings),
+    memoryService: new MemoryService(t.db, dedup),
     profileExtractor: new ProfileExtractor(factory, settings, extractFn),
     loopGuard: new LoopGuard(() => 0),
     memory: createConversationMemory(new LibSQLStore({ id: "chat-test", url: t.url }), 15),

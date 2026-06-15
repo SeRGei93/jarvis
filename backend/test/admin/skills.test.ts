@@ -17,12 +17,11 @@ const settings = {
   getModelRoles: async () => ({
     default: "openrouter:default",
     router: "openrouter:router",
-    embedding: "openrouter:embed",
     error_correction: "openrouter:ec",
     speech: "openrouter:speech",
     synthesizer: "openrouter:synth",
   }),
-  getAgent: async () => ({ max_history: 15, default_temperature: 0.4, rag_top_k: 10 }),
+  getAgent: async () => ({ max_history: 15, default_temperature: 0.4 }),
   getTimeouts: async () => ({ llm_request: "300s", http_client: "300s", llm_activity: "30s" }),
 } as unknown as SettingsService;
 
@@ -41,7 +40,7 @@ const fakeRun: SkillRunFn = async (_deps, skill, ctx) => ({
 const RESEARCH: SkillInput = {
   name: "research",
   description: "deep research",
-  allowedTools: ["memory_search"],
+  allowedTools: ["list_memories"],
   model: "",
   routable: true,
   prompt: "Be a researcher.",

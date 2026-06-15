@@ -30,7 +30,6 @@ type ModelMutation = MutationResult<ModelRow>;
 const ROLE_FIELDS: { key: keyof ModelRoles; label: string }[] = [
   { key: "default", label: "По умолчанию (default)" },
   { key: "router", label: "Маршрутизатор (router)" },
-  { key: "embedding", label: "Эмбеддинги (embedding)" },
   { key: "error_correction", label: "Исправление ошибок (error_correction)" },
   { key: "speech", label: "Речь (speech)" },
   { key: "synthesizer", label: "Синтезатор (synthesizer)" },
@@ -39,7 +38,6 @@ const ROLE_FIELDS: { key: keyof ModelRoles; label: string }[] = [
 const EMPTY_ROLES: ModelRoles = {
   default: "",
   router: "",
-  embedding: "",
   error_correction: "",
   speech: "",
   synthesizer: "",

@@ -37,7 +37,6 @@ export interface ModelRow {
 export interface ModelRoles {
   default: string;
   router: string;
-  embedding: string;
   error_correction: string;
   speech: string;
   synthesizer: string;
@@ -54,7 +53,6 @@ export interface SettingsTimeouts {
 export interface AgentConfig {
   max_history: number;
   default_temperature: number;
-  rag_top_k: number;
 }
 
 // ── prompts (prompts table) ─────────────────────────────────────────────────

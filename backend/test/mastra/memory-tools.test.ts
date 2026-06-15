@@ -1,21 +1,11 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createTestDb, type TestDb } from "../helpers/libsql.js";
-import { MemoryService, type Embedder } from "../../src/mastra/memory/memory-service.js";
+import { MemoryService } from "../../src/mastra/memory/memory-service.js";
+import type { DedupChecker } from "../../src/mastra/memory/dedup.js";
 import { buildMemoryTools } from "../../src/mastra/tools/memory-tools.js";
 import { users } from "../../src/db/schema.js";
-import type { SettingsService } from "../../src/config/settings.js";
 
-const embedder: Embedder = {
-  generate: async (text) => {
-    const v = new Array(1024).fill(0);
-    for (let i = 0; i < text.length; i++) v[(text.charCodeAt(i) * 131 + i * 17) % 1024] += 1;
-    if (text.length === 0) v[0] = 1;
-    return v;
-  },
-};
-const fakeSettings = {
-  getAgent: async () => ({ max_history: 15, default_temperature: 0.4, rag_top_k: 10 }),
-} as unknown as SettingsService;
+const dedup: DedupChecker = { isDuplicate: async () => false };
 
 // Minimal ToolCallOptions for direct execute() calls in tests.
 const opts = { toolCallId: "test", messages: [] } as never;
@@ -29,7 +19,7 @@ afterEach(() => {
 async function tools() {
   t = await createTestDb();
   await t.db.insert(users).values({ id: 1, name: "u" });
-  const mem = new MemoryService(t.db, t.vector, embedder, fakeSettings);
+  const mem = new MemoryService(t.db, dedup);
   return buildMemoryTools(mem, 1);
 }
 

@@ -15,7 +15,7 @@ const log = logger.child({ mod: "tool-registry" });
 
 type Db = LibSQLDatabase<typeof schema>;
 
-const MEMORY_TOOL_NAMES = new Set(["remember", "forget", "list_memories", "memory_search"]);
+const MEMORY_TOOL_NAMES = new Set(["remember", "forget", "list_memories"]);
 
 /** Everything a tool's `execute` may need, threaded from the chat workflow. */
 export interface ToolContext {

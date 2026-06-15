@@ -1,20 +1,12 @@
 import { z } from "zod";
 
 // ══════════════════════════════════════════════════════════════════════════
-// Invariant constants — parity with the Go version (exact values).
+// Invariant constants.
 // ══════════════════════════════════════════════════════════════════════════
-/** Embedding dimension (intfloat/multilingual-e5-large). */
-export const EMBEDDING_DIM = 1024;
-/** Cosine similarity at/above which a new memory is considered a duplicate. */
-export const DUPLICATE_SIMILARITY_THRESHOLD = 0.92;
 /** Max permanent memories kept per user (oldest trimmed beyond this). */
 export const MAX_PERMANENT_MEMORIES = 50;
 /** Auto-complete onboarding once a user has sent this many messages. */
 export const ONBOARDING_MESSAGE_THRESHOLD = 4;
-/** Switch from "load all" to RAG once a user has this many regular facts. */
-export const RAG_THRESHOLD = 10;
-/** Default number of memories retrieved by RAG (configurable via settings). */
-export const RAG_TOP_K = 10;
 
 // ══════════════════════════════════════════════════════════════════════════
 // Enums
@@ -79,8 +71,6 @@ export const Memory = z.object({
   scope: MemoryScope,
   sessionId: z.number().int().nullable().optional(),
   content: z.string(),
-  /** 1024-dim vector; absent if embedding generation failed. */
-  embedding: z.array(z.number()).length(EMBEDDING_DIM).nullable().optional(),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),
 });

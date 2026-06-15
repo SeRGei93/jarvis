@@ -5,9 +5,8 @@ import { containsInjection } from "../../pkg/promptguard.js";
 import { logger } from "../../pkg/logger.js";
 
 const log = logger.child({ mod: "memory-tools" });
-const SEARCH_LIMIT = 10;
 
-/** Build the per-user memory tools (remember/forget/list_memories/memory_search). */
+/** Build the per-user memory tools (remember/forget/list_memories). */
 export function buildMemoryTools(mem: MemoryService, userId: number): ToolSet {
   return {
     remember: tool({
@@ -47,22 +46,6 @@ export function buildMemoryTools(mem: MemoryService, userId: number): ToolSet {
           count: rows.length,
           memories: rows.map((r) => ({
             id: r.id,
-            content: r.content,
-            category: r.category,
-            created_at: r.createdAt,
-          })),
-        };
-      },
-    }),
-
-    memory_search: tool({
-      description: "Search the user's memories by meaning. Returns matches (without ids).",
-      inputSchema: z.object({ query: z.string() }),
-      execute: async ({ query }) => {
-        const rows = await mem.search(userId, query, SEARCH_LIMIT);
-        return {
-          count: rows.length,
-          memories: rows.map((r) => ({
             content: r.content,
             category: r.category,
             created_at: r.createdAt,

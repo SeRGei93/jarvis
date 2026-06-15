@@ -49,13 +49,12 @@ export function SettingsScreen() {
   });
 
   const agentForm = useForm<AgentConfig>({
-    initialValues: { max_history: 0, default_temperature: 0, rag_top_k: 1 },
+    initialValues: { max_history: 0, default_temperature: 0 },
     validate: {
       max_history: (v) =>
         Number.isInteger(v) && v >= 0 ? null : "Целое число ≥ 0",
       default_temperature: (v) =>
         v >= 0 && v <= 2 ? null : "Число от 0 до 2",
-      rag_top_k: (v) => (Number.isInteger(v) && v >= 1 ? null : "Целое число ≥ 1"),
     },
   });
 
@@ -187,14 +186,6 @@ export function SettingsScreen() {
               step={0.1}
               decimalScale={2}
               {...agentForm.getInputProps("default_temperature")}
-            />
-            <NumberInput
-              label="RAG topK (rag_top_k)"
-              description="Сколько фрагментов памяти извлекать"
-              min={1}
-              step={1}
-              allowDecimal={false}
-              {...agentForm.getInputProps("rag_top_k")}
             />
             <Group justify="flex-end">
               <Button type="submit" loading={savingAgent} disabled={!agentForm.isDirty()}>

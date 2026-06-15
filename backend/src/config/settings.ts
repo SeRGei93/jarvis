@@ -42,7 +42,7 @@ function defaultTimeouts(): TimeoutsConfig {
   return { llm_request: "300s", http_client: "300s", llm_activity: "30s" };
 }
 function defaultAgent(): AgentConfig {
-  return { max_history: 15, default_temperature: 0.4, rag_top_k: 10 };
+  return { max_history: 15, default_temperature: 0.4 };
 }
 function epochSeconds(d: Date | number | null | undefined): number {
   if (d == null) return 0;

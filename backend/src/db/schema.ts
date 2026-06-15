@@ -63,8 +63,8 @@ export const sessions = sqliteTable("sessions", {
 });
 
 // ── memories ────────────────────────────────────────────────────────────────
-// Embedding vectors live in the LibSQLVector index `memories_vec` (Task 6),
-// keyed by memory id with metadata {memoryId, userId, scope, category}.
+// Long-term user facts. The per-user set is capped (50 permanent) and loaded into
+// context whole — no embeddings/vector index (M13). Dedup at save is an LLM check.
 export const memories = sqliteTable(
   "memories",
   {

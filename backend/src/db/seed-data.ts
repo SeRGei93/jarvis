@@ -14,7 +14,6 @@
 export const SEED_MODEL_ROLES = {
   default: "openrouter:google/gemini-3.1-flash-lite",
   router: "openrouter:openai/gpt-oss-120b:nitro",
-  embedding: "openrouter:intfloat/multilingual-e5-large",
   error_correction: "openrouter:google/gemini-3-flash-preview",
   speech: "openrouter:google/gemini-3.1-flash-lite",
   synthesizer: "openrouter:google/gemini-3-flash-preview",
@@ -49,11 +48,10 @@ export const SEED_TIMEOUTS = {
   llm_activity: "30s",
 } as const;
 
-/** Agent params actually read by the app (rag_top_k is now configurable, not hardcoded). */
+/** Agent params actually read by the app. */
 export const SEED_AGENT = {
   max_history: 15,
   default_temperature: 0.4,
-  rag_top_k: 10,
 } as const;
 
 /** Telegram chat allowlist — empty by default. */

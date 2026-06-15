@@ -13,12 +13,12 @@ All speckit outputs (spec.md, plan.md, tasks.md, checklists) MUST be written in 
 domain/ (pure zod + rules) ← config/ services/ ← mastra/ adapters ← server.ts
 ```
 - ❌ NEVER import `mastra`/`config`/`db` from `domain`.
-- ❌ NEVER hard-wire a concrete impl where injection fits — keep `ModelFactory` / `SettingsService` / `fetchFn` / `Embedder` injectable (this is why tests need no network).
+- ❌ NEVER hard-wire a concrete impl where injection fits — keep `ModelFactory` / `SettingsService` / `fetchFn` / `DedupChecker` injectable (this is why tests need no network).
 
 ## Stack invariants
 - **ESM / NodeNext**: relative imports use the `.js` extension.
 - **AI SDK v6**: resolve models through `ModelFactory` (`provider:model`).
-- **libSQL** via drizzle (dialect `turso`) + **LibSQLVector**; schema changes → `npm run db:generate`.
+- **libSQL** via drizzle (dialect `turso`); schema changes → `npm run db:generate`. (No vector store — long-term memory is a plain relational table loaded whole.)
 - Config comes from the DB via `SettingsService`; **`.env` = secrets ONLY**.
 
 ## Security
@@ -37,7 +37,9 @@ domain/ (pure zod + rules) ← config/ services/ ← mastra/ adapters ← server
 - [ ] No secrets in code or logs?
 
 ## Parity with Go (keep exact)
-dedup `0.92` · cap `50` · onboarding `@4` · RAG threshold/topK `10` · embedding `1024` · watchdog `30s` · llm_request `300s` · maxSteps `30` · maxRetries `3`. No auto memory-extraction (only `remember` + onboarding). Web search/scraping is **native** (the `web` tool bucket over SearXNG, no MCP); `exec` not ported.
+cap `50` · onboarding `@4` · watchdog `30s` · llm_request `300s` · maxSteps `30` · maxRetries `3`. No auto memory-extraction (only `remember` + onboarding). Web search/scraping is **native** (the `web` tool bucket over SearXNG, no MCP); `exec` not ported.
+
+**Diverges from Go (M13):** long-term memory has **no vector/RAG/embeddings**. The per-user set is capped at 50, so it is loaded into context whole; dedup at save is an **LLM check** (`DedupChecker`), not cosine `0.92`. The `embedding` model role and `rag_top_k` setting are gone.
 
 ## Status
-Milestones **0–9 + 11 done** (10 — N/A: new project, no Go migration). Roadmap + plans in `.ai-factory/ROADMAP.md` and `.ai-factory/plans/`. Latest: **M11** (native `web` tool bucket over SearXNG, MCP plumbing removed).
+Milestones **0–9 + 11 done** (10 — N/A: new project, no Go migration). Roadmap + plans in `.ai-factory/ROADMAP.md` and `.ai-factory/plans/`. Latest: **M13** (long-term memory de-vectorised: load-all + LLM dedup, embeddings/LibSQLVector removed).

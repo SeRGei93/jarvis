@@ -17,6 +17,7 @@
 - [ ] ~~**10. Паритет и переключение**~~ — **НЕ актуально**: новый проект, Go не мигрируем и не выводим из эксплуатации.
 - [x] **11. Встроенный web-search (нативные инструменты)** — перенос внешнего MCP-сервиса `search` в backend как нативный AI-SDK бакет `web` (21 инструмент: `web_search`/`web_search_batch`/`fetch_url`/`search_news`/маркетплейсы РБ kufar·av.by·rabota·zippybus·relax + 103.by (4 консолидированных) + `weather` + 6 lookup), `searxng`+`redis` в compose, SSRF-guard на `fetch_url`, без браузера/Chromium; MCP-плумбинг удалён целиком. **Отменяет** §9 («search оставляем как отдельный MCP-сервис»), parity-заметку «MCP `search` only» и §10.3 (weather как MCP-tool) — полную сверку ROADMAP/CLAUDE сделать через `/aif-roadmap` + `/aif-rules`.
 - [x] **12. Файловый источник скилов и промтов** — скилы (`backend/skills/<name>/SKILL.md`) и системные промпты (`backend/prompts/*.md`) переехали из таблиц БД в **файловый стор** (`src/content/`): репо-дефолты + персистентный том (`SKILLS_DIR`/`PROMPTS_DIR`), **populate-if-empty** на старте, атомарная запись (`*.tmp`+rename) и hot-reload (сверка mtime), валидация имён/ключей (containment). Админка пишет файлы стора (HTTP-контракт name/key-адресный, фронт не тронут). Таблицы `skills`/`prompts` **удалены** (миграция 0001); `config.yaml` заменён на код-сид (`src/db/seed-data.ts`) — в БД сидятся только `settings`/`models`/`subscriptionPlans`.
+- [x] **13. Память без вектора** — долгосрочная память де-векторизована: `LibSQLVector`/индекс `memories_vec`, `EmbeddingService` и весь RAG **удалены**. Таблица `memories` остаётся источником правды, но при cap 50 грузится в контекст **целиком** (`loadRelevant` без RAG/topK). Дедуп при `remember` — **LLM-проверка** (`DedupChecker`/`LlmDedupChecker`, инъектируемая → тесты без сети) вместо cosine `0.92`. Инструмент `memory_search` убран (вся память и так в контексте). Чистка: роль модели `embedding`, настройка `rag_top_k` и константы `EMBEDDING_DIM`/`RAG_*`/`DUPLICATE_SIMILARITY_THRESHOLD` удалены по бэку и фронту. **Сознательный отход от Go-паритета** (зафиксировано в CLAUDE.md).
 
 ## Completed
 
@@ -33,6 +34,7 @@
 | 8. Админка (Mini App) | 2026-06-14 |
 | 11. Встроенный web-search (нативные инструменты) | 2026-06-15 |
 | 12. Файловый источник скилов и промтов | 2026-06-15 |
+| 13. Память без вектора | 2026-06-15 |
 
 ---
 

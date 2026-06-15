@@ -88,13 +88,12 @@ describe("settingsRoutes — agent", () => {
     expect(await res.json()).toMatchObject({
       max_history: 15,
       default_temperature: 0.4,
-      rag_top_k: 10,
     });
   });
 
   it("PUT updates and a later read reflects the change", async () => {
     const { app, settings } = await makeApp();
-    const body = { max_history: 20, default_temperature: 0.7, rag_top_k: 5 };
+    const body = { max_history: 20, default_temperature: 0.7 };
     const res = await app.request("/agent", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -109,17 +108,7 @@ describe("settingsRoutes — agent", () => {
     const res = await app.request("/agent", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ max_history: 10, default_temperature: 5, rag_top_k: 10 }),
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it("PUT rejects rag_top_k below 1", async () => {
-    const { app } = await makeApp();
-    const res = await app.request("/agent", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ max_history: 10, default_temperature: 0.4, rag_top_k: 0 }),
+      body: JSON.stringify({ max_history: 10, default_temperature: 5 }),
     });
     expect(res.status).toBe(400);
   });
