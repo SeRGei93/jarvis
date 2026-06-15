@@ -22,6 +22,10 @@ services:
       SEARXNG_URL: http://searxng:8080
       # Web fetch/search file cache (under the mounted ./data/db → /data).
       WEB_CACHE_DIR: /data/web-cache
+      # File-backed skill/prompt store on the persistent volume — populated from
+      # the image's bundled defaults on first run; admin edits persist here.
+      SKILLS_DIR: /data/skills
+      PROMPTS_DIR: /data/prompts
     volumes:
       - ./data/db:/data
     expose:

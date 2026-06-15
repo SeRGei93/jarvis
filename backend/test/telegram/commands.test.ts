@@ -2,7 +2,6 @@ import { describe, it, expect, afterEach } from "vitest";
 import { eq } from "drizzle-orm";
 import { createTestDb, type TestDb } from "../helpers/libsql.js";
 import { SettingsService } from "../../src/config/settings.js";
-import { SkillService } from "../../src/services/skill-service.js";
 import { UsageService } from "../../src/services/usage.js";
 import { MemoryService } from "../../src/mastra/memory/memory-service.js";
 import {
@@ -16,10 +15,14 @@ import {
   type CommandDeps,
   type ChatHandler,
 } from "../../src/telegram/commands.js";
-import { users, sessions, memories, cronTasks, prompts } from "../../src/db/schema.js";
+import { users, sessions, memories, cronTasks } from "../../src/db/schema.js";
+import { tempContent, type ContentFixture } from "../helpers/content.js";
 
 let t: TestDb | undefined;
+let content: ContentFixture | undefined;
 afterEach(() => {
+  content?.cleanup();
+  content = undefined;
   t?.cleanup();
   t = undefined;
 });
@@ -28,13 +31,15 @@ const fakeChat: ChatHandler = {
   handleUserMessage: async (_u, _c, text) => ({ text: `echo:${text}`, skills: [], rejected: false }),
 };
 
-function makeDeps(db: TestDb, chat: ChatHandler = fakeChat): CommandDeps {
+function makeDeps(db: TestDb, chat: ChatHandler = fakeChat, prompts: Record<string, string> = {}): CommandDeps {
   const settings = new SettingsService(db.db);
   const embedder = { generate: async () => new Array(1024).fill(0) };
+  content?.cleanup();
+  content = tempContent({ prompts });
   return {
     db: db.db,
     settings,
-    skills: new SkillService(db.db),
+    skills: content.skills,
     usage: new UsageService(db.db),
     memory: new MemoryService(db.db, db.vector, embedder, settings),
     chat,
@@ -56,8 +61,7 @@ async function makeSession(db: TestDb["db"], chatId: number, userId: number): Pr
 describe("commands", () => {
   it("/start returns the WELCOME prompt body", async () => {
     t = await createTestDb();
-    await t.db.insert(prompts).values({ key: "WELCOME", body: "Здравствуйте!" });
-    expect(await cmdStart(makeDeps(t))).toBe("Здравствуйте!");
+    expect(await cmdStart(makeDeps(t, fakeChat, { WELCOME: "Здравствуйте!" }))).toBe("Здравствуйте!");
   });
 
   it("/new rotates the thread and clears session memories but keeps permanent ones", async () => {

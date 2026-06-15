@@ -218,33 +218,6 @@ export const models = sqliteTable("models", {
   updatedAt: updatedAt(),
 });
 
-// ── skills ──────────────────────────────────────────────────────────────────
-// One row per skill (seeded from skills/*/SKILL.md). reasoning is tri-state:
-// null = provider default, false = disabled, true = enabled. temperature null =
-// fall back to agent.default_temperature.
-export const skills = sqliteTable("skills", {
-  name: text("name").primaryKey(),
-  description: text("description").notNull().default(""),
-  allowedTools: text("allowed_tools", { mode: "json" })
-    .$type<string[]>()
-    .notNull()
-    .default(sql`'[]'`),
-  model: text("model").notNull().default(""),
-  temperature: real("temperature"),
-  reasoning: integer("reasoning", { mode: "boolean" }),
-  routable: integer("routable", { mode: "boolean" }).notNull().default(true),
-  prompt: text("prompt").notNull().default(""),
-  metadata: text("metadata", { mode: "json" })
-    .$type<Record<string, string>>()
-    .notNull()
-    .default(sql`'{}'`),
-  updatedAt: updatedAt(),
-});
-
-// ── prompts ─────────────────────────────────────────────────────────────────
-// System prompts: SOUL/FORMAT/INTEGRITY/SYNTHESIZER/WELCOME/MONITORING.
-export const prompts = sqliteTable("prompts", {
-  key: text("key").primaryKey(),
-  body: text("body").notNull().default(""),
-  updatedAt: updatedAt(),
-});
+// NOTE: skills and prompts are NO LONGER DB tables — they live in the file-backed
+// content store (src/content/, SKILLS_DIR/PROMPTS_DIR): repo-bundled defaults
+// populated onto a persistent volume, read AND written there (admin edits persist).

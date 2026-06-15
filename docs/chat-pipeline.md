@@ -30,7 +30,7 @@ text ─▶ promptguard ─▶ loadContext ─▶ rate-limit ─▶ history + me
 2. **conversation-context** — `loadContext(db, settings, userId, chatId)` loads the `User`, gets-or-creates the `Session` (model defaults to `roles.default`), loads the optional `BotIdentity`, and resolves the Mastra thread / resource ids. The Mastra thread is ensured to exist.
 3. **rate-limit** — `RateLimitService.checkAndConsume(userId)` enforces the hourly window from the user's plan (`hourly_limit`). Un-onboarded users are bypassed; over the limit the turn is rejected (canned reply, no routing). See [Configuration](configuration.md#plans-rate-limit-and-usage).
 4. **history + previousSkills** — `getRecentMessages(...)` reads the last `agent.max_history` messages; `derivePreviousSkills(...)` collects the skill tags from prior assistant turns (newest-first). The current user message is then persisted.
-5. **memories + prompts** — `MemoryService.loadRelevant(userId, text)` returns the RAG-selected long-term facts; the SOUL/FORMAT/INTEGRITY/SYNTHESIZER bodies are loaded from the `prompts` table.
+5. **memories + prompts** — `MemoryService.loadRelevant(userId, text)` returns the RAG-selected long-term facts; the SOUL/FORMAT/INTEGRITY/SYNTHESIZER bodies are loaded from the file-backed prompt store (`PROMPTS_DIR`) via `SkillService`.
 6. **route** — `SkillRouter.resolveSkills(...)`. If the user is not onboarded, `onboarding` is forced and the router is bypassed; otherwise the router model returns 1–4 routable skills (falling back to `research`).
 7. **run** — see below; each leg surfaces its LLM `cost`.
 8. **record usage** — `UsageService.recordUsage(userId, cost)` accumulates the turn's cost + request count into `usage_stats`.

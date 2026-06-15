@@ -34,6 +34,12 @@ const EnvSchema = z.object({
   // Web fetch/search file cache dir; container overrides to /data/web-cache via compose.
   WEB_CACHE_DIR: z.string().min(1).default("./data/web-cache"),
 
+  // Content store (file-backed skills/prompts). Repo defaults populate these on
+  // first run; afterwards the app reads AND writes here (edits survive redeploys
+  // on the persistent volume). Container overrides to /data/{skills,prompts} via compose.
+  SKILLS_DIR: z.string().min(1).default("./data/skills"),
+  PROMPTS_DIR: z.string().min(1).default("./data/prompts"),
+
   // Admin (Mini App bootstrap): comma-separated Telegram user ids
   ADMIN_USER_IDS: z.string().default(""),
 

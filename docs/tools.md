@@ -75,7 +75,7 @@ Free-form fields pass through `promptguard.sanitizeProfileField`; bot identity e
 |------|-------|--------|
 | `read_skill_reference` | `skill_name`, `ref_path` | read a reference doc from a skill's directory (≤ 8000 chars) |
 
-`ref_path` must start with `references/`, `scripts/`, or `assets/`; absolute paths and `..` traversal are rejected. Available references are listed for the model in the `[SKILL REFERENCES]` prompt block, populated by `listReferences(skillName)` from the on-disk skills root (`backend/seed/skills`).
+`ref_path` must start with `references/`, `scripts/`, or `assets/`; absolute paths and `..` traversal are rejected. Available references are listed for the model in the `[SKILL REFERENCES]` prompt block, populated by `listReferences(skillName)` from the file-backed skills store (`SKILLS_DIR`, default `./data/skills`).
 
 ## Web tools (native bucket)
 

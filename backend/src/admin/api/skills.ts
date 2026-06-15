@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
-import { skills as skillsTable } from "../../db/schema.js";
+import { isValidSkillName, type StoredSkill } from "../../content/skill-repository.js";
 import { parseGoDuration } from "../../config/settings.js";
 import {
   runSkillSubAgent,
@@ -57,19 +56,20 @@ const testSchema = z.object({
   message: z.string().min(1).max(MAX_TEST_MESSAGE_LEN),
 });
 
-/** Serialise a DB row into the API shape (model "" -> null for the UI). */
-function toApi(row: typeof skillsTable.$inferSelect) {
+/** Serialise a stored skill into the API shape (model "" -> null for the UI). */
+function toApi(stored: StoredSkill) {
+  const s = stored.skill;
   return {
-    name: row.name,
-    description: row.description,
-    allowedTools: row.allowedTools,
-    model: row.model === "" ? null : row.model,
-    temperature: row.temperature,
-    reasoning: row.reasoning,
-    routable: row.routable,
-    prompt: row.prompt,
-    metadata: row.metadata,
-    updatedAt: row.updatedAt.toISOString(),
+    name: s.name,
+    description: s.description,
+    allowedTools: s.allowedTools,
+    model: s.model === "" ? null : s.model,
+    temperature: s.temperature ?? null,
+    reasoning: s.reasoning ?? null,
+    routable: s.routable,
+    prompt: s.prompt,
+    metadata: s.metadata,
+    updatedAt: stored.updatedAt.toISOString(),
   };
 }
 
@@ -147,25 +147,25 @@ export function skillsRoutes(runFn: SkillRunFn = runSkillSubAgent): Hono<AdminEn
 
   // GET / — all skills.
   app.get("/", async (c) => {
-    const { db } = c.var.deps;
+    const { skills } = c.var.deps;
     log.debug({ adminUserId: c.var.adminUserId }, "list skills");
-    const rows = await db.select().from(skillsTable);
-    return c.json(rows.map(toApi));
+    const stored = await skills.skillRepo.listStored();
+    return c.json(stored.map(toApi));
   });
 
   // GET /:name — one skill or 404.
   app.get("/:name", async (c) => {
-    const { db } = c.var.deps;
+    const { skills } = c.var.deps;
     const name = c.req.param("name");
     log.debug({ adminUserId: c.var.adminUserId, name }, "get skill");
-    const [row] = await db.select().from(skillsTable).where(eq(skillsTable.name, name)).limit(1);
-    if (!row) return c.json({ error: "skill not found" }, 404);
-    return c.json(toApi(row));
+    const stored = await skills.skillRepo.getStored(name);
+    if (!stored) return c.json({ error: "skill not found" }, 404);
+    return c.json(toApi(stored));
   });
 
   // POST / — create (name must be unique).
   app.post("/", async (c) => {
-    const { db, skills } = c.var.deps;
+    const { skills } = c.var.deps;
     const body = await c.req.json().catch(() => null);
     const parsed = createSchema.safeParse(body);
     if (!parsed.success) {
@@ -174,40 +174,36 @@ export function skillsRoutes(runFn: SkillRunFn = runSkillSubAgent): Hono<AdminEn
     }
     const data = parsed.data;
 
-    const [existing] = await db
-      .select({ name: skillsTable.name })
-      .from(skillsTable)
-      .where(eq(skillsTable.name, data.name))
-      .limit(1);
-    if (existing) {
+    // Security: the name is the on-disk directory — reject traversal/separators.
+    if (!isValidSkillName(data.name)) {
+      log.warn({ adminUserId: c.var.adminUserId, name: data.name }, "create skill: invalid name");
+      return c.json({ error: "invalid skill name (use letters, digits, - and _)" }, 400);
+    }
+
+    if (await skills.skillRepo.getByName(data.name)) {
       log.warn({ adminUserId: c.var.adminUserId, name: data.name }, "create skill: name exists");
       return c.json({ error: "skill already exists" }, 409);
     }
 
-    const [inserted] = await db
-      .insert(skillsTable)
-      .values({
-        name: data.name,
-        description: data.description,
-        allowedTools: data.allowedTools,
-        model: data.model ?? "",
-        temperature: data.temperature,
-        reasoning: data.reasoning,
-        routable: data.routable,
-        prompt: data.prompt,
-        metadata: data.metadata,
-        updatedAt: new Date(),
-      })
-      .returning();
+    const stored = await skills.skillRepo.upsert({
+      name: data.name,
+      description: data.description,
+      allowedTools: data.allowedTools,
+      model: data.model ?? "",
+      temperature: data.temperature,
+      reasoning: data.reasoning,
+      routable: data.routable,
+      prompt: data.prompt,
+      metadata: data.metadata,
+    });
 
-    await skills.invalidate();
     log.info({ adminUserId: c.var.adminUserId, name: data.name }, "skill created");
-    return c.json(toApi(inserted!), 201);
+    return c.json(toApi(stored), 201);
   });
 
   // PUT /:name — partial update.
   app.put("/:name", async (c) => {
-    const { db, skills } = c.var.deps;
+    const { skills } = c.var.deps;
     const name = c.req.param("name");
     const body = await c.req.json().catch(() => null);
     const parsed = updateSchema.safeParse(body);
@@ -217,50 +213,41 @@ export function skillsRoutes(runFn: SkillRunFn = runSkillSubAgent): Hono<AdminEn
     }
     const data = parsed.data;
 
-    const [existing] = await db.select().from(skillsTable).where(eq(skillsTable.name, name)).limit(1);
+    const existing = await skills.skillRepo.getByName(name);
     if (!existing) return c.json({ error: "skill not found" }, 404);
 
-    const patch: Partial<typeof skillsTable.$inferInsert> = { updatedAt: new Date() };
-    if (data.description !== undefined) patch.description = data.description;
-    if (data.allowedTools !== undefined) patch.allowedTools = data.allowedTools;
-    if (data.model !== undefined) patch.model = data.model ?? "";
-    if (data.temperature !== undefined) patch.temperature = data.temperature;
-    if (data.reasoning !== undefined) patch.reasoning = data.reasoning;
-    if (data.routable !== undefined) patch.routable = data.routable;
-    if (data.prompt !== undefined) patch.prompt = data.prompt;
-    if (data.metadata !== undefined) patch.metadata = data.metadata;
+    // Merge the patch onto the existing skill; name is immutable (path-addressed).
+    const merged = {
+      ...existing,
+      ...(data.description !== undefined ? { description: data.description } : {}),
+      ...(data.allowedTools !== undefined ? { allowedTools: data.allowedTools } : {}),
+      ...(data.model !== undefined ? { model: data.model ?? "" } : {}),
+      ...(data.temperature !== undefined ? { temperature: data.temperature } : {}),
+      ...(data.reasoning !== undefined ? { reasoning: data.reasoning } : {}),
+      ...(data.routable !== undefined ? { routable: data.routable } : {}),
+      ...(data.prompt !== undefined ? { prompt: data.prompt } : {}),
+      ...(data.metadata !== undefined ? { metadata: data.metadata } : {}),
+    };
 
-    const [updated] = await db
-      .update(skillsTable)
-      .set(patch)
-      .where(eq(skillsTable.name, name))
-      .returning();
-
-    await skills.invalidate();
+    const stored = await skills.skillRepo.upsert(merged);
     log.info({ adminUserId: c.var.adminUserId, name }, "skill updated");
-    return c.json(toApi(updated!));
+    return c.json(toApi(stored));
   });
 
   // DELETE /:name — delete.
   app.delete("/:name", async (c) => {
-    const { db, skills } = c.var.deps;
+    const { skills } = c.var.deps;
     const name = c.req.param("name");
-    const [existing] = await db
-      .select({ name: skillsTable.name })
-      .from(skillsTable)
-      .where(eq(skillsTable.name, name))
-      .limit(1);
-    if (!existing) return c.json({ error: "skill not found" }, 404);
-
-    await db.delete(skillsTable).where(eq(skillsTable.name, name));
-    await skills.invalidate();
+    if (!isValidSkillName(name) || !(await skills.skillRepo.delete(name))) {
+      return c.json({ error: "skill not found" }, 404);
+    }
     log.info({ adminUserId: c.var.adminUserId, name }, "skill deleted");
     return c.json({ ok: true });
   });
 
   // POST /:name/test — single non-streaming test-run. Never throws out of the handler.
   app.post("/:name/test", async (c) => {
-    const { db } = c.var.deps;
+    const { skills } = c.var.deps;
     const name = c.req.param("name");
     const body = await c.req.json().catch(() => null);
     const parsed = testSchema.safeParse(body);
@@ -269,20 +256,8 @@ export function skillsRoutes(runFn: SkillRunFn = runSkillSubAgent): Hono<AdminEn
       return c.json({ error: "invalid request", details: parsed.error.flatten() }, 400);
     }
 
-    const [row] = await db.select().from(skillsTable).where(eq(skillsTable.name, name)).limit(1);
-    if (!row) return c.json({ error: "skill not found" }, 404);
-
-    const skill: Skill = {
-      name: row.name,
-      description: row.description,
-      allowedTools: row.allowedTools,
-      model: row.model,
-      temperature: row.temperature ?? null,
-      reasoning: row.reasoning ?? null,
-      routable: row.routable,
-      prompt: row.prompt,
-      metadata: row.metadata,
-    };
+    const skill = await skills.skillRepo.getByName(name);
+    if (!skill) return c.json({ error: "skill not found" }, 404);
 
     log.info({ adminUserId: c.var.adminUserId, name }, "test-run start");
     try {

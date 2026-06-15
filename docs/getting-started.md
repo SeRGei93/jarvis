@@ -34,8 +34,8 @@ The default `LIBSQL_URL=file:./data/avocado.db` works with no external services.
 ## Create the database
 
 ```bash
-npm run db:migrate    # apply drizzle migrations (14 tables + vector index)
-npm run db:seed       # seed settings/models/skills/prompts from backend/seed/
+npm run db:migrate    # apply drizzle migrations (12 tables + vector index)
+npm run db:seed       # seed settings/models/plans (skills/prompts populate from backend/{skills,prompts} on first run)
 ```
 
 The seed is idempotent on first run only — it skips if the `settings` table already has rows.

@@ -2,10 +2,14 @@ import { describe, it, expect, afterEach } from "vitest";
 import { LibSQLStore } from "@mastra/libsql";
 import { createTestDb, type TestDb } from "./helpers/libsql.js";
 import { createChatService } from "../src/app.js";
-import { users, skills, prompts } from "../src/db/schema.js";
+import { users } from "../src/db/schema.js";
+import { tempContent, type ContentFixture } from "./helpers/content.js";
 
 let t: TestDb | undefined;
+let content: ContentFixture | undefined;
 afterEach(() => {
+  content?.cleanup();
+  content = undefined;
   t?.cleanup();
   t = undefined;
 });
@@ -14,14 +18,16 @@ describe("createChatService", () => {
   it("boots over libSQL and routes a turn through to the guard (no network)", async () => {
     t = await createTestDb();
     await t.db.insert(users).values({ id: 1, name: "Alex", onboarded: true });
-    await t.db.insert(skills).values([
-      { name: "chat", description: "small talk", routable: true },
-      { name: "research", description: "research", routable: true },
-    ]);
-    await t.db.insert(prompts).values([{ key: "SOUL", body: "SOUL" }]);
+    content = tempContent({
+      skills: [
+        { name: "chat", description: "small talk", routable: true },
+        { name: "research", description: "research", routable: true },
+      ],
+      prompts: { SOUL: "SOUL" },
+    });
 
     const storage = new LibSQLStore({ id: "app-test", url: t.url });
-    const svc = await createChatService({ db: t.db, storage, vector: t.vector });
+    const svc = await createChatService({ db: t.db, storage, vector: t.vector, skills: content.skills });
 
     // All collaborators wired.
     expect(typeof svc.handleUserMessage).toBe("function");

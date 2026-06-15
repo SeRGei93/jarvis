@@ -24,6 +24,11 @@ export interface ChatServiceOptions {
   db: Db;
   storage: LibSQLStore;
   vector: LibSQLVector;
+  /**
+   * Skill/prompt service. Defaults to the file-backed content store
+   * (SKILLS_DIR/PROMPTS_DIR); injectable so tests can point at temp dirs.
+   */
+  skills?: SkillService;
 }
 
 export interface ChatService {
@@ -53,7 +58,9 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
 
   const factory = new ModelFactory();
   const llm = new LlmService(factory, settings);
-  const skills = new SkillService(opts.db);
+  // Skills/prompts come from the file-backed content store (SKILLS_DIR/PROMPTS_DIR),
+  // not the DB. The store must be populated before this runs (server.ts boot).
+  const skills = opts.skills ?? new SkillService();
   const embedder = new EmbeddingService({ modelRef: roles.embedding ?? "" });
   const memoryService = new MemoryService(opts.db, opts.vector, embedder, settings);
   const profileExtractor = new ProfileExtractor(factory, settings);

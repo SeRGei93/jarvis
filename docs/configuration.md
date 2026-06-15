@@ -20,6 +20,8 @@
 | `SEARXNG_URL` | no | `http://searxng:8080` | SearXNG instance the web-search client queries |
 | `SEARXNG_ENGINES` | no | `google,yandex` | comma-separated engine override passed to SearXNG |
 | `WEB_CACHE_DIR` | no | `./data/web-cache` | root dir for the web fetch/search file cache (container: `/data/web-cache`) |
+| `SKILLS_DIR` | no | `./data/skills` | file-backed skill store dir (container: `/data/skills`) |
+| `PROMPTS_DIR` | no | `./data/prompts` | file-backed system-prompt store dir (container: `/data/prompts`) |
 | `SEARXNG_SECRET` | prod | — | secret key the SearXNG **container** requires (prod compose fails fast; local compose defaults it) |
 | `NODE_ENV` | no | `development` | `development` \| `production` \| `test` |
 | `LOG_LEVEL` | no | pino default | `debug` for verbose logs; secrets are always redacted |
@@ -29,7 +31,7 @@
 
 ## Database-backed settings
 
-Seeded from `backend/seed/config.yaml` into the `settings` table (key → JSON). Read via `SettingsService`; defaults apply when a key is absent.
+Seeded from a typed code module (`src/db/seed-data.ts`) into the `settings` table (key → JSON). Read via `SettingsService`; defaults apply when a key is absent. (The old `config.yaml` was retired in M12.)
 
 | Key | Shape | Notes |
 |-----|-------|-------|
@@ -49,15 +51,19 @@ The `timeouts.http_client` value is the per-request timeout for the `currency_ra
 - `agent.default_temperature` → temperature for skills that leave it null.
 - `agent.rag_top_k` → number of long-term memories retrieved once a user has ≥ 10 facts.
 
-## Skills and prompts (also in the DB)
+## Skills and prompts (file-backed store, M12)
 
-| Table | Seeded from | Used by |
-|-------|-------------|---------|
-| `skills` | `backend/seed/skills/*/SKILL.md` | router (routable subset) + skill-agent factory |
-| `prompts` | `backend/seed/prompts/*.md` | prompt-builder (`SOUL`, `FORMAT`, `INTEGRITY`, `SYNTHESIZER`, `WELCOME`, `MONITORING`) |
-| `models` | `seed/config.yaml` | admin UI + role validation |
+Skills and system prompts are **files, not DB rows**. Repo-bundled defaults ship in the image and are copied onto a persistent volume on first run (**populate-if-empty**); afterwards the app reads *and* writes the store, so admin edits survive redeploys.
 
-A skill row carries: `name`, `description`, `allowed_tools` (JSON), `model`, `temperature`, `reasoning` (tri-state), `routable`, `prompt`, `metadata`. Editing these rows changes behaviour without a redeploy — `SettingsService.invalidate()` / `SkillService.invalidate()` drop the caches.
+| What | Repo defaults | Runtime store | Used by |
+|------|---------------|---------------|---------|
+| skills | `backend/skills/<name>/SKILL.md` | `SKILLS_DIR` (`/data/skills`) | router (routable subset) + skill-agent factory + `read_skill_reference` |
+| prompts | `backend/prompts/<KEY>.md` | `PROMPTS_DIR` (`/data/prompts`) | prompt-builder (`SOUL`, `FORMAT`, `INTEGRITY`, `SYNTHESIZER`, `WELCOME`, `MONITORING`) |
+| models | code seed (`src/db/seed-data.ts`) | `models` table | admin UI + role validation |
+
+A `SKILL.md` carries YAML frontmatter — `name`, `description`, `allowed-tools` (space-delimited), `model`, `temperature`, `reasoning` (tri-state), `routable`, plus any extra keys (e.g. `max-turns`) preserved as metadata — followed by the prompt body. Editing a skill/prompt (via the admin Mini App or directly on disk) takes effect without a redeploy: writes are **atomic** (`*.tmp` + rename) and the repositories **hot-reload** on file-mtime change; `SkillService.invalidate()` also drops the cache after an admin save.
+
+> **Volume note:** the store lives on the `/data` volume. Deleting/recreating that volume reverts skills and prompts to the repo-bundled defaults (by design).
 
 ## Plans, rate limit, and usage
 

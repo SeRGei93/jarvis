@@ -1,14 +1,14 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { eq } from "drizzle-orm";
-import { createTestDb, type TestDb } from "../helpers/libsql.js";
+import { writeFileSync, utimesSync } from "node:fs";
+import { join } from "node:path";
 import { SkillService, derivePreviousSkills } from "../../src/services/skill-service.js";
-import { skills, prompts } from "../../src/db/schema.js";
+import { tempContent, type ContentFixture } from "../helpers/content.js";
 import type { Message } from "../../src/domain/entities.js";
 
-let t: TestDb | undefined;
+let c: ContentFixture | undefined;
 afterEach(() => {
-  t?.cleanup();
-  t = undefined;
+  c?.cleanup();
+  c = undefined;
 });
 
 describe("derivePreviousSkills", () => {
@@ -30,12 +30,13 @@ describe("derivePreviousSkills", () => {
 
 describe("SkillService", () => {
   it("loads all skills and the routable subset", async () => {
-    t = await createTestDb();
-    await t.db.insert(skills).values([
-      { name: "research", description: "research things", routable: true, allowedTools: ["web_search"] },
-      { name: "reminder", description: "deliver reminders", routable: false },
-    ]);
-    const svc = new SkillService(t.db);
+    c = tempContent({
+      skills: [
+        { name: "research", description: "research things", routable: true, allowedTools: ["web_search"] },
+        { name: "reminder", description: "deliver reminders", routable: false },
+      ],
+    });
+    const svc = c.skills;
 
     expect((await svc.getAllSkills()).map((s) => s.name).sort()).toEqual(["reminder", "research"]);
 
@@ -48,12 +49,8 @@ describe("SkillService", () => {
   });
 
   it("loads prompts and reflects updates after invalidate()", async () => {
-    t = await createTestDb();
-    await t.db.insert(prompts).values([
-      { key: "SOUL", body: "soul body" },
-      { key: "FORMAT", body: "format body" },
-    ]);
-    const svc = new SkillService(t.db);
+    c = tempContent({ prompts: { SOUL: "soul body", FORMAT: "format body" } });
+    const svc = new SkillService(c.skillRepo, c.promptRepo);
 
     expect(await svc.getPrompt("SOUL")).toBe("soul body");
     expect(await svc.getPrompt("MISSING")).toBe("");
@@ -63,10 +60,19 @@ describe("SkillService", () => {
     expect(core.format).toBe("format body");
     expect(core.integrity).toBe(""); // not seeded
 
-    // Cache is sticky until invalidate().
-    await t.db.update(prompts).set({ body: "new soul" }).where(eq(prompts.key, "SOUL"));
+    // Pin the file mtime to a fixed value, warm the cache, then edit the file
+    // and restore the SAME mtime — so the hot-reload fingerprint is unchanged and
+    // the cache stays sticky, proving invalidate() is what forces the reload.
+    const file = join(c.promptsDir, "SOUL.md");
+    const pinned = new Date("2020-01-01T00:00:00.000Z");
+    utimesSync(file, pinned, pinned);
+    svc.invalidate(); // re-read so the cached fingerprint uses the pinned mtime
     expect(await svc.getPrompt("SOUL")).toBe("soul body");
+
+    writeFileSync(file, "new soul\n");
+    utimesSync(file, pinned, pinned);
+    expect(await svc.getPrompt("SOUL")).toBe("soul body"); // fingerprint unchanged → cached
     svc.invalidate();
-    expect(await svc.getPrompt("SOUL")).toBe("new soul");
+    expect(await svc.getPrompt("SOUL")).toBe("new soul"); // forced reload
   });
 });

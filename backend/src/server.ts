@@ -5,6 +5,13 @@ import { env } from "./config/env.js";
 import { libsql, db } from "./db/client.js";
 import { mastra, storage, vector } from "./mastra/index.js";
 import { createChatService, type ChatService } from "./app.js";
+import { ensurePopulated } from "./content/store.js";
+import {
+  DEFAULTS_PROMPTS_DIR,
+  DEFAULTS_SKILLS_DIR,
+  promptsStoreDir,
+  skillsStoreDir,
+} from "./content/paths.js";
 import { ModelFactory } from "./mastra/models.js";
 import { SpeechService } from "./mastra/speech.js";
 import { createBot, applyBotCommands } from "./telegram/bot.js";
@@ -108,6 +115,20 @@ function startScheduler(svc: ChatService): void {
 }
 
 /**
+ * Populate the file-backed skill/prompt store from the image's bundled defaults
+ * on first run (idempotent — a no-op once the persistent volume has content).
+ * MUST complete before {@link createChatService}, which constructs SkillService
+ * and immediately reads skills/prompts from the store.
+ */
+async function populateContentStore(): Promise<void> {
+  const [skillsCopied, promptsCopied] = await Promise.all([
+    ensurePopulated(skillsStoreDir(), DEFAULTS_SKILLS_DIR),
+    ensurePopulated(promptsStoreDir(), DEFAULTS_PROMPTS_DIR),
+  ]);
+  log.info({ skillsCopied, promptsCopied }, "content store ready");
+}
+
+/**
  * Single-process entry point (ROADMAP §2): one Hono HTTP server (health +
  * Telegram webhook + admin API) plus the grammY bot and the cron scheduler,
  * all on one libSQL/Mastra-backed stack.
@@ -129,7 +150,8 @@ function main(): void {
     staticRoot: process.env.ADMIN_STATIC_DIR || undefined,
   });
 
-  createChatService({ db, storage, vector })
+  populateContentStore()
+    .then(() => createChatService({ db, storage, vector }))
     .then(async (svc) => {
       chatService = svc;
       bot = await startBot(svc).catch((err) => {

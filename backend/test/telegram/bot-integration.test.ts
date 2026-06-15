@@ -34,7 +34,7 @@ function buildBot(t: TestDb, chat: ChatHandler) {
   const commandDeps: CommandDeps = {
     db: t.db,
     settings,
-    skills: new SkillService(t.db),
+    skills: new SkillService(),
     usage: new UsageService(t.db),
     memory: new MemoryService(t.db, t.vector, embedder, settings),
     chat,

@@ -2,7 +2,7 @@
 
 # Admin Mini App
 
-The admin surface (Milestone 8): a **Telegram Mini App** that edits the DB-backed configuration — skills, models, settings, prompts, plans, users, and usage — without touching the database by hand. It is a React app (`frontend/`) talking to a **Hono REST API** (`backend/src/admin/`) that runs in the **same process** as the bot and the [cron scheduler](scheduler.md). Access is gated by Telegram `initData` verification plus a bootstrap admin allowlist.
+The admin surface (Milestone 8): a **Telegram Mini App** that edits configuration — **skills and prompts** (the file-backed content store) plus **models, settings, plans, users, and usage** (libSQL) — without touching files or the database by hand. It is a React app (`frontend/`) talking to a **Hono REST API** (`backend/src/admin/`) that runs in the **same process** as the bot and the [cron scheduler](scheduler.md). Access is gated by Telegram `initData` verification plus a bootstrap admin allowlist.
 
 ## HTTP surface (one process, one port)
 
@@ -60,7 +60,7 @@ All routers live in `backend/src/admin/api/` and are mounted under `/admin/api` 
 | **plans** | `GET/POST /plans`, `PATCH/DELETE /plans/:id`, `PUT /plans/assign` |
 | **usage** | `GET /usage`, `GET /usage/user/:id`, `DELETE /usage/ratelimit/:userId` |
 
-**Cache invalidation.** Writes to `settings`/`models` call `SettingsService.invalidate()`; writes to `skills`/`prompts` call `SkillService.invalidate()`. The live chat re-reads the bumped value on its next turn (hot-reload) — see [Configuration](configuration.md).
+**Where writes go.** `settings`/`models`/`plans`/`users`/`usage` write libSQL rows and call `SettingsService.invalidate()`. `skills`/`prompts` write **files** in the content store (`SKILLS_DIR`/`PROMPTS_DIR`) — atomically (`*.tmp` + rename) via the repositories, which invalidate their own cache; the name/key is validated against path traversal. The HTTP contract is name/key-addressed (`PUT /skills/:name`, `PUT /prompts/:key`), so the front end is unchanged. The live chat re-reads the new value on its next turn (hot-reload) — see [Configuration](configuration.md).
 
 **Skill test-run.** `POST /admin/api/skills/:name/test { message }` builds the skill's agent and runs one non-streaming generation (watchdog = `timeouts.llm_request`), returning `{ text, usage }`. Useful for editing a prompt and trying it before saving.
 

@@ -1,18 +1,16 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { Hono } from "hono";
-import { createTestDb, type TestDb } from "../helpers/libsql.js";
 import { skillsRoutes, type SkillRunFn } from "../../src/admin/api/skills.js";
 import type { AdminEnv } from "../../src/admin/api/deps.js";
 import type { AdminApiDeps } from "../../src/admin/api/deps.js";
-import { SkillService } from "../../src/services/skill-service.js";
-import { skills as skillsTable } from "../../src/db/schema.js";
+import { tempContent, type ContentFixture, type SkillInput } from "../helpers/content.js";
 import type { SettingsService } from "../../src/config/settings.js";
 import type { LlmService } from "../../src/mastra/llm.js";
 
-let t: TestDb | undefined;
+let c: ContentFixture | undefined;
 afterEach(() => {
-  t?.cleanup();
-  t = undefined;
+  c?.cleanup();
+  c = undefined;
 });
 
 const settings = {
@@ -40,43 +38,38 @@ const fakeRun: SkillRunFn = async (_deps, skill, ctx) => ({
   cost: 0.0,
 });
 
-async function seed(db: TestDb["db"]): Promise<void> {
-  await db.insert(skillsTable).values({
-    name: "research",
-    description: "deep research",
-    allowedTools: ["memory_search"],
-    model: "",
-    routable: true,
-    prompt: "Be a researcher.",
-    metadata: { area: "general" },
-  });
-}
+const RESEARCH: SkillInput = {
+  name: "research",
+  description: "deep research",
+  allowedTools: ["memory_search"],
+  model: "",
+  routable: true,
+  prompt: "Be a researcher.",
+  metadata: { area: "general" },
+};
 
-function makeApp(t: TestDb, runFn: SkillRunFn = fakeRun) {
-  const skills = new SkillService(t.db);
+function makeApp(runFn: SkillRunFn = fakeRun) {
+  c = tempContent({ skills: [RESEARCH] });
   const deps = {
-    db: t.db,
     settings,
-    skills,
+    skills: c.skills,
     llm,
     memoryService: {},
   } as unknown as AdminApiDeps;
 
   const app = new Hono<AdminEnv>();
-  app.use("*", async (c, next) => {
-    c.set("deps", deps);
-    c.set("adminUserId", 1);
+  app.use("*", async (ctx, next) => {
+    ctx.set("deps", deps);
+    ctx.set("adminUserId", 1);
     await next();
   });
   app.route("/", skillsRoutes(runFn));
-  return { app, skills, deps };
+  return { app, skills: c.skills, deps };
 }
 
 describe("skillsRoutes CRUD", () => {
   it("lists all skills", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app } = makeApp(t);
+    const { app } = makeApp();
 
     const res = await app.request("/");
     expect(res.status).toBe(200);
@@ -85,9 +78,7 @@ describe("skillsRoutes CRUD", () => {
   });
 
   it("gets one skill, 404 for unknown", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app } = makeApp(t);
+    const { app } = makeApp();
 
     const ok = await app.request("/research");
     expect(ok.status).toBe(200);
@@ -98,11 +89,9 @@ describe("skillsRoutes CRUD", () => {
   });
 
   it("creates a skill and invalidates the SkillService cache", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app, skills } = makeApp(t);
+    const { app, skills } = makeApp();
 
-    // Warm the cache so we prove invalidate() actually re-reads.
+    // Warm the cache so we prove the write actually re-reads.
     expect(await skills.getSkillByName("weather")).toBeNull();
 
     const res = await app.request("/", {
@@ -122,16 +111,14 @@ describe("skillsRoutes CRUD", () => {
     expect(created.name).toBe("weather");
     expect(created.temperature).toBe(0.2);
 
-    // Proves invalidate(): the new skill is now visible through the service.
+    // Proves the cache reloaded: the new skill is now visible through the service.
     const fromService = await skills.getSkillByName("weather");
     expect(fromService?.name).toBe("weather");
     expect(fromService?.routable).toBe(true);
   });
 
   it("rejects a duplicate name with 409", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app } = makeApp(t);
+    const { app } = makeApp();
 
     const res = await app.request("/", {
       method: "POST",
@@ -142,9 +129,7 @@ describe("skillsRoutes CRUD", () => {
   });
 
   it("rejects invalid input with 400 (bad temperature)", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app } = makeApp(t);
+    const { app } = makeApp();
 
     const res = await app.request("/", {
       method: "POST",
@@ -154,10 +139,19 @@ describe("skillsRoutes CRUD", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects an unsafe skill name with 400", async () => {
+    const { app } = makeApp();
+
+    const res = await app.request("/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "../escape", prompt: "x" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("updates a skill partially and invalidates the cache", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app, skills } = makeApp(t);
+    const { app, skills } = makeApp();
     // Warm cache.
     expect((await skills.getSkillByName("research"))?.routable).toBe(true);
 
@@ -178,9 +172,7 @@ describe("skillsRoutes CRUD", () => {
   });
 
   it("404s on update of an unknown skill", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app } = makeApp(t);
+    const { app } = makeApp();
     const res = await app.request("/nope", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -190,23 +182,17 @@ describe("skillsRoutes CRUD", () => {
   });
 
   it("deletes a skill and invalidates the cache", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app, skills } = makeApp(t);
+    const { app, skills } = makeApp();
     expect(await skills.getSkillByName("research")).not.toBeNull();
 
     const res = await app.request("/research", { method: "DELETE" });
     expect(res.status).toBe(200);
     expect(await skills.getSkillByName("research")).toBeNull();
-
-    const rows = await t.db.select().from(skillsTable);
-    expect(rows).toHaveLength(0);
+    expect(await skills.getAllSkills()).toHaveLength(0);
   });
 
   it("404s on delete of an unknown skill", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app } = makeApp(t);
+    const { app } = makeApp();
     const res = await app.request("/nope", { method: "DELETE" });
     expect(res.status).toBe(404);
   });
@@ -214,9 +200,7 @@ describe("skillsRoutes CRUD", () => {
 
 describe("skillsRoutes test-run", () => {
   it("runs a skill against a message and returns text + usage (offline)", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app } = makeApp(t, fakeRun);
+    const { app } = makeApp(fakeRun);
 
     const res = await app.request("/research/test", {
       method: "POST",
@@ -230,9 +214,7 @@ describe("skillsRoutes test-run", () => {
   });
 
   it("404s a test-run for an unknown skill", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app } = makeApp(t, fakeRun);
+    const { app } = makeApp(fakeRun);
     const res = await app.request("/nope/test", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -242,9 +224,7 @@ describe("skillsRoutes test-run", () => {
   });
 
   it("400s a test-run with an empty message", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app } = makeApp(t, fakeRun);
+    const { app } = makeApp(fakeRun);
     const res = await app.request("/research/test", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -254,12 +234,10 @@ describe("skillsRoutes test-run", () => {
   });
 
   it("returns a 502 error JSON when the run throws (never throws out of the handler)", async () => {
-    t = await createTestDb();
-    await seed(t.db);
     const boom: SkillRunFn = async () => {
       throw new Error("model exploded");
     };
-    const { app } = makeApp(t, boom);
+    const { app } = makeApp(boom);
 
     const res = await app.request("/research/test", {
       method: "POST",

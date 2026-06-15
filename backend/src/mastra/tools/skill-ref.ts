@@ -2,7 +2,7 @@ import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { SEED_DIR } from "../../db/seed.js";
+import { skillsStoreDir } from "../../content/paths.js";
 import { logger } from "../../pkg/logger.js";
 import type { ToolContext } from "./registry.js";
 
@@ -23,9 +23,9 @@ const MAX_REFERENCE_CONTENT_LENGTH = 8000;
 /** Subdirectories a skill may expose as references. */
 const REFERENCE_SUBDIRS = ["references", "scripts", "assets"] as const;
 
-/** Default skills filesystem root (seeded skills dir). */
+/** Default skills filesystem root — the file-backed content store (`SKILLS_DIR`). */
 function defaultSkillsRoot(): string {
-  return join(SEED_DIR, "skills");
+  return skillsStoreDir();
 }
 
 /**

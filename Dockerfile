@@ -37,8 +37,11 @@ COPY --from=backend /backend/dist ./dist
 # drizzle migration SQL is not emitted by tsc — place it next to the compiled
 # migrator (runMigrations resolves ./migrations relative to dist/db/migrate.js)
 COPY backend/src/db/migrations ./dist/db/migrations
-# bundled first-run seed (config.yaml / skills / prompts), read via ../../seed
-COPY backend/seed ./seed
+# bundled first-run defaults for the file-backed content store. ensurePopulated()
+# copies these into SKILLS_DIR/PROMPTS_DIR on the persistent volume at boot.
+# Resolved via ../../skills · ../../prompts from dist/content/paths.js.
+COPY backend/skills ./skills
+COPY backend/prompts ./prompts
 # built Mini App — served as static from ../frontend/dist (relative to CWD)
 COPY --from=frontend /frontend/dist /app/frontend/dist
 

@@ -1,44 +1,33 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { Hono } from "hono";
-import { createTestDb, type TestDb } from "../helpers/libsql.js";
 import { promptsRoutes } from "../../src/admin/api/prompts.js";
 import type { AdminEnv } from "../../src/admin/api/deps.js";
 import type { AdminApiDeps } from "../../src/admin/api/deps.js";
-import { SkillService } from "../../src/services/skill-service.js";
-import { prompts as promptsTable } from "../../src/db/schema.js";
+import { tempContent, type ContentFixture } from "../helpers/content.js";
 
-let t: TestDb | undefined;
+let c: ContentFixture | undefined;
 afterEach(() => {
-  t?.cleanup();
-  t = undefined;
+  c?.cleanup();
+  c = undefined;
 });
 
-async function seed(db: TestDb["db"]): Promise<void> {
-  await db.insert(promptsTable).values([
-    { key: "SOUL", body: "soul body" },
-    { key: "FORMAT", body: "format body" },
-  ]);
-}
-
-function makeApp(t: TestDb) {
-  const skills = new SkillService(t.db);
-  const deps = { db: t.db, skills } as unknown as AdminApiDeps;
+function makeApp() {
+  c = tempContent({ prompts: { SOUL: "soul body", FORMAT: "format body" } });
+  const deps = { skills: c.skills } as unknown as AdminApiDeps;
 
   const app = new Hono<AdminEnv>();
-  app.use("*", async (c, next) => {
-    c.set("deps", deps);
-    c.set("adminUserId", 1);
+  app.use("*", async (ctx, next) => {
+    ctx.set("deps", deps);
+    ctx.set("adminUserId", 1);
     await next();
   });
   app.route("/", promptsRoutes());
-  return { app, skills };
+  return { app, skills: c.skills };
 }
 
 describe("promptsRoutes", () => {
   it("lists all prompts", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app } = makeApp(t);
+    const { app } = makeApp();
 
     const res = await app.request("/");
     expect(res.status).toBe(200);
@@ -47,9 +36,7 @@ describe("promptsRoutes", () => {
   });
 
   it("gets one prompt, 404 for unknown", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app } = makeApp(t);
+    const { app } = makeApp();
 
     const ok = await app.request("/SOUL");
     expect(ok.status).toBe(200);
@@ -60,10 +47,8 @@ describe("promptsRoutes", () => {
   });
 
   it("updates an existing prompt and invalidates the SkillService cache", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app, skills } = makeApp(t);
-    // Warm the prompt cache to prove invalidate() forces a reload.
+    const { app, skills } = makeApp();
+    // Warm the prompt cache to prove the write forces a reload.
     expect(await skills.getPrompt("SOUL")).toBe("soul body");
 
     const res = await app.request("/SOUL", {
@@ -79,9 +64,7 @@ describe("promptsRoutes", () => {
   });
 
   it("upserts a not-yet-existing known key (WELCOME)", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app, skills } = makeApp(t);
+    const { app, skills } = makeApp();
 
     const res = await app.request("/WELCOME", {
       method: "PUT",
@@ -91,14 +74,12 @@ describe("promptsRoutes", () => {
     expect(res.status).toBe(200);
     expect(await skills.getPrompt("WELCOME")).toBe("hello!");
 
-    const rows = await t.db.select().from(promptsTable);
-    expect(rows.map((r) => r.key).sort()).toEqual(["FORMAT", "SOUL", "WELCOME"]);
+    const keys = (await skills.promptRepo.list()).map((p) => p.key).sort();
+    expect(keys).toEqual(["FORMAT", "SOUL", "WELCOME"]);
   });
 
   it("400s an unknown prompt key", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app } = makeApp(t);
+    const { app } = makeApp();
 
     const res = await app.request("/NONSENSE", {
       method: "PUT",
@@ -109,9 +90,7 @@ describe("promptsRoutes", () => {
   });
 
   it("400s a missing body field", async () => {
-    t = await createTestDb();
-    await seed(t.db);
-    const { app } = makeApp(t);
+    const { app } = makeApp();
 
     const res = await app.request("/SOUL", {
       method: "PUT",

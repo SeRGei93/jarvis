@@ -3,7 +3,6 @@ import { eq } from "drizzle-orm";
 import { LibSQLStore } from "@mastra/libsql";
 import { createTestDb, type TestDb } from "../helpers/libsql.js";
 import { runChat, type ChatDeps } from "../../src/mastra/workflows/chat.js";
-import { SkillService } from "../../src/services/skill-service.js";
 import { SkillRouter, type RouteModelFn } from "../../src/mastra/agents/router.js";
 import { MemoryService, type Embedder } from "../../src/mastra/memory/memory-service.js";
 import { ProfileExtractor, type ExtractFn } from "../../src/mastra/memory/profile-extractor.js";
@@ -11,13 +10,17 @@ import { LoopGuard } from "../../src/mastra/agents/loop-guard.js";
 import { RateLimitService } from "../../src/services/rate-limit.js";
 import { UsageService } from "../../src/services/usage.js";
 import { createConversationMemory, getRecentMessages, threadIdForSession, resourceIdForUser } from "../../src/mastra/memory/history.js";
-import { users, skills, prompts, usageStats, subscriptionPlans, userSubscriptions } from "../../src/db/schema.js";
+import { users, usageStats, subscriptionPlans, userSubscriptions } from "../../src/db/schema.js";
+import { tempContent, type ContentFixture, type SkillInput } from "../helpers/content.js";
 import type { SettingsService } from "../../src/config/settings.js";
 import type { ModelFactory } from "../../src/mastra/models.js";
 import type { LlmService, LlmResult } from "../../src/mastra/llm.js";
 
 let t: TestDb | undefined;
+let content: ContentFixture | undefined;
 afterEach(() => {
+  content?.cleanup();
+  content = undefined;
   t?.cleanup();
   t = undefined;
 });
@@ -36,20 +39,19 @@ const settings = {
 
 const embedder: Embedder = { generate: async () => new Array(1024).fill(0) };
 
-async function seed(db: TestDb["db"]): Promise<void> {
-  await db.insert(prompts).values([
-    { key: "SOUL", body: "SOUL" },
-    { key: "FORMAT", body: "FORMAT" },
-    { key: "INTEGRITY", body: "INTEGRITY" },
-    { key: "SYNTHESIZER", body: "SYNTH" },
-  ]);
-  await db.insert(skills).values([
-    { name: "chat", description: "small talk", routable: true },
-    { name: "weather", description: "weather", routable: true },
-    { name: "news", description: "news", routable: true },
-    { name: "onboarding", description: "onboarding", routable: true },
-    { name: "research", description: "research", routable: true },
-  ]);
+const SKILLS: SkillInput[] = [
+  { name: "chat", description: "small talk", routable: true },
+  { name: "weather", description: "weather", routable: true },
+  { name: "news", description: "news", routable: true },
+  { name: "onboarding", description: "onboarding", routable: true },
+  { name: "research", description: "research", routable: true },
+];
+const PROMPTS = { SOUL: "SOUL", FORMAT: "FORMAT", INTEGRITY: "INTEGRITY", SYNTHESIZER: "SYNTH" };
+
+/** Set up the file-backed skill/prompt fixtures used by the chat stack. */
+function setupContent(): void {
+  content?.cleanup();
+  content = tempContent({ skills: SKILLS, prompts: PROMPTS });
 }
 
 function makeDeps(
@@ -75,7 +77,7 @@ function makeDeps(
   const deps: ChatDeps = {
     db: t.db,
     settings,
-    skills: new SkillService(t.db),
+    skills: content!.skills,
     router: new SkillRouter(factory, settings, routeFn),
     llm,
     memoryService: new MemoryService(t.db, t.vector, embedder, settings),
@@ -91,7 +93,7 @@ function makeDeps(
 describe("runChat", () => {
   it("single skill: streams directly and tags the assistant message", async () => {
     t = await createTestDb();
-    await seed(t.db);
+    setupContent();
     await t.db.insert(users).values({ id: 1, name: "Alex", onboarded: true });
     const { deps, llmCalls } = makeDeps(t, async () => ["chat"]);
 
@@ -111,7 +113,7 @@ describe("runChat", () => {
 
   it("multi skill: runs sub-agents in parallel then synthesizes", async () => {
     t = await createTestDb();
-    await seed(t.db);
+    setupContent();
     await t.db.insert(users).values({ id: 1, name: "Alex", onboarded: true });
     const { deps, llmCalls } = makeDeps(t, async () => ["weather", "news"]);
 
@@ -124,7 +126,7 @@ describe("runChat", () => {
 
   it("forces onboarding and auto-completes once the message threshold is hit", async () => {
     t = await createTestDb();
-    await seed(t.db);
+    setupContent();
     await t.db.insert(users).values({ id: 1, name: "", onboarded: false });
     // Router would say "chat", but resolveSkills forces onboarding while !onboarded.
     const { deps } = makeDeps(t, async () => ["chat"]);
@@ -144,7 +146,7 @@ describe("runChat", () => {
 
   it("rejects an injection attempt without calling the model", async () => {
     t = await createTestDb();
-    await seed(t.db);
+    setupContent();
     await t.db.insert(users).values({ id: 1, name: "Alex", onboarded: true });
     const { deps, llmCalls } = makeDeps(t, async () => ["chat"]);
 
@@ -157,7 +159,7 @@ describe("runChat", () => {
 
   it("multi: all sub-agents failing degrades to a fallback reply (no throw)", async () => {
     t = await createTestDb();
-    await seed(t.db);
+    setupContent();
     await t.db.insert(users).values({ id: 1, name: "Alex", onboarded: true });
     const { deps } = makeDeps(t, async () => ["weather", "news"]);
     deps.llm = {
@@ -179,7 +181,7 @@ describe("runChat", () => {
 
   it("single: a generation error degrades to a fallback reply (no throw)", async () => {
     t = await createTestDb();
-    await seed(t.db);
+    setupContent();
     await t.db.insert(users).values({ id: 1, name: "Alex", onboarded: true });
     const { deps } = makeDeps(t, async () => ["chat"]);
     deps.llm = {
@@ -196,7 +198,7 @@ describe("runChat", () => {
 
   it("records usage after a successful turn", async () => {
     t = await createTestDb();
-    await seed(t.db);
+    setupContent();
     await t.db.insert(users).values({ id: 1, name: "Alex", onboarded: true });
     const { deps } = makeDeps(t, async () => ["chat"]);
 
@@ -209,7 +211,7 @@ describe("runChat", () => {
 
   it("rejects over the hourly rate limit without routing", async () => {
     t = await createTestDb();
-    await seed(t.db);
+    setupContent();
     await t.db.insert(users).values({ id: 1, name: "Alex", onboarded: true });
     const [plan] = await t.db
       .insert(subscriptionPlans)

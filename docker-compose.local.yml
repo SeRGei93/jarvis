@@ -24,6 +24,9 @@ services:
       # Web search: talk to searxng over the internal docker network.
       SEARXNG_URL: http://searxng:8080
       WEB_CACHE_DIR: /data/web-cache
+      # File-backed skill/prompt store on the persistent volume (populated on first run).
+      SKILLS_DIR: /data/skills
+      PROMPTS_DIR: /data/prompts
     volumes:
       - ./data/db:/data
     ports:

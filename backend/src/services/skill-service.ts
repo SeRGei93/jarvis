@@ -1,15 +1,10 @@
-import { eq } from "drizzle-orm";
-import type { LibSQLDatabase } from "drizzle-orm/libsql";
-import * as schema from "../db/schema.js";
-import { skills, prompts } from "../db/schema.js";
-import { Skill, type Message } from "../domain/entities.js";
+import type { Skill, Message } from "../domain/entities.js";
+import { SkillRepository } from "../content/skill-repository.js";
+import { PromptRepository } from "../content/prompt-repository.js";
 import type { RoutableSkill } from "../mastra/agents/router.js";
 import { logger } from "../pkg/logger.js";
 
 const log = logger.child({ mod: "skill-service" });
-
-type Db = LibSQLDatabase<typeof schema>;
-type SkillRow = typeof skills.$inferSelect;
 
 /**
  * Newest-first list of skills used in prior assistant replies (parity with Go
@@ -25,67 +20,44 @@ export function derivePreviousSkills(messages: Message[]): string[] {
   return out;
 }
 
-/** Map a `skills` row to the domain Skill (JSON columns are already parsed by drizzle). */
-function toSkill(row: SkillRow): Skill {
-  return Skill.parse({
-    name: row.name,
-    description: row.description,
-    allowedTools: row.allowedTools,
-    model: row.model,
-    temperature: row.temperature,
-    reasoning: row.reasoning,
-    routable: row.routable,
-    prompt: row.prompt,
-    metadata: row.metadata,
-  });
-}
-
 /**
- * Loads skills and system prompts from the DB and caches them in memory.
- * `invalidate()` forces a reload on next access (call after an admin save).
- * Skills feed the router (routable subset), the skill-agent factory, and the
- * prompt builder (SOUL/FORMAT/INTEGRITY/SYNTHESIZER bodies).
+ * Loads skills and system prompts from the file-backed content store (see
+ * `src/content/`) — repo-bundled defaults populated onto a persistent volume,
+ * read AND written there. Skills feed the router (routable subset), the
+ * skill-agent factory, and the prompt builder (SOUL/FORMAT/INTEGRITY/SYNTHESIZER).
+ *
+ * Caching + hot-reload live in the repositories (mtime-based); `invalidate()`
+ * forces a reload on next access (call after an admin save).
  */
 export class SkillService {
-  private skillCache: Map<string, Skill> | null = null;
-  private promptCache: Map<string, string> | null = null;
+  constructor(
+    // Public so the admin API can drive file-backed CRUD (create/update/delete)
+    // on the same instance the live chat reads — writes invalidate immediately.
+    public readonly skillRepo: SkillRepository = new SkillRepository(),
+    public readonly promptRepo: PromptRepository = new PromptRepository(),
+  ) {}
 
-  constructor(private readonly db: Db) {}
-
-  /** Drop both caches; the next accessor reloads from the DB. */
+  /** Drop both caches; the next accessor reloads from the store. */
   invalidate(): void {
-    this.skillCache = null;
-    this.promptCache = null;
+    this.skillRepo.invalidate();
+    this.promptRepo.invalidate();
     log.debug("caches invalidated");
-  }
-
-  private async loadSkills(): Promise<Map<string, Skill>> {
-    if (this.skillCache) return this.skillCache;
-    const rows = await this.db.select().from(skills);
-    const map = new Map<string, Skill>();
-    for (const r of rows) map.set(r.name, toSkill(r));
-    this.skillCache = map;
-    const routable = [...map.values()].filter((s) => s.routable).length;
-    log.debug({ total: map.size, routable }, "skills loaded");
-    return map;
   }
 
   /** All skills (routable + cron-only). */
   async getAllSkills(): Promise<Skill[]> {
-    return [...(await this.loadSkills()).values()];
+    return this.skillRepo.list();
   }
 
   /** Router-facing subset: routable skills as {name, description}. */
   async getRoutableSkills(): Promise<RoutableSkill[]> {
-    const all = await this.loadSkills();
-    return [...all.values()]
-      .filter((s) => s.routable)
-      .map((s) => ({ name: s.name, description: s.description }));
+    const all = await this.skillRepo.list();
+    return all.filter((s) => s.routable).map((s) => ({ name: s.name, description: s.description }));
   }
 
   /** A single skill by name, or null if unknown. */
   async getSkillByName(name: string): Promise<Skill | null> {
-    const skill = (await this.loadSkills()).get(name);
+    const skill = await this.skillRepo.getByName(name);
     if (!skill) {
       log.warn({ name }, "skill not found");
       return null;
@@ -95,17 +67,12 @@ export class SkillService {
 
   /** System prompt body by key (SOUL/FORMAT/INTEGRITY/SYNTHESIZER/...), "" if absent. */
   async getPrompt(key: string): Promise<string> {
-    if (!this.promptCache) {
-      const rows = await this.db.select().from(prompts);
-      this.promptCache = new Map(rows.map((r) => [r.key, r.body]));
-      log.debug({ count: this.promptCache.size }, "prompts loaded");
-    }
-    const body = this.promptCache.get(key);
-    if (body == null) {
+    const stored = await this.promptRepo.getStored(key);
+    if (!stored) {
       log.warn({ key }, "prompt not found");
       return "";
     }
-    return body;
+    return stored.body;
   }
 
   /** Convenience: load the four prompts the prompt builder needs in one call. */

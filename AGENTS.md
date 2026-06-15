@@ -11,18 +11,19 @@ Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + Lib
 ## Structure (`backend/src/`)
 | Dir | Contents |
 |-----|----------|
-| `config/` | `env` (zod secrets), `settings` (DB cache + hot-reload), `settings-keys` |
-| `db/` | `schema` (14 tables), `migrations/`, `client`, `vector`, `migrate`, `seed` |
+| `config/` | `env` (zod secrets, + `SKILLS_DIR`/`PROMPTS_DIR`), `settings` (DB cache + hot-reload), `settings-keys` |
+| `content/` | file-backed skill/prompt store: `paths`, `store` (populate + atomic write + frontmatter), `skill-repository`, `prompt-repository` |
+| `db/` | `schema` (12 tables — no `skills`/`prompts`), `migrations/`, `client`, `vector`, `migrate`, `seed` (code seed), `seed-data` |
 | `domain/` | `entities` (+ constants), `memory-classifier`, `sensitivity-filter` |
 | `mastra/` | `models`, `llm`, `strip-leaked-tools`, `embeddings`, `speech`, `agents/{router,prompt-builder,skill-agent,synthesizer,loop-guard}`, `memory/{memory-service,profile-extractor,history}`, `tools/{memory-tools,registry}`, `workflows/chat`, `index` |
-| `services/` | `skill-service`, `conversation-context`, `rate-limit`, `usage` |
+| `services/` | `skill-service` (file-backed via content repos), `conversation-context`, `rate-limit`, `usage` |
 | `telegram/` | `bot`, `stream`, `format`, `voice`, `messenger`, `identity`, `commands`, `errors` (grammY transport, M6) |
 | `scheduler/` | `schedule`, `executor`, `scheduler` (node-cron), `wiring` — due cron tasks → chat pipeline → notify (M7) |
 | `admin/` | `app` (Hono), `auth` (Telegram `initData` HMAC + `ADMIN_USER_IDS`), `api/{settings,models,mcp,skills,prompts,users,plans,usage}` (M8) |
 | `pkg/` | `logger`, `promptguard`, `bootstrap-env` |
 | `app.ts` | composition root — `createChatService()` → `handleUserMessage()` |
 | `server.ts` | single-process entry (Hono via `@hono/node-server`: `/health` + webhook + `/admin/api` + static Mini App; + ChatService + grammY bot + cron scheduler) |
-| `seed/` | bundled `config.yaml` + `skills/` + `prompts/` (first-run seed) |
+| `backend/skills/`, `backend/prompts/` | repo-bundled content-store defaults (populated into `SKILLS_DIR`/`PROMPTS_DIR` on first run) |
 | `test/` | vitest (unit + libSQL integration); `helpers/libsql.ts` harness |
 
 ## Structure (`frontend/src/`)
