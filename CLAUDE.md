@@ -25,7 +25,7 @@ domain/ (pure zod + rules) ← config/ services/ ← mastra/ adapters ← server
 1. `promptguard.validateUserMessage()` (length + injection) at the inbound message entry.
 2. `promptguard.sanitizeMemoryContent()` (≤500) before storing a memory.
 3. Never commit `.env` / API keys; never log secret values (pino `redact`).
-4. Treat LLM output, stored memories, and MCP content as **untrusted** (strip / delimit before reuse).
+4. Treat LLM output, stored memories, and fetched web content (`fetch_url` / web tools) as **untrusted** (strip / delimit before reuse).
 5. Scope every memory/data query by `userId`.
 
 ## Before commit (run in `backend/`)
@@ -37,7 +37,7 @@ domain/ (pure zod + rules) ← config/ services/ ← mastra/ adapters ← server
 - [ ] No secrets in code or logs?
 
 ## Parity with Go (keep exact)
-dedup `0.92` · cap `50` · onboarding `@4` · RAG threshold/topK `10` · embedding `1024` · watchdog `30s` · llm_request `300s` · maxSteps `30` · maxRetries `3`. No auto memory-extraction (only `remember` + onboarding). MCP `search` only; `exec` not ported.
+dedup `0.92` · cap `50` · onboarding `@4` · RAG threshold/topK `10` · embedding `1024` · watchdog `30s` · llm_request `300s` · maxSteps `30` · maxRetries `3`. No auto memory-extraction (only `remember` + onboarding). Web search/scraping is **native** (the `web` tool bucket over SearXNG, no MCP); `exec` not ported.
 
 ## Status
-Milestones **0–3 done**. Roadmap + plans in `.ai-factory/ROADMAP.md` and `.ai-factory/plans/`. Next: **M4** (skill-agent factory + chat workflow `route → runSkills → synthesize`).
+Milestones **0–9 + 11 done** (10 — N/A: new project, no Go migration). Roadmap + plans in `.ai-factory/ROADMAP.md` and `.ai-factory/plans/`. Latest: **M11** (native `web` tool bucket over SearXNG, MCP plumbing removed).
