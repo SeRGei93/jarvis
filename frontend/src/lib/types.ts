@@ -57,14 +57,6 @@ export interface AgentConfig {
   rag_top_k: number;
 }
 
-// ── MCP servers (settings: mcp_servers) ─────────────────────────────────────
-export interface McpServerConfig {
-  command: string;
-  args: string[];
-  env?: Record<string, string>;
-}
-export type McpServers = Record<string, McpServerConfig>;
-
 // ── prompts (prompts table) ─────────────────────────────────────────────────
 export interface Prompt {
   key: string;

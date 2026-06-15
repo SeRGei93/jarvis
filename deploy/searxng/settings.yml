@@ -1,0 +1,30 @@
+use_default_settings:
+  engines:
+    keep_only:
+      - google
+      - google news
+      - brave
+      - brave news
+      - bing
+      - bing news
+      - yandex
+
+general:
+  instance_name: "jarvis SearXNG"
+
+search:
+  safe_search: 1
+  autocomplete: ""
+  formats:
+    - html
+    - json # REQUIRED — the backend search client requests json
+
+server:
+  limiter: false
+  image_proxy: false
+  # Placeholder — overridden at runtime by the SEARXNG_SECRET env var
+  # (the official searxng image substitutes it on startup).
+  secret_key: "changeme"
+
+valkey:
+  url: redis://redis:6379/0

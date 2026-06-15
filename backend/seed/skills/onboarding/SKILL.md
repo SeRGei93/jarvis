@@ -1,7 +1,7 @@
 ---
 name: onboarding
 description: First introduction with a new user.
-allowed-tools: web_search web_fetch
+allowed-tools: web_search fetch_url
 model: openrouter:google/gemini-3-flash-preview
 temperature: 0.5
 ---

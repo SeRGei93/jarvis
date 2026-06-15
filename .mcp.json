@@ -11,10 +11,6 @@
     "playwright": {
       "command": "npx",
       "args": ["-y", "@playwright/mcp@latest"]
-    },
-    "search": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "http://localhost:3000/mcp", "--allow-http"]
     }
   }
 }

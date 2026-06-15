@@ -157,7 +157,7 @@ function main(): void {
     scheduler?.stop(); // stop cron ticks before tearing down the DB
     void bot?.stop().catch(() => {}); // stop polling / webhook intake
     server.close(() => {
-      void chatService?.close().catch(() => {}); // best-effort MCP disconnect
+      void chatService?.close().catch(() => {}); // best-effort resource release
       libsql.close();
       log.info("shutdown complete");
       process.exit(0);

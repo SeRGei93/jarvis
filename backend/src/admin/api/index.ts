@@ -4,7 +4,6 @@ import type { AdminEnv, GetAdminDeps } from "./deps.js";
 import { logger } from "../../pkg/logger.js";
 import { settingsRoutes } from "./settings.js";
 import { modelsRoutes } from "./models.js";
-import { mcpRoutes } from "./mcp.js";
 import { skillsRoutes } from "./skills.js";
 import { promptsRoutes } from "./prompts.js";
 import { usersRoutes } from "./users.js";
@@ -43,7 +42,6 @@ export function buildAdminApiRouter(getDeps: GetAdminDeps, auth: AdminAuthDeps):
   // --- entity routers (Tasks 3–5) ---
   router.route("/settings", settingsRoutes());
   router.route("/models", modelsRoutes());
-  router.route("/mcp", mcpRoutes());
   router.route("/skills", skillsRoutes());
   router.route("/prompts", promptsRoutes());
   router.route("/users", usersRoutes());

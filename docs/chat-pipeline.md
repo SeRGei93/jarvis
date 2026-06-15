@@ -1,4 +1,4 @@
-[← Architecture](architecture.md) · [Back to README](../README.md) · [Tools & MCP →](tools.md)
+[← Architecture](architecture.md) · [Back to README](../README.md) · [Tools →](tools.md)
 
 # Chat Pipeline
 
@@ -28,7 +28,7 @@ text ─▶ promptguard ─▶ loadContext ─▶ rate-limit ─▶ history + me
 
 1. **promptguard** — `validateUserMessage(text)` checks length + injection. On failure the workflow returns the canned `userMessage` and stops (no model call).
 2. **conversation-context** — `loadContext(db, settings, userId, chatId)` loads the `User`, gets-or-creates the `Session` (model defaults to `roles.default`), loads the optional `BotIdentity`, and resolves the Mastra thread / resource ids. The Mastra thread is ensured to exist.
-3. **rate-limit** — `RateLimitService.checkAndConsume(userId)` enforces the hourly window from the user's plan (`hourly_limit`). Un-onboarded users are bypassed; over the limit the turn is rejected (canned reply, no routing). See [Tools & MCP](tools.md#rate-limit--usage).
+3. **rate-limit** — `RateLimitService.checkAndConsume(userId)` enforces the hourly window from the user's plan (`hourly_limit`). Un-onboarded users are bypassed; over the limit the turn is rejected (canned reply, no routing). See [Configuration](configuration.md#plans-rate-limit-and-usage).
 4. **history + previousSkills** — `getRecentMessages(...)` reads the last `agent.max_history` messages; `derivePreviousSkills(...)` collects the skill tags from prior assistant turns (newest-first). The current user message is then persisted.
 5. **memories + prompts** — `MemoryService.loadRelevant(userId, text)` returns the RAG-selected long-term facts; the SOUL/FORMAT/INTEGRITY/SYNTHESIZER bodies are loaded from the `prompts` table.
 6. **route** — `SkillRouter.resolveSkills(...)`. If the user is not onboarded, `onboarding` is forced and the router is bypassed; otherwise the router model returns 1–4 routable skills (falling back to `research`).
@@ -77,7 +77,7 @@ SOUL  (or BotIdentity.systemPromptOverride)
 
 ## Tools
 
-`tools/registry.resolveTools(allowedTools, ctx)` maps a skill's `allowed-tools` to a concrete AI SDK `ToolSet`, merging the **memory**, **built-in** (currency, cron tasks, profile, skill references), and **MCP `search`** buckets; unknown names are logged at `WARN` and skipped. The MCP `ToolSet` is assembled once at boot and threaded in via `ctx`. Full details — every tool, its inputs, and the MCP adapter — are in [Tools & MCP](tools.md).
+`tools/registry.resolveTools(allowedTools, ctx)` maps a skill's `allowed-tools` to a concrete AI SDK `ToolSet`, merging the **memory**, built-in (**currency**, **tasks**, **profile**, **skill-ref**), and native **web** buckets; unknown names are logged at `WARN` and skipped. Buckets build lazily per resolve call. Full details — every tool and its inputs — are in [Tools](tools.md) and [Web Search](web-search.md).
 
 ## History I/O
 

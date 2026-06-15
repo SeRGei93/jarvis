@@ -20,7 +20,6 @@ describe("runSeed (config.yaml -> settings/models/plans)", () => {
     expect(keys).toContain(SettingKey.ModelRoles);
     expect(keys).toContain(SettingKey.Timeouts);
     expect(keys).toContain(SettingKey.Agent);
-    expect(keys).toContain(SettingKey.McpServers);
 
     const roles = s.find((r) => r.key === SettingKey.ModelRoles)?.value as Record<string, string>;
     expect(roles.default).toBe("openrouter:google/gemini-3.1-flash-lite");
@@ -29,10 +28,6 @@ describe("runSeed (config.yaml -> settings/models/plans)", () => {
     const agent = s.find((r) => r.key === SettingKey.Agent)?.value as Record<string, number>;
     expect(agent.rag_top_k).toBe(10);
     expect(agent.max_history).toBe(15);
-
-    // Only the `search` MCP server is kept (memory dropped).
-    const mcp = s.find((r) => r.key === SettingKey.McpServers)?.value as Record<string, unknown>;
-    expect(Object.keys(mcp)).toEqual(["search"]);
 
     const m = await t.db.select().from(models);
     expect(m).toHaveLength(11);
@@ -63,7 +58,7 @@ describe("runSeed (config.yaml -> settings/models/plans)", () => {
 
     // allowed-tools parsed from space-delimited string; reasoning tri-state
     const research = sk.find((s) => s.name === "research");
-    expect(research?.allowedTools).toEqual(["web_fetch", "web_search"]);
+    expect(research?.allowedTools).toEqual(["web_search", "fetch_url"]);
     expect(research?.reasoning).toBe(false);
     expect((research?.prompt.length ?? 0)).toBeGreaterThan(0);
 

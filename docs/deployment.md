@@ -32,6 +32,10 @@ the `app` image and served by the backend's Hono server (single origin — no CO
 | **app** | the whole jarvis process — bot, cron, admin API, Mini App static | **yes — the only one** |
 | **nginx** | TLS termination + reverse-proxy to `app:8080`, serves the ACME challenge | no |
 | **certbot** | obtains and renews the Let's Encrypt certificate | no |
+| **searxng** | metasearch engine the app queries for web search (internal network only) | no |
+| **redis** | cache / coordination backend for searxng (internal network only) | no |
+
+`app` reaches searxng over the internal Docker network (`SEARXNG_URL=http://searxng:8080`); searxng is **not** exposed publicly in prod. searxng requires `SEARXNG_SECRET` (the compose fails fast if it is unset) and mounts its config read-only from `deploy/searxng/{settings.yml,limiter.toml}`. See [Web Search](web-search.md).
 
 > **Only `app` opens the database.** Bot, cron and the admin API run in a *single*
 > Node process sharing *one* libSQL connection — this is the deliberate
@@ -44,6 +48,8 @@ All persistent state is bind-mounted under the host-visible **`./data/`** direct
 
 ```
 ./data/db/avocado.db        libSQL database (only the app writes it)
+./data/db/web-cache/        web fetch/search file cache (app mounts ./data/db → /data, WEB_CACHE_DIR=/data/web-cache)
+./data/redis/               redis persistence (searxng cache/coordination)
 ./data/letsencrypt/         SSL certificates  (certbot writes, nginx reads)
 ./data/certbot-www/         ACME http-01 challenge webroot (certbot ↔ nginx)
 ```
@@ -103,9 +109,11 @@ an HTTPS tunnel (`cloudflared`/`ngrok`) and set that URL as the Mini App in @Bot
 
 If port 8080 is already taken on your host, override it: `LOCAL_PORT=8081 make local`.
 
-> The external MCP `search` server is a separate service (ROADMAP §9) and is **not**
-> bundled in the image — locally those tools degrade to none (`mcpTools: 0`), which
-> is best-effort by design; the core bot/LLM/memory/skills work without it.
+> `docker-compose.local.yml` brings up `searxng` + `redis` alongside `app`, so the
+> native web tools work locally too. The local compose defaults `SEARXNG_SECRET`
+> (no setup needed) and publishes the searxng UI on `SEARXNG_PORT` (default `8888`)
+> for debugging. If searxng is unreachable, web-search tools degrade per request
+> while the rest of the bot keeps working. See [Web Search](web-search.md).
 
 ## Make targets
 
@@ -141,6 +149,8 @@ Deploy-specific keys:
 | `CERTBOT_STAGING` | `1` = staging certs (testing) |
 | `ADMIN_USER_IDS` | Telegram ids allowed into the admin (deny-by-default) |
 | `LIBSQL_URL` | `file:/data/avocado.db` (volume) or a Turso URL |
+| `SEARXNG_SECRET` | secret key the searxng container requires (prod compose fails fast if unset) |
+| `SEARXNG_PORT` | host port for the searxng UI (local compose only; default `8888`) |
 
 ## Updating
 

@@ -21,9 +21,51 @@ services:
     environment:
       NODE_ENV: development # pretty logs; dev doesn't hard-require secrets
       LIBSQL_URL: file:/data/avocado.db
+      # Web search: talk to searxng over the internal docker network.
+      SEARXNG_URL: http://searxng:8080
+      WEB_CACHE_DIR: /data/web-cache
     volumes:
       - ./data/db:/data
     ports:
       # host port is overridable: `LOCAL_PORT=8081 make local` if 8080 is taken.
       - "${LOCAL_PORT:-8080}:8080"
+    # Plain list so app still boots even if searxng is slow.
+    depends_on:
+      - searxng
     restart: unless-stopped
+
+  # Cache/coordination backend for searxng (internal only).
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./data/redis:/data
+
+  # Self-hosted metasearch engine — the backend queries it for web search (json).
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      # local testing: default the secret so `make local` needs no setup (prod compose still requires it).
+      SEARXNG_SECRET: "${SEARXNG_SECRET:-jarvis-local-dev-secret}"
+      SEARXNG_BASE_URL: "http://localhost:8080/"
+    ports:
+      # exposed locally for debugging the searxng UI; not published in prod.
+      - "${SEARXNG_PORT:-8888}:8080"
+    volumes:
+      - ./deploy/searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./deploy/searxng/limiter.toml:/etc/searxng/limiter.toml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null 'http://localhost:8080/healthz' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s

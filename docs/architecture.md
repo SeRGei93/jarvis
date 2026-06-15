@@ -26,9 +26,9 @@ domain (pure) ← config / services ← mastra adapters ← app.ts / server.ts (
 | `mastra/` | `models`, `llm`, `strip-leaked-tools`, `embeddings`, `speech`, `index` (Mastra instance) |
 | `mastra/agents/` | `router`, `prompt-builder`, `skill-agent`, `synthesizer`, `loop-guard` |
 | `mastra/memory/` | `memory-service` (RAG), `profile-extractor`, `history` (+ message I/O) |
-| `mastra/tools/` | `memory-tools`, `registry` (resolver seam — full tool set in M5) |
+| `mastra/tools/` | `registry` (bucket resolver), `memory-tools`, `currency`, `web` (native web bucket), `tasks`, `profile-tools`, `skill-ref` |
 | `mastra/workflows/` | `chat` (route → runSkills → synthesize) |
-| `services/` | `skill-service`, `conversation-context` |
+| `services/` | `skill-service`, `conversation-context`, `web/` (SearXNG search, browser-free fetch + SSRF guard, parsers + Belarus verticals) |
 | `pkg/` | `logger` (pino + redact), `promptguard`, `bootstrap-env` |
 | `app.ts` | composition root — `createChatService()` → `handleUserMessage()` |
 | `server.ts` | single-process entry point (health server + best-effort ChatService init) |
@@ -44,7 +44,7 @@ domain (pure) ← config / services ← mastra adapters ← app.ts / server.ts (
 
 ## Parity Constants (verified against Go)
 
-dedup `0.92` · permanent cap `50` · onboarding `@4` msgs · RAG threshold/topK `10` · embedding dim `1024` · watchdog `30s` · `llm_request` `300s` · maxSteps `30` · maxRetries `3` · sub-agent loop cap `2`@`5min` · synthesizer temp `0.3`. No automatic memory extraction (only `remember` + onboarding). MCP `search` only; `exec` tool not ported.
+dedup `0.92` · permanent cap `50` · onboarding `@4` msgs · RAG threshold/topK `10` · embedding dim `1024` · watchdog `30s` · `llm_request` `300s` · maxSteps `30` · maxRetries `3` · sub-agent loop cap `2`@`5min` · synthesizer temp `0.3`. No automatic memory extraction (only `remember` + onboarding). The web tools are **native** (`services/web/` + the `web` tool bucket) — there is no external MCP server; the Go MCP `exec` tool is not ported.
 
 ## See Also
 

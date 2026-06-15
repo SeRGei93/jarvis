@@ -1,19 +1,19 @@
 [← Chat Pipeline](chat-pipeline.md) · [Back to README](../README.md) · [Telegram Bot →](telegram.md)
 
-# Tools & MCP
+# Tools
 
-What a skill can *do* beyond generating text. A skill row lists `allowed-tools` (space-delimited); at runtime `tools/registry.resolveTools(allowedTools, ctx)` maps those names to a concrete AI SDK `ToolSet` that the model can call. Milestone 5 makes the full registry live: built-in tools plus the external MCP `search` server.
+What a skill can *do* beyond generating text. A skill row lists `allowed-tools` (space-delimited); at runtime `tools/registry.resolveTools(allowedTools, ctx)` maps those names to a concrete AI SDK `ToolSet` that the model can call. The registry exposes built-in tools (memory, currency, cron tasks, profile, skill references) plus a **native web bucket** (search / fetch / Belarus marketplaces / weather) — there is no external MCP server.
 
 ## How a skill gets its tools
 
 ```
 skill.allowed-tools ─▶ resolveTools(names, ctx) ─▶ merge buckets ─▶ AI SDK ToolSet
-                                                    memory → built-in → MCP
+                            memory → currency → web → tasks → profile → skill-ref
 ```
 
 - Buckets are tried in order; **first match wins**. An unknown name is logged at `WARN` and skipped (the seam that lets a skill run even when it references a tool that isn't available).
-- Buckets build **lazily** — a bucket is only constructed when a skill actually references one of its tools.
-- `resolveTools` is **synchronous**: the MCP `ToolSet` is assembled once at boot and passed in via `ctx` (see [MCP `search`](#mcp-search)).
+- Buckets build **lazily** — a bucket is only constructed when a skill actually references one of its tools (`once()` memoizes the build per resolve call).
+- `resolveTools` is **synchronous**. Each bucket's `build*` factory receives the `ToolContext`; the web bucket additionally accepts an injectable `fetchFn` (defaults to the global `fetch`) so tests run without a network.
 
 ### ToolContext
 
@@ -24,9 +24,8 @@ Every tool's `execute` receives what it needs through the `ToolContext` threaded
 | `userId` | scopes every read/write to the current user |
 | `chatId`, `sessionId` | written onto created cron tasks |
 | `db` | drizzle handle (`tasks`, `profile`) |
-| `settings` | `SettingsService` (e.g. `timeouts.http_client` for `currency`) |
+| `settings` | `SettingsService` (e.g. `timeouts.http_client` for `currency` and web fetches) |
 | `mem` | `MemoryService` (memory tools) |
-| `mcpTools` | adapted MCP `ToolSet` (bare names), `{}` when MCP is disabled |
 | `skillsRoot?` | filesystem root for `read_skill_reference` (defaults to the seeded skills dir) |
 
 ## Built-in tools
@@ -78,27 +77,22 @@ Free-form fields pass through `promptguard.sanitizeProfileField`; bot identity e
 
 `ref_path` must start with `references/`, `scripts/`, or `assets/`; absolute paths and `..` traversal are rejected. Available references are listed for the model in the `[SKILL REFERENCES]` prompt block, populated by `listReferences(skillName)` from the on-disk skills root (`backend/seed/skills`).
 
-## MCP `search`
+## Web tools (native bucket)
 
-The only external MCP server kept from the Go project (the `memory` knowledge-graph server is dropped — memory is consolidated into built-in storage). It exposes `web_search`, `web_fetch`, `avby_search`, `read_resource`, and `weather`.
+The `web` bucket (`mastra/tools/web.ts`, registered in `mastra/tools/registry.ts`) replaces the old external MCP `search` server. It runs **in-process**: web search goes to a self-hosted [SearXNG](https://docs.searxng.org/) instance over the internal Docker network, page fetches use a browser-free `fetch` + `jsdom`/`turndown` pipeline (no Chromium), and Belarus marketplace/weather verticals are plain HTTP scrapers. Service code lives under `backend/src/services/web/`.
 
-`mastra/mcp.ts` wraps `@mastra/mcp`'s `MCPClient`:
+The bucket exposes **21 tools** — 15 main and 6 lookup helpers. Each `execute` reads the per-request HTTP timeout from `SettingsService` (`timeouts.http_client`, Go parity) and treats fetched page content as untrusted data (wrapped in an envelope). Full reference — every tool, configuration, infrastructure, security, and caching — is in **[Web Search](web-search.md)**.
 
-- Configured from `settings.mcp_servers.search` (`{ command, args, env? }`); connects once at boot.
-- Tools are read via `listToolsetsWithErrors()`, which yields **bare** names per server — so skills reference `web_search`, not the namespaced `search_web_search`.
-- Each Mastra tool is **adapted** into an AI SDK `tool()` (mapping `inputSchema` and the `execute({ context })` convention) so `LlmService` (`streamText`/`generateText`) can call it directly.
-- **Graceful degradation:** an unreachable server, a construction error, or a per-server list error logs a `WARN` and yields an empty/partial `ToolSet` — the chat keeps working. The client is `disconnect()`-ed on shutdown.
-
-## Rate limit & usage
-
-Two services run around the tool-enabled turn (see the [Chat Pipeline](chat-pipeline.md)):
-
-- **`RateLimitService`** — an hourly sliding window (`message_rate_limits`) gated by the user's plan `hourly_limit`. Un-onboarded users are bypassed. Over the limit, the turn is rejected before routing.
-- **`UsageService`** — accumulates per-user, per-day `cost` + `requests` into `usage_stats` after each answer (cost surfaced from `LlmService`).
-
-Plan limits live in `subscription_plans` — see [Configuration](configuration.md#plans-rate-limit-and-usage).
+| Group | Tools |
+|-------|-------|
+| Search / fetch / news | `web_search`, `web_search_batch`, `fetch_url`, `search_news` |
+| Marketplaces | `kufar_search`, `avby_search`, `rabota_search`, `transport_search`, `relax_search`, `relax_afisha` |
+| Weather | `weather` |
+| med103 (health) | `med103_doctor_search`, `med103_clinic_search`, `med103_services`, `med103_pharmacy` |
+| Lookups | `kufar_categories`, `kufar_regions`, `avby_brands`, `avby_models`, `relax_categories`, `relax_afisha_categories` |
 
 ## See Also
 
-- [Chat Pipeline](chat-pipeline.md) — where tool resolution, the rate-limit gate, and usage recording sit in a turn
-- [Configuration](configuration.md) — `mcp_servers`, timeouts, and plan limits that drive these tools
+- [Web Search](web-search.md) — the full native web bucket: tools, SearXNG infra, SSRF guard, caching
+- [Chat Pipeline](chat-pipeline.md) — where tool resolution sits in a turn
+- [Configuration](configuration.md) — `SEARXNG_URL`/`WEB_CACHE_DIR`, timeouts, and plan limits that drive these tools

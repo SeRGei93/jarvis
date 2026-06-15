@@ -15,6 +15,7 @@
 - [x] **8. Админка (Mini App)** — Hono-API (CRUD skills/models/settings/prompts/plans/users/usage/mcp) + React Mini App + auth по `initData`
 - [ ] **9. Деплой** — Docker (1 контейнер: сборка фронта → отдача бэкендом) + nginx (reverse-proxy) + Let's Encrypt SSL + deploy-скрипт (генерация `.env`) и Makefile. ~~Миграция данных Postgres → libSQL — НЕ актуальна: запускаем как новый проект.~~
 - [ ] ~~**10. Паритет и переключение**~~ — **НЕ актуально**: новый проект, Go не мигрируем и не выводим из эксплуатации.
+- [x] **11. Встроенный web-search (нативные инструменты)** — перенос внешнего MCP-сервиса `search` в backend как нативный AI-SDK бакет `web` (21 инструмент: `web_search`/`web_search_batch`/`fetch_url`/`search_news`/маркетплейсы РБ kufar·av.by·rabota·zippybus·relax + 103.by (4 консолидированных) + `weather` + 6 lookup), `searxng`+`redis` в compose, SSRF-guard на `fetch_url`, без браузера/Chromium; MCP-плумбинг удалён целиком. **Отменяет** §9 («search оставляем как отдельный MCP-сервис»), parity-заметку «MCP `search` only» и §10.3 (weather как MCP-tool) — полную сверку ROADMAP/CLAUDE сделать через `/aif-roadmap` + `/aif-rules`.
 
 ## Completed
 
@@ -29,6 +30,7 @@
 | 6. Telegram-бот | 2026-06-14 |
 | 7. Cron-планировщик | 2026-06-14 |
 | 8. Админка (Mini App) | 2026-06-14 |
+| 11. Встроенный web-search (нативные инструменты) | 2026-06-15 |
 
 ---
 
@@ -269,7 +271,7 @@ ADMIN_USER_IDS=123,456                     # bootstrap-админы миниап
 ---
 
 ## 9. Что НЕ переносим / упрощаем
-- Внешний MCP-сервер `search` (cars.av.by, web_search/web_fetch/avby_search/read_resource/weather) оставляем как есть — отдельный сервис; скилы продолжают на него опираться.
+- ~~Внешний MCP-сервер `search` (cars.av.by, web_search/web_fetch/avby_search/read_resource/weather) оставляем как есть — отдельный сервис; скилы продолжают на него опираться.~~ **ОТМЕНЕНО (M11, 2026-06-15):** `search` перенесён в backend как нативный бакет `web`; MCP-плумбинг удалён. См. milestone 11.
 - MCP-сервер `memory` (knowledge-graph) убираем — память консолидирована во встроенную (см. §5).
 - Инструмент `exec` не переносим (в Go он зарегистрирован, но заблокирован от LLM).
 - Файловое хранилище сессий заменяется на libSQL.
@@ -281,7 +283,7 @@ ADMIN_USER_IDS=123,456                     # bootstrap-админы миниап
 ## 10. Расхождения с Go-версией, учтённые при ревью (2026-06-14)
 1. **Авто-извлечения памяти** из диалога в Go **нет** → в TS тоже не делаем (только `remember` + онбординг).
 2. **Мёртвый конфиг:** `agent.rag.*` и `agent.memory_extraction.*` в `config.yaml` не парсятся (порог/top_k захардкожены = 10) → переносим только реально используемое.
-3. **`weather`** — не встроенный инструмент, приходит из MCP `search` → в инвентаре он MCP-tool, не Go-tool.
+3. **`weather`** — ~~не встроенный инструмент, приходит из MCP `search` → в инвентаре он MCP-tool, не Go-tool.~~ **ОТМЕНЕНО (M11, 2026-06-15):** `weather` теперь нативный инструмент бакета `web` (gismeteo.by, без MCP).
 4. **Две системы памяти** (встроенная + MCP `memory`) → консолидируем в одну.
 5. **`exec`** зарегистрирован, но заблокирован → не переносим.
 6. **Synthesizer-модель:** фактически `session.Model`, переопределяется `synthesizer_model` если задан.

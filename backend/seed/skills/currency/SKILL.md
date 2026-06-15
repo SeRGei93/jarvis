@@ -1,7 +1,7 @@
 ---
 name: currency
 description: Currency exchange rates from official and market sources in Belarus.
-allowed-tools: currency_rates web_fetch web_search
+allowed-tools: currency_rates web_search fetch_url
 model: openrouter:openai/gpt-oss-120b:nitro
 temperature: 0.3
 routable: true
@@ -10,10 +10,10 @@ routable: true
 ## TOOLS
 
 - **currency_rates** — Fetches rates from НБРБ, Беларусбанк, and per-bank rates from Myfin.by. Param: `currencies` (optional, e.g. ["USD", "EUR", "RUB"]). Default: USD, EUR, RUB. Returns official rates + buy/sell for ~30 banks.
-- **web_fetch** — Fetch a web page. Use for currencies NOT covered by `currency_rates`:
-  - UAH (гривна): `web_fetch(url="https://myfin.by/currency/uah")`
-  - PLN (злотый): `web_fetch(url="https://myfin.by/currency/pln")`
-  - Крипто (BTC, ETH, USDT): `web_fetch(url="https://myfin.by/crypto-rates")`
+- **fetch_url** — Fetch a web page. Use for currencies NOT covered by `currency_rates`:
+  - UAH (гривна): `fetch_url(url="https://myfin.by/currency/uah")`
+  - PLN (злотый): `fetch_url(url="https://myfin.by/currency/pln")`
+  - Крипто (BTC, ETH, USDT): `fetch_url(url="https://myfin.by/crypto-rates")`
 - **web_search** — Search the web. Use for:
   - Курсы конкретного банка: `web_search(query="курс доллара Приорбанк site:myfin.by")`
   - Курсы в конкретном городе: `web_search(query="курс валют Гомель site:myfin.by")`
@@ -23,7 +23,7 @@ routable: true
 ## WORKFLOW
 
 1. For USD, EUR, RUB → call `currency_rates`.
-2. For UAH, PLN, crypto, or other currencies → call `web_fetch` with the relevant myfin.by URL.
+2. For UAH, PLN, crypto, or other currencies → call `fetch_url` with the relevant myfin.by URL.
 3. For rates at a specific bank or city → call `web_search` with `site:myfin.by`.
 4. For exchange rate forecasts or trends → call `web_search`.
 5. If user asks for multiple currencies — combine tools as needed.

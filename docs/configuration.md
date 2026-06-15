@@ -17,11 +17,15 @@
 | `XAI_API_KEY` | no | — | xAI provider |
 | `GOOGLE_API_KEY` | no | — | Google provider |
 | `ADMIN_USER_IDS` | no | `""` | comma-separated Telegram ids for the Mini App (M8) |
+| `SEARXNG_URL` | no | `http://searxng:8080` | SearXNG instance the web-search client queries |
+| `SEARXNG_ENGINES` | no | `google,yandex` | comma-separated engine override passed to SearXNG |
+| `WEB_CACHE_DIR` | no | `./data/web-cache` | root dir for the web fetch/search file cache (container: `/data/web-cache`) |
+| `SEARXNG_SECRET` | prod | — | secret key the SearXNG **container** requires (prod compose fails fast; local compose defaults it) |
 | `NODE_ENV` | no | `development` | `development` \| `production` \| `test` |
 | `LOG_LEVEL` | no | pino default | `debug` for verbose logs; secrets are always redacted |
 | `PORT` | no | `8080` | health/HTTP server port |
 
-`TELEGRAM_BOT_TOKEN` and `OPENROUTER_API_KEY` are required only when `NODE_ENV=production` (fail-fast on boot). Secrets are never logged as values — only key names appear at `DEBUG`.
+`TELEGRAM_BOT_TOKEN` and `OPENROUTER_API_KEY` are required only when `NODE_ENV=production` (fail-fast on boot). Secrets are never logged as values — only key names appear at `DEBUG`. The web bucket and its config are documented in [Web Search](web-search.md).
 
 ## Database-backed settings
 
@@ -33,9 +37,8 @@ Seeded from `backend/seed/config.yaml` into the `settings` table (key → JSON).
 | `timeouts` | `{ llm_request, http_client, llm_activity }` | Go-style durations (`300s`, `30s`) |
 | `agent` | `{ max_history, default_temperature, rag_top_k }` | defaults `15` / `0.4` / `10` |
 | `telegram_allowed_users` | `number[]` | empty = open to all |
-| `mcp_servers` | `{ search?: { command, args, env? } }` | only the `search` server is kept (see [Tools & MCP](tools.md#mcp-search)) |
 
-The `search` server's `http_client` timeout (from `timeouts`) is also the global timeout passed to the MCP client and the per-source timeout for the `currency_rates` tool.
+The `timeouts.http_client` value is the per-request timeout for the `currency_rates` tool and the native [web bucket](web-search.md) (fetch + verticals). Web-search infrastructure (SearXNG endpoint, cache dir) is configured via `.env` runtime flags, not DB settings.
 
 ### How settings drive the chat pipeline
 
@@ -75,6 +78,7 @@ Schedule validation for cron tasks uses the `cron-parser` dependency (recurring 
 
 ## See Also
 
-- [Tools & MCP](tools.md) — how `mcp_servers` and plan limits drive the agent's tools
+- [Tools](tools.md) — how `timeouts` and plan limits drive the agent's tools
+- [Web Search](web-search.md) — `SEARXNG_*` / `WEB_CACHE_DIR` flags and the native web bucket
 - [Getting Started](getting-started.md) — creating and seeding the database
 - [Chat Pipeline](chat-pipeline.md) — how roles and agent params are consumed at runtime

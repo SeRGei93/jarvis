@@ -1,5 +1,4 @@
 import type { Memory } from "@mastra/memory";
-import type { ToolSet } from "ai";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "../../db/schema.js";
 import type { Message, Skill } from "../../domain/entities.js";
@@ -54,8 +53,6 @@ export interface ChatDeps {
   rateLimit: RateLimitService;
   /** Per-user cost/request accounting. */
   usage: UsageService;
-  /** Adapted MCP `search` ToolSet (bare names), assembled once at boot; {} when disabled. */
-  mcpTools?: ToolSet;
 }
 
 export interface ChatInput {
@@ -146,7 +143,6 @@ export async function runChat(
     sessionId: ctx.session.id,
     db: deps.db,
     settings: deps.settings,
-    mcpTools: deps.mcpTools ?? {},
   };
 
   // 6. run: single → stream directly; multi → sub-agents in parallel → synthesize.

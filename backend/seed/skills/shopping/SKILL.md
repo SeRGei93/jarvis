@@ -1,7 +1,7 @@
 ---
 name: shopping
 description: Search for products and compare prices across marketplaces. Use for goods like electronics, appliances, clothes, furniture — NOT for cars (use "cars" skill), NOT for apartments or real estate (use "realty" skill).
-allowed-tools: kufar_search read_resource web_fetch web_search
+allowed-tools: kufar_search kufar_categories kufar_regions web_search fetch_url
 model: openrouter:deepseek/deepseek-v4-flash:nitro
 reasoning: true
 temperature: 0.4
@@ -29,8 +29,9 @@ Use multiple sources when relevant. You are not limited to these stores.
 | Tool | Purpose |
 |---|---|
 | `kufar_search` | Search Kufar listings. Takes `query`, `category` (slug), `region` (city or oblast in Russian), `condition` (new/used), `private_only`, `page`. **Known limits:** `price_min`/`price_max` break page rendering (returns empty HTML) — do NOT use price filters, filter results yourself after fetching. `condition` and `sort` may be silently ignored. Always include `query` when possible — category-only searches are less reliable. |
-| `read_resource` | Read MCP resource by URI. Use `kufar://categories` for category slugs, `kufar://subcategories/<slug>` for subcategories, `kufar://regions` for regions, `kufar://areas/<rgn>` for cities within a region. |
-| `web_fetch` | Fetch a web page. Use for: (1) **mandatory verification of every URL** before including in response, (2) fetching listing details (description, specs, seller info). |
+| `kufar_categories` | List Kufar category slugs (and subcategories). |
+| `kufar_regions` | List Kufar regions and cities within a region. |
+| `fetch_url` | Fetch a web page. Use for: (1) **mandatory verification of every URL** before including in response, (2) fetching listing details (description, specs, seller info). |
 | `web_search` | Web search. Use for stores other than Kufar: `site:store.by product name`. |
 
 ## WORKFLOW
@@ -51,7 +52,7 @@ kufar_search(category="velotovary")
 - **NEVER** pass `price_min`/`price_max` — they return empty results.
 - `condition` and `sort` may be silently ignored — mention user's preference (б/у, новое) in the `query` text if needed, and sort results yourself.
 - Always prefer `query` over `category`-only searches.
-- If unsure of category slug — call `read_resource(uri="kufar://categories")` first.
+- If unsure of category slug — call `kufar_categories()` first (use `kufar_regions()` for region/city values).
 - Use `page=2`, `page=3` for more results.
 
 ### Step 3 — Search stores (skip only if user asked for б/у only)
@@ -65,7 +66,7 @@ web_search(query="кроссовки nike site:wildberries.by")
 - Never fetch search/category pages — use `web_search` to find direct product pages.
 
 ### Step 4 — Verify ALL URLs
-Call `web_fetch` for EVERY candidate link — both Kufar and store URLs.
+Call `fetch_url` for EVERY candidate link — both Kufar and store URLs.
 - Use this step to also extract listing details (description, specs, seller info, condition).
 - Discard if: 404, "объявление снято", "товар не найден", wrong product, out of stock, empty/error page.
 - **Never show unverified links.**
@@ -103,9 +104,9 @@ End with price comparison summary + brief recommendation.
 ## TOOL LIMITS
 
 - **kufar_search** — max 3 calls (search + pagination or broadened filters)
-- **read_resource** — max 2 calls (category/region lookup)
+- **kufar_categories / kufar_regions** — max 2 calls (category/region lookup)
 - **web_search** — max 6 calls (one per store)
-- **web_fetch** — max 20 calls (mandatory verification + listing details)
+- **fetch_url** — max 20 calls (mandatory verification + listing details)
 
 ## CONTENT RULES
 
@@ -125,7 +126,7 @@ End with price comparison summary + brief recommendation.
 ## SELF-EVALUATION (Before Sending)
 
 - [ ] I called at least one search tool (`kufar_search` or `web_search`)
-- [ ] Every URL was verified with `web_fetch`
+- [ ] Every URL was verified with `fetch_url`
 - [ ] Every URL is copied verbatim from tool output
 - [ ] Prices are from tool results, not memory
 - [ ] If user specified budget — only matching listings shown

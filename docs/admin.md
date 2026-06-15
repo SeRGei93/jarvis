@@ -2,7 +2,7 @@
 
 # Admin Mini App
 
-The admin surface (Milestone 8): a **Telegram Mini App** that edits the DB-backed configuration — skills, models, settings, prompts, plans, users, usage, and MCP servers — without touching the database by hand. It is a React app (`frontend/`) talking to a **Hono REST API** (`backend/src/admin/`) that runs in the **same process** as the bot and the [cron scheduler](scheduler.md). Access is gated by Telegram `initData` verification plus a bootstrap admin allowlist.
+The admin surface (Milestone 8): a **Telegram Mini App** that edits the DB-backed configuration — skills, models, settings, prompts, plans, users, and usage — without touching the database by hand. It is a React app (`frontend/`) talking to a **Hono REST API** (`backend/src/admin/`) that runs in the **same process** as the bot and the [cron scheduler](scheduler.md). Access is gated by Telegram `initData` verification plus a bootstrap admin allowlist.
 
 ## HTTP surface (one process, one port)
 
@@ -54,7 +54,6 @@ All routers live in `backend/src/admin/api/` and are mounted under `/admin/api` 
 | `GET /me` | the authenticated admin's id (liveness) |
 | **settings** | `GET/PUT /settings/timeouts`, `GET/PUT /settings/agent` |
 | **models** | `GET/POST /models`, `PATCH/DELETE /models/:id`, `GET/PUT /models/roles` |
-| **mcp** | `GET/PUT /mcp` (only the `search` server) |
 | **skills** | `GET /skills`, `GET/PUT/DELETE /skills/:name`, `POST /skills`, `POST /skills/:name/test` |
 | **prompts** | `GET /prompts`, `GET/PUT /prompts/:key` (SOUL/FORMAT/INTEGRITY/SYNTHESIZER/WELCOME/MONITORING) |
 | **users** | `GET /users`, `GET/PATCH /users/:id`, `GET/PUT /users/allowlist` |
@@ -67,7 +66,7 @@ All routers live in `backend/src/admin/api/` and are mounted under `/admin/api` 
 
 ## Frontend
 
-`frontend/` is a self-contained Vite + React 18 + [Mantine](https://mantine.dev) package using `@twa-dev/sdk` (HashRouter). `src/lib/api.ts` attaches `Authorization: tma <WebApp.initData>` to every call; `src/nav.tsx` is the single source of truth for the section list. Screens: Skills (with test-run), Models (+ role assignment), Settings, Prompts, Plans, Users (+ allowlist), Usage, MCP.
+`frontend/` is a self-contained Vite + React 18 + [Mantine](https://mantine.dev) package using `@twa-dev/sdk` (HashRouter). `src/lib/api.ts` attaches `Authorization: tma <WebApp.initData>` to every call; `src/nav.tsx` is the single source of truth for the section list. Screens: Skills (with test-run), Models (+ role assignment), Settings, Prompts, Plans, Users (+ allowlist), Usage.
 
 ```
 cd frontend && npm install

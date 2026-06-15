@@ -5,6 +5,7 @@ import { MemoryService } from "../memory/memory-service.js";
 import type { SettingsService } from "../../config/settings.js";
 import { buildMemoryTools } from "./memory-tools.js";
 import { buildCurrencyTools, CURRENCY_TOOL_NAMES } from "./currency.js";
+import { buildWebTools, WEB_TOOL_NAMES } from "./web.js";
 import { buildTaskTools, TASK_TOOL_NAMES } from "./tasks.js";
 import { buildProfileTools, PROFILE_TOOL_NAMES } from "./profile-tools.js";
 import { buildSkillRefTools, SKILLREF_TOOL_NAMES } from "./skill-ref.js";
@@ -24,8 +25,6 @@ export interface ToolContext {
   sessionId: number;
   db: Db;
   settings: SettingsService;
-  /** Adapted AI-SDK ToolSet from the MCP `search` server (bare names); {} when disabled. */
-  mcpTools: ToolSet;
   /** Filesystem root for skill references; defaults to the seed skills dir (Task 6). */
   skillsRoot?: string;
 }
@@ -43,10 +42,9 @@ function once(fn: () => ToolSet): () => ToolSet {
 
 /**
  * Resolve a skill's `allowed-tools` into a concrete AI-SDK ToolSet by merging buckets:
- * memory → built-in (currency/tasks/profile/skill-ref) → MCP `search`. First match wins;
+ * memory → built-in (currency/web/tasks/profile/skill-ref). First match wins;
  * unknown names are logged at WARN and skipped (the seam that lets the workflow run before
  * every tool exists). Buckets build lazily — only when a skill actually references them.
- * Sync by design: `mcpTools` is assembled once at boot and passed in via `ctx`.
  */
 export function resolveTools(allowedTools: string[], ctx: ToolContext): ToolSet {
   if (allowedTools.length === 0) return {};
@@ -54,11 +52,11 @@ export function resolveTools(allowedTools: string[], ctx: ToolContext): ToolSet 
   const buckets: Bucket[] = [
     { names: MEMORY_TOOL_NAMES, get: once(() => buildMemoryTools(ctx.mem, ctx.userId)) },
     { names: CURRENCY_TOOL_NAMES, get: once(() => buildCurrencyTools(ctx)) },
+    { names: WEB_TOOL_NAMES, get: once(() => buildWebTools(ctx)) },
     { names: TASK_TOOL_NAMES, get: once(() => buildTaskTools(ctx)) },
     { names: PROFILE_TOOL_NAMES, get: once(() => buildProfileTools(ctx)) },
     { names: SKILLREF_TOOL_NAMES, get: once(() => buildSkillRefTools(ctx)) },
   ];
-  const mcp = ctx.mcpTools ?? {};
 
   const out: ToolSet = {};
   const skipped: string[] = [];
@@ -67,8 +65,6 @@ export function resolveTools(allowedTools: string[], ctx: ToolContext): ToolSet 
     const fromBucket = bucket?.get()[name];
     if (fromBucket) {
       out[name] = fromBucket;
-    } else if (name in mcp) {
-      out[name] = mcp[name]!;
     } else {
       skipped.push(name);
     }

@@ -5,7 +5,6 @@ import {
   IconBox,
   IconChartBar,
   IconCpu,
-  IconPlug,
   IconReportMoney,
   IconSparkles,
   IconUsers,
@@ -17,7 +16,6 @@ import { PromptsScreen } from "./screens/PromptsScreen.js";
 import { PlansScreen } from "./screens/PlansScreen.js";
 import { UsersScreen } from "./screens/UsersScreen.js";
 import { UsageScreen } from "./screens/UsageScreen.js";
-import { McpScreen } from "./screens/McpScreen.js";
 
 /** One admin section: a route, a sidebar label/icon, and its screen component. */
 export interface NavEntry {
@@ -42,7 +40,6 @@ export const NAV: NavEntry[] = [
   { path: "plans", label: "Планы", icon: IconReportMoney, component: PlansScreen },
   { path: "users", label: "Пользователи", icon: IconUsers, component: UsersScreen },
   { path: "usage", label: "Использование", icon: IconChartBar, component: UsageScreen },
-  { path: "mcp", label: "MCP", icon: IconPlug, component: McpScreen },
 ];
 
 /** Default landing section (first entry). */

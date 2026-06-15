@@ -11,7 +11,7 @@ import {
   skills as skillsTable,
   prompts as promptsTable,
 } from "./schema.js";
-import { SettingKey, type McpServerConfig, type McpServers } from "../config/settings-keys.js";
+import { SettingKey } from "../config/settings-keys.js";
 import { logger } from "../pkg/logger.js";
 
 const log = logger.child({ mod: "seed" });
@@ -37,17 +37,10 @@ interface RawConfig {
     // NOTE: memory_extraction.* and rag.enabled are dead Go config — NOT seeded.
   };
   timeouts?: { llm_request?: string; http_client?: string; llm_activity?: string };
-  mcp_servers?: Record<string, McpServerConfig>;
 }
 
 export function loadSeedConfig(): RawConfig {
   return parseYaml(readFileSync(join(SEED_DIR, "config.yaml"), "utf8")) as RawConfig;
-}
-
-// We keep only the `search` MCP server; the `memory` knowledge-graph server is
-// dropped (memory is consolidated into built-in storage). See ROADMAP §5/§9.
-function searchOnly(servers?: Record<string, McpServerConfig>): McpServers {
-  return servers?.search ? { search: servers.search } : {};
 }
 
 async function seedSettings(db: Db, cfg: RawConfig): Promise<void> {
@@ -80,7 +73,6 @@ async function seedSettings(db: Db, cfg: RawConfig): Promise<void> {
       },
     },
     { key: SettingKey.TelegramAllowedUsers, value: cfg.telegram?.allowed_users ?? [] },
-    { key: SettingKey.McpServers, value: searchOnly(cfg.mcp_servers) },
   ];
   for (const r of rows) {
     log.debug({ key: r.key }, "seeding setting");

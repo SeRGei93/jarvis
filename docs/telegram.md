@@ -1,4 +1,4 @@
-[← Tools & MCP](tools.md) · [Back to README](../README.md) · [Cron Scheduler →](scheduler.md)
+[← Tools](tools.md) · [Back to README](../README.md) · [Cron Scheduler →](scheduler.md)
 
 # Telegram Bot
 
@@ -17,7 +17,7 @@ createChatService → SpeechService(new ModelFactory(), settings)
                   → bot.start()  (polling)  | webhookCallback(bot, "http")  (webhook)
 ```
 
-`bot.stop()` is called from the existing `shutdown()` handler alongside the MCP disconnect.
+`bot.stop()` is called from the existing `shutdown()` handler (alongside stopping the cron scheduler and closing the chat service / DB).
 
 ## Message flow
 

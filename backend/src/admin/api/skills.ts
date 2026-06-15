@@ -120,7 +120,6 @@ export async function runSkillTest(
     sessionId: 0,
     db: deps.db,
     settings: deps.settings,
-    mcpTools: deps.mcpTools ?? {},
   };
 
   const overallMs = parseGoDuration(timeouts.llm_request) || DEFAULT_TEST_RUN_MS;

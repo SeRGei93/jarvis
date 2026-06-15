@@ -40,7 +40,6 @@ function makeCtx(over: Partial<SkillRunContext> = {}): SkillRunContext {
     sessionId: 7,
     db: {} as unknown as SkillRunContext["db"],
     settings: {} as unknown as SkillRunContext["settings"],
-    mcpTools: {},
     ...over,
   };
 }

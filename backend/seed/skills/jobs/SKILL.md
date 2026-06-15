@@ -1,7 +1,7 @@
 ---
 name: jobs
 description: Jobs and employment — find vacancies, check salaries, research companies, review resume.
-allowed-tools: rabota_search web_fetch web_search
+allowed-tools: rabota_search web_search fetch_url
 model: openrouter:google/gemini-3-flash-preview
 routable: true
 reasoning: false
@@ -26,7 +26,7 @@ You are a career assistant for the Belarus job market. Help users find vacancies
 |---|---|
 | `rabota_search` | Search vacancies on rabota.by. Takes `text` (required — role, skills, company), `area` (city: minsk, brest, vitebsk, gomel, grodno, mogilev), `experience` (noExperience, between1And3, between3And6, moreThan6), `schedule` (fullDay, shift, flexible, remote, flyInFlyOut), `employment` (full, part, project), `salary` (min BYR), `only_with_salary` (bool), `order_by` (relevance, publication_time, salary_desc, salary_asc), `page`. Returns HTML with listings including rabota.by and hh.ru vacancies. |
 | `web_search` | Salary research, company reviews, freelance/part-time on kufar.by, market overviews |
-| `web_fetch` | Fetch individual vacancy page for extra details (full description, requirements, benefits) |
+| `fetch_url` | Fetch individual vacancy page for extra details (full description, requirements, benefits) |
 
 ## INTENT TYPES
 
@@ -52,7 +52,7 @@ You are a career assistant for the Belarus job market. Help users find vacancies
    - **Salary** → `rabota_search(text="<role>", area="minsk", only_with_salary=true, order_by="salary_desc")` to see top-paying, then `web_search зарплата <role> Беларусь 2026` for market overview
    - **Company** → `web_search <company name> отзывы работодатель Беларусь`
    - **Freelance/part-time** → `web_search site:kufar.by <role> подработка`
-3. **Fetch details (optional)** — `web_fetch` specific vacancy URLs only if user needs full description, requirements list, or benefits details
+3. **Fetch details (optional)** — `fetch_url` specific vacancy URLs only if user needs full description, requirements list, or benefits details
 4. **Respond** — 6–12 vacancies with rich details per format below
 
 ## RESULT FORMAT
@@ -114,7 +114,7 @@ Each listing: clickable title with company + key details + bold salary.
 |------|-----|-------|
 | rabota_search | 3 | Main search + pagination or broadened query |
 | web_search | 4 | Salary research, company reviews, freelance |
-| web_fetch | 10 | Individual vacancy details if needed |
+| fetch_url | 10 | Individual vacancy details if needed |
 | Response | 4000 chars | Rich details preferred |
 | Links | 10 max | From active listings only |
 

@@ -18,11 +18,50 @@ services:
       NODE_ENV: production
       # libSQL file lives on the shared ./data dir (host-visible, survives redeploys).
       LIBSQL_URL: file:/data/avocado.db
+      # Web search: talk to searxng over the internal docker network.
+      SEARXNG_URL: http://searxng:8080
+      # Web fetch/search file cache (under the mounted ./data/db → /data).
+      WEB_CACHE_DIR: /data/web-cache
     volumes:
       - ./data/db:/data
     expose:
       - "8080" # internal only — nginx fronts it
+    # Plain list (not condition) so app still boots even if searxng is slow.
+    depends_on:
+      - searxng
     restart: unless-stopped
+
+  # Cache/coordination backend for searxng (internal only).
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./data/redis:/data
+
+  # Self-hosted metasearch engine — the backend queries it for web search (json).
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      SEARXNG_SECRET: "${SEARXNG_SECRET:?set SEARXNG_SECRET in .env}"
+      SEARXNG_BASE_URL: "http://localhost:8080/"
+    volumes:
+      - ./deploy/searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./deploy/searxng/limiter.toml:/etc/searxng/limiter.toml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null 'http://localhost:8080/healthz' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   nginx:
     image: nginx:1.27-alpine
@@ -53,6 +92,8 @@ services:
     restart: unless-stopped
 
 # All persistent state lives in the host-visible ./data directory:
-#   ./data/db          libSQL database file (avocado.db)
-#   ./data/letsencrypt SSL certificates (shared: certbot writes, nginx reads)
-#   ./data/certbot-www ACME http-01 challenge webroot (shared: certbot ↔ nginx)
+#   ./data/db           libSQL database file (avocado.db)
+#   ./data/db/web-cache web fetch/search cache (app mounts ./data/db → /data, WEB_CACHE_DIR=/data/web-cache)
+#   ./data/redis        redis persistence (searxng cache/coordination)
+#   ./data/letsencrypt  SSL certificates (shared: certbot writes, nginx reads)
+#   ./data/certbot-www  ACME http-01 challenge webroot (shared: certbot ↔ nginx)

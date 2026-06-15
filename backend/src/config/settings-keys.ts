@@ -6,7 +6,6 @@ export const SettingKey = {
   Timeouts: "timeouts",
   Agent: "agent",
   TelegramAllowedUsers: "telegram_allowed_users",
-  McpServers: "mcp_servers",
 } as const;
 export type SettingKey = (typeof SettingKey)[keyof typeof SettingKey];
 
@@ -31,10 +30,3 @@ export interface AgentConfig {
   default_temperature: number;
   rag_top_k: number;
 }
-
-export interface McpServerConfig {
-  command: string;
-  args: string[];
-  env?: Record<string, string>;
-}
-export type McpServers = Record<string, McpServerConfig>;

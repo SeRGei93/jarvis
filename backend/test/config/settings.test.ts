@@ -34,7 +34,6 @@ describe("SettingsService", () => {
     expect(agent.rag_top_k).toBe(10);
     expect(agent.max_history).toBe(15);
     expect(await svc.getAllowedUsers()).toEqual([]);
-    expect(Object.keys(await svc.getMcpServers())).toEqual(["search"]);
     expect((await svc.getTimeouts()).llm_request).toBe("300s");
     expect(await svc.getModels()).toHaveLength(11);
   });

@@ -60,7 +60,6 @@ function makeApp(t: TestDb, runFn: SkillRunFn = fakeRun) {
     skills,
     llm,
     memoryService: {},
-    mcpTools: {},
   } as unknown as AdminApiDeps;
 
   const app = new Hono<AdminEnv>();

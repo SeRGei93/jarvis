@@ -7,7 +7,6 @@ import {
   type ModelRoles,
   type TimeoutsConfig,
   type AgentConfig,
-  type McpServers,
 } from "./settings-keys.js";
 import { logger } from "../pkg/logger.js";
 
@@ -115,9 +114,6 @@ export class SettingsService {
   }
   async getAllowedUsers(): Promise<number[]> {
     return ((await this.ensure()).get(SettingKey.TelegramAllowedUsers) ?? []) as number[];
-  }
-  async getMcpServers(): Promise<McpServers> {
-    return ((await this.ensure()).get(SettingKey.McpServers) ?? {}) as McpServers;
   }
   async getModels(): Promise<ModelRow[]> {
     await this.ensure();

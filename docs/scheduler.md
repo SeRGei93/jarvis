@@ -2,7 +2,7 @@
 
 # Cron Scheduler
 
-The executor for scheduled work (Milestone 7). The `task_*` tools (see [Tools & MCP](tools.md#tasks-cron-crud)) let a skill *create* rows in `cron_tasks`; the scheduler is what actually *runs* them on time and delivers the result to the user's Telegram chat. It runs in the **same process** as the bot — no second binary (the Go version ran a separate `cmd/cron`). Code lives in `backend/src/scheduler/`.
+The executor for scheduled work (Milestone 7). The `task_*` tools (see [Tools](tools.md#tasks-cron-crud)) let a skill *create* rows in `cron_tasks`; the scheduler is what actually *runs* them on time and delivers the result to the user's Telegram chat. It runs in the **same process** as the bot — no second binary (the Go version ran a separate `cmd/cron`). Code lives in `backend/src/scheduler/`.
 
 A task run is **a full chat turn**: the stored `prompt` is fed through `ChatService.handleUserMessage` exactly as if the user had typed it, then the answer is sent via the bot's [`Messenger`](telegram.md#notifications-messenger). There is no separate "reminder" path.
 
@@ -19,7 +19,7 @@ Both jobs use node-cron's native **`noOverlap`**, so a slow tick is skipped rath
 
 ## Schedule kinds
 
-The `schedule` column encodes the kind (parity with creation-time validation in [Tools & MCP](tools.md#tasks-cron-crud)):
+The `schedule` column encodes the kind (parity with creation-time validation in [Tools](tools.md#tasks-cron-crud)):
 
 | `schedule` | Kind | Due when | After a successful run |
 |------------|------|----------|------------------------|
@@ -89,6 +89,6 @@ createChatService → startBot → buildCronScheduler(svc, new Messenger(bot.api
 
 ## See Also
 
-- [Tools & MCP](tools.md#tasks-cron-crud) — the `task_*` tools that create the `cron_tasks` this scheduler runs
+- [Tools](tools.md#tasks-cron-crud) — the `task_*` tools that create the `cron_tasks` this scheduler runs
 - [Telegram Bot](telegram.md#notifications-messenger) — the `Messenger` used to deliver notifications
 - [Configuration](configuration.md) — `timeouts`, plan `max_tasks`, and how a run consumes rate limit / usage

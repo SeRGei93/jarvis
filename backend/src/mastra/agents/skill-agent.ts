@@ -1,4 +1,3 @@
-import type { ToolSet } from "ai";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "../../db/schema.js";
 import type { StreamCallback } from "../llm.js";
@@ -37,13 +36,11 @@ export interface SkillRunContext {
   defaultModel: string;
   /** agent.default_temperature — used when the skill leaves temperature null. */
   defaultTemperature: number;
-  // ── tool context (M5): threaded into resolveTools for built-in + MCP tools ──
+  // ── tool context (M5): threaded into resolveTools for built-in tools ──
   chatId: number;
   sessionId: number;
   db: Db;
   settings: SettingsService;
-  /** Adapted MCP `search` ToolSet (bare names); {} when MCP disabled. */
-  mcpTools: ToolSet;
   /** Optional override for the skill-references filesystem root (Task 6). */
   skillsRoot?: string;
 }

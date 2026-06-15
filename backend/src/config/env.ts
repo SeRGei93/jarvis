@@ -6,7 +6,7 @@ const log = logger.child({ mod: "env" });
 
 /**
  * `.env` holds ONLY secrets + runtime flags. All other configuration
- * (model roles, timeouts, agent params, skills, prompts, plans, MCP servers)
+ * (model roles, timeouts, agent params, skills, prompts, plans)
  * lives in the database (see SettingsService). See ROADMAP §4.
  */
 const EnvSchema = z.object({
@@ -27,6 +27,12 @@ const EnvSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   XAI_API_KEY: z.string().optional(),
   GOOGLE_API_KEY: z.string().optional(),
+
+  // Web search (searxng)
+  SEARXNG_URL: z.string().min(1).default("http://searxng:8080"),
+  SEARXNG_ENGINES: z.string().optional(), // comma-separated engine list; optional override
+  // Web fetch/search file cache dir; container overrides to /data/web-cache via compose.
+  WEB_CACHE_DIR: z.string().min(1).default("./data/web-cache"),
 
   // Admin (Mini App bootstrap): comma-separated Telegram user ids
   ADMIN_USER_IDS: z.string().default(""),

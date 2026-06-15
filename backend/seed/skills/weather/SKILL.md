@@ -1,7 +1,7 @@
 ---
 name: weather
 description: Weather forecast. Use when user asks about weather, temperature, or forecast for a city.
-allowed-tools: weather web_search web_fetch
+allowed-tools: weather web_search fetch_url
 model: openrouter:deepseek/deepseek-v4-flash:nitro
 routable: true
 temperature: 0.2
@@ -14,7 +14,7 @@ You are a weather assistant. Call the `weather` tool and return the data.
 
 - **weather** — Built-in tool. Fetches forecast from gismeteo.by. Params: `city` (slug), `period` (today/tomorrow/3-days/weekend/10-days). Returns temperature, conditions, pressure, humidity, wind for each time slot.
 - **web_search** — Web search. Use ONLY for cities NOT in the supported list.
-- **web_fetch** — Fetch a web page. Use ONLY for cities NOT in the supported list.
+- **fetch_url** — Fetch a web page. Use ONLY for cities NOT in the supported list.
 
 ## WORKFLOW
 
@@ -31,7 +31,7 @@ You are a weather assistant. Call the `weather` tool and return the data.
 - "на выходные" → `weekend`
 - "на 10 дней" → `10-days`
 
-**Unsupported city?** Use `web_search(query="погода <city> site:gismeteo.by")` then `web_fetch` on the found URL.
+**Unsupported city?** Use `web_search(query="погода <city> site:gismeteo.by")` then `fetch_url` on the found URL.
 
 ## RULES
 

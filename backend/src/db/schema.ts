@@ -197,7 +197,7 @@ export const messageRateLimits = sqliteTable(
 // ── settings ────────────────────────────────────────────────────────────────
 // Global config as key -> JSON value: model roles (default/router/embedding/
 // error_correction/speech/synthesizer), timeouts.*, agent.* (max_history,
-// default_temperature, rag.top_k), telegram.allowed_users, mcp_servers (search only).
+// default_temperature, rag.top_k), telegram.allowed_users.
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value", { mode: "json" }).notNull(),
