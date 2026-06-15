@@ -37,8 +37,6 @@ export interface Med103DoctorType {
   value: string;
   /** Stable slug = URL path segment used by {@link buildDoctorUrl}. */
   slug: string;
-  /** Original thin-tool name (kept for traceability). */
-  tool: string;
   /** URL path segment for the specialty (alias of {@link slug}). */
   specialty: string;
   /** Human-readable label for the enum option. */
@@ -51,8 +49,6 @@ export interface Med103ClinicType {
   value: string;
   /** Stable slug (alias of {@link value}). */
   slug: string;
-  /** Original thin-tool name (kept for traceability). */
-  tool: string;
   /** Catalog URL path segment used by {@link buildClinicUrl}. */
   path: string;
   /** Human-readable label for the enum option. */
@@ -95,28 +91,28 @@ export const MED103_CITIES: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 export const MED103_DOCTOR_TYPES: Med103DoctorType[] = [
-  { value: "oftalmolog", slug: "oftalmolog", tool: "103by_oftalmolog", specialty: "oftalmolog", label: "Ophthalmologist", description: "Search ophthalmologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "lor", slug: "lor", tool: "103by_lor", specialty: "lor", label: "ENT doctor (otolaryngologist)", description: "Search ENT doctors (otolaryngologists) on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "nevrolog", slug: "nevrolog", tool: "103by_nevrolog", specialty: "nevrolog", label: "Neurologist", description: "Search neurologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "triholog", slug: "triholog", tool: "103by_triholog", specialty: "triholog", label: "Trichologist", description: "Search trichologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "psihoterapevt", slug: "psihoterapevt", tool: "103by_psihoterapevt", specialty: "psihoterapevt", label: "Psychotherapist", description: "Search psychotherapists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "dermatolog", slug: "dermatolog", tool: "103by_dermatolog", specialty: "dermatolog", label: "Dermatologist", description: "Search dermatologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "ginekolog", slug: "ginekolog", tool: "103by_ginekolog", specialty: "ginekolog", label: "Gynecologist", description: "Search gynecologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "kardiolog", slug: "kardiolog", tool: "103by_kardiolog", specialty: "kardiolog", label: "Cardiologist", description: "Search cardiologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "ortoped", slug: "ortoped", tool: "103by_ortoped", specialty: "ortoped", label: "Orthopedist", description: "Search orthopedists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "mammolog", slug: "mammolog", tool: "103by_mammolog", specialty: "mammolog", label: "Mammologist", description: "Search mammologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "revmatolog", slug: "revmatolog", tool: "103by_revmatolog", specialty: "revmatolog", label: "Rheumatologist", description: "Search rheumatologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "endokrinolog", slug: "endokrinolog", tool: "103by_endokrinolog", specialty: "endokrinolog", label: "Endocrinologist", description: "Search endocrinologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "pediatr", slug: "pediatr", tool: "103by_pediatr", specialty: "pediatr", label: "Pediatrician", description: "Search pediatricians on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "gastroenterolog", slug: "gastroenterolog", tool: "103by_gastroenterolog", specialty: "gastroenterolog", label: "Gastroenterologist", description: "Search gastroenterologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "allergolog", slug: "allergolog", tool: "103by_allergolog", specialty: "allergolog", label: "Allergist", description: "Search allergists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "proktolog", slug: "proktolog", tool: "103by_proktolog", specialty: "proktolog", label: "Proctologist", description: "Search proctologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "pulmonolog", slug: "pulmonolog", tool: "103by_pulmonolog", specialty: "pulmonolog", label: "Pulmonologist", description: "Search pulmonologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "terapevt", slug: "terapevt", tool: "103by_terapevt", specialty: "terapevt", label: "General practitioner (therapist)", description: "Search general practitioners (therapists) on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "urolog", slug: "urolog", tool: "103by_urolog", specialty: "urolog", label: "Urologist", description: "Search urologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "hirurg", slug: "hirurg", tool: "103by_hirurg", specialty: "hirurg", label: "Surgeon", description: "Search surgeons on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "kosmetolog", slug: "kosmetolog", tool: "103by_kosmetolog", specialty: "kosmetolog", label: "Cosmetologist", description: "Search cosmetologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
-  { value: "stomatolog", slug: "stomatolog-terapevt", tool: "103by_stomatolog", specialty: "stomatolog-terapevt", label: "Dentist", description: "Search dentists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "oftalmolog", slug: "oftalmolog", specialty: "oftalmolog", label: "Ophthalmologist", description: "Search ophthalmologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "lor", slug: "lor", specialty: "lor", label: "ENT doctor (otolaryngologist)", description: "Search ENT doctors (otolaryngologists) on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "nevrolog", slug: "nevrolog", specialty: "nevrolog", label: "Neurologist", description: "Search neurologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "triholog", slug: "triholog", specialty: "triholog", label: "Trichologist", description: "Search trichologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "psihoterapevt", slug: "psihoterapevt", specialty: "psihoterapevt", label: "Psychotherapist", description: "Search psychotherapists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "dermatolog", slug: "dermatolog", specialty: "dermatolog", label: "Dermatologist", description: "Search dermatologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "ginekolog", slug: "ginekolog", specialty: "ginekolog", label: "Gynecologist", description: "Search gynecologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "kardiolog", slug: "kardiolog", specialty: "kardiolog", label: "Cardiologist", description: "Search cardiologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "ortoped", slug: "ortoped", specialty: "ortoped", label: "Orthopedist", description: "Search orthopedists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "mammolog", slug: "mammolog", specialty: "mammolog", label: "Mammologist", description: "Search mammologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "revmatolog", slug: "revmatolog", specialty: "revmatolog", label: "Rheumatologist", description: "Search rheumatologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "endokrinolog", slug: "endokrinolog", specialty: "endokrinolog", label: "Endocrinologist", description: "Search endocrinologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "pediatr", slug: "pediatr", specialty: "pediatr", label: "Pediatrician", description: "Search pediatricians on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "gastroenterolog", slug: "gastroenterolog", specialty: "gastroenterolog", label: "Gastroenterologist", description: "Search gastroenterologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "allergolog", slug: "allergolog", specialty: "allergolog", label: "Allergist", description: "Search allergists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "proktolog", slug: "proktolog", specialty: "proktolog", label: "Proctologist", description: "Search proctologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "pulmonolog", slug: "pulmonolog", specialty: "pulmonolog", label: "Pulmonologist", description: "Search pulmonologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "terapevt", slug: "terapevt", specialty: "terapevt", label: "General practitioner (therapist)", description: "Search general practitioners (therapists) on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "urolog", slug: "urolog", specialty: "urolog", label: "Urologist", description: "Search urologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "hirurg", slug: "hirurg", specialty: "hirurg", label: "Surgeon", description: "Search surgeons on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "kosmetolog", slug: "kosmetolog", specialty: "kosmetolog", label: "Cosmetologist", description: "Search cosmetologists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
+  { value: "stomatolog", slug: "stomatolog-terapevt", specialty: "stomatolog-terapevt", label: "Dentist", description: "Search dentists on 103.by (Belarus). Returns list of doctors with names, clinics, ratings, prices. Optional city and page." },
 ];
 
 // ---------------------------------------------------------------------------
@@ -124,11 +120,11 @@ export const MED103_DOCTOR_TYPES: Med103DoctorType[] = [
 // ---------------------------------------------------------------------------
 
 export const MED103_CLINIC_TYPES: Med103ClinicType[] = [
-  { value: "med_centers", slug: "med_centers", tool: "103by_med_centers", path: "/cat/med/medicinskie-centry/", label: "Medical centers", description: "Search medical centers on 103.by (Belarus). Returns list of clinics with names, addresses, ratings. Optional city and page." },
-  { value: "stomatologii", slug: "stomatologii", tool: "103by_stomatologii", path: "/cat/med/stomatologii/", label: "Dental clinics", description: "Search dental clinics on 103.by (Belarus). Returns list of dental clinics with names, addresses, ratings. Optional city and page." },
-  { value: "bolnitsy", slug: "bolnitsy", tool: "103by_bolnitsy", path: "/cat/med/bolnitsy/", label: "Hospitals", description: "Search hospitals on 103.by (Belarus). Returns list of hospitals with names, addresses, ratings. Optional city and page." },
-  { value: "polikliniki", slug: "polikliniki", tool: "103by_polikliniki", path: "/cat/med/polikliniki/", label: "Polyclinics", description: "Search polyclinics on 103.by (Belarus). Returns list of polyclinics with names, addresses, ratings. Optional city and page." },
-  { value: "vetkliniki", slug: "vetkliniki", tool: "103by_vetkliniki", path: "/cat/vet/vetkliniki/", label: "Veterinary clinics", description: "Search veterinary clinics on 103.by (Belarus). Returns list of vet clinics with names, addresses, ratings, prices. Optional city and page." },
+  { value: "med_centers", slug: "med_centers", path: "/cat/med/medicinskie-centry/", label: "Medical centers", description: "Search medical centers on 103.by (Belarus). Returns list of clinics with names, addresses, ratings. Optional city and page." },
+  { value: "stomatologii", slug: "stomatologii", path: "/cat/med/stomatologii/", label: "Dental clinics", description: "Search dental clinics on 103.by (Belarus). Returns list of dental clinics with names, addresses, ratings. Optional city and page." },
+  { value: "bolnitsy", slug: "bolnitsy", path: "/cat/med/bolnitsy/", label: "Hospitals", description: "Search hospitals on 103.by (Belarus). Returns list of hospitals with names, addresses, ratings. Optional city and page." },
+  { value: "polikliniki", slug: "polikliniki", path: "/cat/med/polikliniki/", label: "Polyclinics", description: "Search polyclinics on 103.by (Belarus). Returns list of polyclinics with names, addresses, ratings. Optional city and page." },
+  { value: "vetkliniki", slug: "vetkliniki", path: "/cat/vet/vetkliniki/", label: "Veterinary clinics", description: "Search veterinary clinics on 103.by (Belarus). Returns list of vet clinics with names, addresses, ratings, prices. Optional city and page." },
 ];
 
 // ---------------------------------------------------------------------------
