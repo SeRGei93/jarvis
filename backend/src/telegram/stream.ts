@@ -4,8 +4,13 @@ import { logger } from "../pkg/logger.js";
 
 const log = logger.child({ mod: "tg-stream" });
 
-/** Throttle between edit ticks. editMessageText is rate-limited harder than Go's drafts (200ms). */
-export const STREAM_THROTTLE_MS = 1000;
+/**
+ * Throttle between edit ticks. editMessageText is flood-limited per message, so
+ * this is the safe floor for the live preview (~2 edits/sec in a private chat);
+ * going much lower risks 429s. For genuinely smooth streaming switch the preview
+ * to sendRichMessageDraft (Bot API 10.1 drafts are cheap, like Go's 200ms path).
+ */
+export const STREAM_THROTTLE_MS = 500;
 /** Stop streaming edits before the 4096 plain limit so finalize has room to upgrade to rich. */
 export const STREAM_MAX_PLAIN_LEN = 3800;
 /** Trailing cursor shown while streaming (dropped on finalize). */

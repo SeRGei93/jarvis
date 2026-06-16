@@ -37,7 +37,7 @@ A new Telegram contact is mapped to an internal user by `identity.resolveTelegra
 | Behavior | Value |
 |----------|-------|
 | First chunk | sent as a new message immediately |
-| Subsequent chunks | `editMessageText`, throttled to ~1 call/sec |
+| Subsequent chunks | `editMessageText`, throttled to ~2 calls/sec (`STREAM_THROTTLE_MS` 500) |
 | In-flight text | **plain** (no formatting) + a `▌` cursor — rich rendering is applied only at finalize |
 | Skip conditions | unchanged text · length > 3800 · text ends in an incomplete link |
 | Typing indicator | stopped on the first streamed chunk |
