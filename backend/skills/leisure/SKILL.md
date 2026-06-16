@@ -185,7 +185,7 @@ Build response per RESPONSE FORMAT below. Add summary at the end.
 
 ## OUTPUT FORMAT
 
-NEVER use tables (`| col |`) or horizontal rules (`---`).
+Keep listings as bullet lists (the clickable link leads each item). A compact Markdown table is fine only for comparing several items across a few short shared fields — never for items with long descriptions or addresses.
 
 Each item as a bullet with link, details, and price:
 - [Концерт Би-2 — Минск Арена](url) — 22 февраля, 19:00, билеты 45–120 BYN. 18+

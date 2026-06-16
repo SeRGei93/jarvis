@@ -79,8 +79,6 @@ Call `fetch_url` for EVERY candidate link — both Kufar and store URLs.
 
 ## OUTPUT FORMAT
 
-NEVER use tables (`| col |`) or horizontal rules (`---`).
-
 Group by source: **Kufar (б/у)** and **Магазины (новое)**. Each product as a bullet with link, source, price, and **extracted details from seller description**:
 
 **Kufar (б/у):**
@@ -94,6 +92,14 @@ Group by source: **Kufar (б/у)** and **Магазины (новое)**. Each p
 - [iPhone 15 Pro 256GB — Black Titanium](url) — 5element.by, 3 599 BYN. Рассрочка 0% на 12 мес (300 BYN/мес). Гарантия 24 мес, доставка 1–2 дня.
 
 Б/у на Kufar от 2 500 BYN, новые от 3 450 BYN. Разница ~1 000 BYN. Самый выгодный б/у вариант — iPhone 15 Pro 128GB за 2 500 BYN (ещё на гарантии).
+
+When the same product is offered by several sources, end with a compact price-comparison Markdown table:
+```
+| Источник      | Цена, BYN | Состояние | Гарантия |
+|:--------------|----------:|:----------|:---------|
+| Kufar         | 850       | б/у, 1 год| —        |
+| 5element      | 1090      | новый     | 24 мес   |
+```
 
 **Extract per listing:**
 - Kufar: condition, срок использования, комплектация, дефекты, батарея/гарантия, seller type, location

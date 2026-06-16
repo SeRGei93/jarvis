@@ -1,39 +1,49 @@
 # Formatting Rules
 
-Write responses in standard Markdown. Output is rendered via Telegram MarkdownV2.
+Your response is rendered as a Telegram **rich message** (Bot API 10.1). Write
+standard GitHub-flavored Markdown — it is passed through to Telegram almost
+verbatim, so use real Markdown structure (headings, lists, tables), not ASCII art.
 
 ## Supported formatting
 
-- `**bold**` — emphasis on key terms
-- `# Heading` / `## Heading` — section titles (rendered as bold text)
-- `` `inline code` `` — inline code spans
-- ` ```lang ``` ` — fenced code blocks with optional language tag
-- `- item` / `1. item` — unordered and ordered lists (nesting OK)
-- `[text](url)` — hyperlinks
-- `~~strikethrough~~` — strikethrough text
-- `> quote` — blockquotes (each line prefixed with `>`)
+- `**bold**`, `*italic*`, `~~strikethrough~~`, `==highlight==`, `||spoiler||`
+- `` `inline code` `` and ` ```lang … ``` ` fenced code blocks (with a language tag)
+- `# Heading` … `###### Heading` — section titles (h1–h6)
+- Lists: `- item` / `1. item` (nesting OK) and task lists `- [ ]` / `- [x]`
+- `> quote` — blockquotes
+- `[text](url)` — links (bare URLs are auto-linked too)
+- **Tables** — GFM pipe syntax with alignment (see below)
+- `<sub>`/`<sup>` sub/superscript, `[^id]` footnotes, `$…$` inline math
 
-## Limitations
+## Tables — supported and preferred for tabular data
 
-- `*italic*` / `_italic_` — **stripped to plain text**, Telegram italic is not used
-- `__underline__` — not supported by the converter, do not use
-- `||spoiler||` — not supported by the converter, do not use
-- Images — only alt text is shown, image itself is dropped
-- Raw HTML — silently stripped
+Use a Markdown table whenever you present **the same set of attributes across
+several items**: comparisons, rate/price tables, schedules, listings that share
+a fixed set of fields.
+
+```
+| Валюта | НБРБ   | Покупка | Продажа |
+|:-------|-------:|--------:|--------:|
+| USD    | 2.9332 | 2.92    | 2.97    |
+| EUR    | 3.1850 | 3.17    | 3.22    |
+```
+
+Table guidance:
+
+- Keep it readable on a phone: aim for **2–4 columns**, never exceed 20.
+- Use alignment (`:--` left, `:-:` center, `--:` right) — align numbers right.
+- Short cell values only. If a field is long free text (a description, or an
+  address with a link), do **not** force it into a table — use a list instead.
+
+## When NOT to use a table
+
+- A single record or key-value pairs → definition list (`**Term** — value`) or bullets.
+- Items whose main content is a link plus prose (news, events, listings with
+  descriptions) → bullets with the link as the lead, details after.
 
 ## Style guidelines
 
-- Bold sparingly — only key terms, not entire sentences
-- Prefer short paragraphs — walls of text are hard to read in chat
-- Use lists for any enumeration of 2+ items
-- Separate logical blocks with blank lines
-
-## NEVER use tables
-
-**Tables are strictly prohibited.** Do not use Markdown table syntax (`| col |`) under any circumstances — they render poorly in Telegram and are hard to read on mobile.
-
-Instead of a table, always use one of these alternatives:
-- **Bullet list** — for simple key-value pairs or short records
-- **Nested list** — for grouped/hierarchical data
-- **Definition-style list** — `**Term** — description` for glossary-like content
-- **Code block** — for aligned columnar data where spacing matters
+- Bold sparingly — key terms, not whole sentences.
+- Short paragraphs; a blank line between logical blocks.
+- Use headings to separate topics in longer answers.
+- Lists for any enumeration of 2+ items that isn't a table.

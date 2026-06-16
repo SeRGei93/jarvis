@@ -34,7 +34,6 @@ routable: true
 
 ## RULES
 
-- NEVER use tables (`| col |`) or horizontal rules (`---`).
 - If `scale` ≠ 1, note it (e.g. "per 100 units" for RUB).
 - If some sources fail — show what worked, note failures.
 - Be concise: users need numbers, not explanations.
@@ -42,9 +41,13 @@ routable: true
 
 ## OUTPUT FORMAT
 
-Return rates as a compact bullet list:
-- **USD** — НБРБ: 2.9332 / покупка 2.92 / продажа 2.97
-- **EUR** — НБРБ: 3.3597 / покупка 3.33 / продажа 3.405
-- **RUB (100)** — НБРБ: 3.6972 / покупка 3.62 / продажа 3.695
+Return rates as a Markdown table (numbers right-aligned). Adapt columns to the rates the tools return — НБРБ official + bank buy/sell:
 
-Note any source failures.
+```
+| Валюта | НБРБ   | Покупка | Продажа |
+|:-------|-------:|--------:|--------:|
+| USD    | 2.9332 | 2.92    | 2.97    |
+| EUR    | 3.1850 | 3.17    | 3.22    |
+```
+
+Be concise: users need numbers, not explanations. Note any source failures.
