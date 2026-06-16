@@ -16,19 +16,24 @@ import { users, userChannels } from "../../src/db/schema.js";
 interface Call {
   op: "send" | "edit" | "action" | "getFile";
   text?: string;
-  parse?: string;
+  rich?: boolean;
 }
 
 class FakeApi {
   calls: Call[] = [];
   nextId = 100;
-  async sendMessage(_c: number, text: string, other?: { parse_mode?: "MarkdownV2" }) {
-    this.calls.push({ op: "send", text, parse: other?.parse_mode });
+  async sendMessage(_c: number, text: string) {
+    this.calls.push({ op: "send", text, rich: false });
     return { message_id: this.nextId++ };
   }
-  async editMessageText(_c: number, _m: number, text: string, other?: { parse_mode?: "MarkdownV2" }) {
-    this.calls.push({ op: "edit", text, parse: other?.parse_mode });
+  async editMessageText(_c: number, _m: number, c: string | { markdown: string }) {
+    const rich = typeof c !== "string";
+    this.calls.push({ op: "edit", text: rich ? c.markdown : c, rich });
     return true;
+  }
+  async sendRichMessage(_c: number, richMessage: { markdown: string }) {
+    this.calls.push({ op: "send", text: richMessage.markdown, rich: true });
+    return {};
   }
   async sendChatAction(_c: number, _a: "typing") {
     this.calls.push({ op: "action" });
@@ -105,8 +110,8 @@ describe("processText", () => {
     expect(ch).toBeTruthy();
     expect(received).toMatchObject({ chatId: 42, text: "hello", userId: ch!.userId });
 
-    // reply was finalized as MarkdownV2 ('**Привет**' -> '*Привет*')
-    expect(api.calls.some((c) => c.parse === "MarkdownV2" && (c.text ?? "").includes("*Привет*"))).toBe(true);
+    // reply was finalized as a rich message (markdown passed through verbatim)
+    expect(api.calls.some((c) => c.rich && (c.text ?? "").includes("**Привет**"))).toBe(true);
   });
 
   it("still sends the reply when promptguard/rate-limit rejected (no streaming)", async () => {
@@ -117,7 +122,7 @@ describe("processText", () => {
     const { rt, api } = makeRuntime(t, chat);
 
     await processText(rt, { id: 7, name: "X" }, 9, "x".repeat(99));
-    const sends = api.calls.filter((c) => c.op === "send" && c.parse === "MarkdownV2");
+    const sends = api.calls.filter((c) => c.op === "send" && c.rich);
     expect(sends.some((c) => (c.text ?? "").includes("Слишком длинное"))).toBe(true);
   });
 });

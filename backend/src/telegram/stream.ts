@@ -1,12 +1,12 @@
 import type { StreamCallback } from "../mastra/llm.js";
-import { toTelegramMarkdown, splitMessage, TELEGRAM_MAX_MESSAGE_LEN } from "./format.js";
+import { splitMessage, RICH_MAX_MESSAGE_LEN, type RichContent } from "./format.js";
 import { logger } from "../pkg/logger.js";
 
 const log = logger.child({ mod: "tg-stream" });
 
 /** Throttle between edit ticks. editMessageText is rate-limited harder than Go's drafts (200ms). */
 export const STREAM_THROTTLE_MS = 1000;
-/** Stop streaming edits before the 4096 limit so finalize formatting/splitting has room. */
+/** Stop streaming edits before the 4096 plain limit so finalize has room to upgrade to rich. */
 export const STREAM_MAX_PLAIN_LEN = 3800;
 /** Trailing cursor shown while streaming (dropped on finalize). */
 export const STREAM_CURSOR = " ▌";
@@ -14,20 +14,17 @@ export const STREAM_CURSOR = " ▌";
 /**
  * Minimal grammY `Api` surface the streamer needs — `bot.api` satisfies it
  * structurally, and tests pass a fake. Streaming ticks send PLAIN text (no
- * parse_mode); MarkdownV2 is applied only in `finalize`.
+ * formatting); the finalized reply is sent as a Bot API 10.1 rich message
+ * (markdown) — the streamed preview is upgraded in place via `editMessageText`.
  */
 export interface TelegramSender {
-  sendMessage(
-    chatId: number,
-    text: string,
-    other?: { parse_mode?: "MarkdownV2" },
-  ): Promise<{ message_id: number }>;
+  sendMessage(chatId: number, text: string): Promise<{ message_id: number }>;
   editMessageText(
     chatId: number,
     messageId: number,
-    text: string,
-    other?: { parse_mode?: "MarkdownV2" },
+    content: string | RichContent,
   ): Promise<unknown>;
+  sendRichMessage(chatId: number, richMessage: RichContent): Promise<unknown>;
 }
 
 export interface StreamerOptions {
@@ -42,7 +39,7 @@ export interface StreamerOptions {
 export interface Streamer {
   /** Wire as the chat workflow `onText` callback (receives accumulated text). */
   onText: StreamCallback;
-  /** Send the finalized reply as formatted MarkdownV2 (split across messages). */
+  /** Send the finalized reply as a rich message (split across messages if huge). */
   finalize(fullText: string): Promise<void>;
 }
 
@@ -59,10 +56,10 @@ function endsWithIncompleteLink(s: string): boolean {
 
 /**
  * Builds a throttled streamer over Telegram `editMessageText`. The first chunk
- * sends a new message; subsequent chunks edit it (plain text + cursor) no more
- * than once per `throttleMs`. `finalize` converts the full reply to MarkdownV2,
- * splits it across messages, edits the streamed message for the first part and
- * sends the rest, with a plain-text retry when MarkdownV2 fails to parse.
+ * sends a new (plain) message; subsequent chunks edit it (plain text + cursor)
+ * no more than once per `throttleMs`. `finalize` splits the full reply, upgrades
+ * the streamed message to a rich message (markdown) and sends any extra parts as
+ * rich messages, with a plain-text retry when the rich send fails.
  */
 export function createStreamer(
   api: TelegramSender,
@@ -123,20 +120,22 @@ export function createStreamer(
     pending = flush(acc);
   };
 
+  /** Upgrade the streamed message to a rich message; fall back to a plain edit. */
   async function editWithFallback(id: number, text: string): Promise<void> {
     try {
-      await api.editMessageText(chatId, id, text, { parse_mode: "MarkdownV2" });
+      await api.editMessageText(chatId, id, { markdown: text });
     } catch (err) {
-      log.warn({ reason: err instanceof Error ? err.message : String(err) }, "finalize edit failed -> plain");
+      log.warn({ reason: err instanceof Error ? err.message : String(err) }, "finalize rich edit failed -> plain");
       await api.editMessageText(chatId, id, text).catch(() => {});
     }
   }
 
+  /** Send an extra finalize part as a rich message; fall back to plain text. */
   async function sendWithFallback(text: string): Promise<void> {
     try {
-      await api.sendMessage(chatId, text, { parse_mode: "MarkdownV2" });
+      await api.sendRichMessage(chatId, { markdown: text });
     } catch (err) {
-      log.warn({ reason: err instanceof Error ? err.message : String(err) }, "finalize send failed -> plain");
+      log.warn({ reason: err instanceof Error ? err.message : String(err) }, "finalize rich send failed -> plain");
       await api.sendMessage(chatId, text).catch(() => {});
     }
   }
@@ -145,7 +144,7 @@ export function createStreamer(
     finalized = true;
     await pending.catch(() => {}); // let the last in-flight stream edit settle (sets messageId)
     fireFirstChunk(); // ensure typing stops even when nothing streamed
-    const parts = splitMessage(toTelegramMarkdown(fullText), TELEGRAM_MAX_MESSAGE_LEN);
+    const parts = splitMessage(fullText, RICH_MAX_MESSAGE_LEN);
     if (parts.length === 0) parts.push(""); // always replace the cursor with something
     log.debug({ chatId, parts: parts.length, streamed: messageId !== undefined }, "finalize");
 

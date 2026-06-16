@@ -1,19 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Messenger, type MessengerApi } from "../../src/telegram/messenger.js";
+import { RICH_MAX_MESSAGE_LEN } from "../../src/telegram/format.js";
 
 interface Call {
-  op: "send" | "action";
+  op: "rich" | "send" | "action";
   text?: string;
-  parse?: string;
   action?: string;
 }
 
 class FakeApi implements MessengerApi {
   calls: Call[] = [];
-  failParse = false;
-  async sendMessage(_chatId: number, text: string, other?: { parse_mode?: "MarkdownV2" }) {
-    this.calls.push({ op: "send", text, parse: other?.parse_mode });
-    if (other?.parse_mode && this.failParse) throw new Error("can't parse entities");
+  failRich = false;
+  async sendRichMessage(_chatId: number, richMessage: { markdown: string }) {
+    this.calls.push({ op: "rich", text: richMessage.markdown });
+    if (this.failRich) throw new Error("can't parse rich");
+    return {};
+  }
+  async sendMessage(_chatId: number, text: string) {
+    this.calls.push({ op: "send", text });
     return {};
   }
   async sendChatAction(_chatId: number, action: "typing") {
@@ -22,32 +26,30 @@ class FakeApi implements MessengerApi {
   }
 }
 
-const tick = () => new Promise((r) => setImmediate(r));
-
 let api: FakeApi;
 beforeEach(() => {
   api = new FakeApi();
 });
 
 describe("Messenger.sendMessage", () => {
-  it("sends a formatted MarkdownV2 message", async () => {
+  it("sends a rich message (markdown passed through verbatim)", async () => {
     await new Messenger(api).sendMessage(42, "**hi**");
-    expect(api.calls).toEqual([{ op: "send", text: "*hi*", parse: "MarkdownV2" }]);
+    expect(api.calls).toEqual([{ op: "rich", text: "**hi**" }]);
   });
 
-  it("splits a long message into multiple parts", async () => {
-    const long = "word ".repeat(1200); // > 4096
+  it("splits a long message into multiple rich parts", async () => {
+    const long = "word ".repeat(7000); // > 32768 -> splits
     await new Messenger(api).sendMessage(42, long);
-    const sends = api.calls.filter((c) => c.op === "send");
+    const sends = api.calls.filter((c) => c.op === "rich");
     expect(sends.length).toBeGreaterThan(1);
-    for (const c of sends) expect([...(c.text ?? "")].length).toBeLessThanOrEqual(4096);
+    for (const c of sends) expect([...(c.text ?? "")].length).toBeLessThanOrEqual(RICH_MAX_MESSAGE_LEN);
   });
 
-  it("retries as plain text when MarkdownV2 fails", async () => {
-    api.failParse = true;
+  it("retries as plain text when the rich send fails", async () => {
+    api.failRich = true;
     await new Messenger(api).sendMessage(42, "**hi**");
-    expect(api.calls[0]).toMatchObject({ op: "send", parse: "MarkdownV2" });
-    expect(api.calls[1]).toMatchObject({ op: "send", parse: undefined });
+    expect(api.calls[0]).toMatchObject({ op: "rich", text: "**hi**" });
+    expect(api.calls[1]).toMatchObject({ op: "send", text: "**hi**" });
   });
 
   it("sends nothing for empty text", async () => {

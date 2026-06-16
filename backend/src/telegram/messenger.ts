@@ -1,4 +1,4 @@
-import { toTelegramMarkdown, splitMessage, TELEGRAM_MAX_MESSAGE_LEN } from "./format.js";
+import { splitMessage, RICH_MAX_MESSAGE_LEN, type RichContent } from "./format.js";
 import { logger } from "../pkg/logger.js";
 
 const log = logger.child({ mod: "tg-messenger" });
@@ -6,9 +6,14 @@ const log = logger.child({ mod: "tg-messenger" });
 /** Re-send the typing action this often (Telegram's indicator expires after ~5s). */
 export const TYPING_INTERVAL_MS = 4000;
 
-/** Minimal grammY `Api` surface — `bot.api` satisfies it structurally. */
+/**
+ * Minimal grammY `Api` surface — `bot.api` satisfies it structurally. Outbound
+ * replies are sent as Bot API 10.1 rich messages (markdown); a failed rich send
+ * retries as plain text so a message always gets through.
+ */
 export interface MessengerApi {
-  sendMessage(chatId: number, text: string, other?: { parse_mode?: "MarkdownV2" }): Promise<unknown>;
+  sendRichMessage(chatId: number, richMessage: RichContent): Promise<unknown>;
+  sendMessage(chatId: number, text: string): Promise<unknown>;
   sendChatAction(chatId: number, action: "typing"): Promise<unknown>;
 }
 
@@ -18,9 +23,10 @@ export interface MessengerOptions {
 }
 
 /**
- * Outbound message helper over `bot.api`: formats to MarkdownV2, splits across
- * the 4096 limit, and falls back to plain text on a parse error. Used for command
- * replies and (M7) cron notifications — the streaming reply path uses stream.ts.
+ * Outbound message helper over `bot.api`: splits across the rich limit and sends
+ * each part as a rich message, falling back to plain text on a send error. Used
+ * for command replies and (M7) cron notifications — the streaming reply path
+ * uses stream.ts.
  */
 export class Messenger {
   private readonly intervalMs: number;
@@ -32,16 +38,16 @@ export class Messenger {
     this.intervalMs = opts.intervalMs ?? TYPING_INTERVAL_MS;
   }
 
-  /** Format + split + send. Each part retries as plain text if MarkdownV2 fails. */
+  /** Split + send. Each part is a rich message; retries as plain text on error. */
   async sendMessage(chatId: number, text: string): Promise<void> {
-    const parts = splitMessage(toTelegramMarkdown(text), TELEGRAM_MAX_MESSAGE_LEN);
+    const parts = splitMessage(text, RICH_MAX_MESSAGE_LEN);
     if (parts.length === 0) return;
     log.debug({ chatId, parts: parts.length }, "send message");
     for (const part of parts) {
       try {
-        await this.api.sendMessage(chatId, part, { parse_mode: "MarkdownV2" });
+        await this.api.sendRichMessage(chatId, { markdown: part });
       } catch (err) {
-        log.warn({ chatId, reason: err instanceof Error ? err.message : String(err) }, "send failed -> plain");
+        log.warn({ chatId, reason: err instanceof Error ? err.message : String(err) }, "rich send failed -> plain");
         await this.api.sendMessage(chatId, part).catch((e) =>
           log.warn({ chatId, reason: e instanceof Error ? e.message : String(e) }, "plain send failed"),
         );

@@ -111,7 +111,9 @@ describe("bot integration (fake update, no network)", () => {
     expect(received).toBe("привет");
     const [ch] = await t.db.select().from(userChannels).where(eq(userChannels.externalId, "555"));
     expect(ch).toBeTruthy();
-    expect(sent.some((c) => c.method === "sendMessage" && String(c.payload.text).includes("готово"))).toBe(true);
+    expect(
+      sent.some((c) => c.method === "sendRichMessage" && String(c.payload.rich_message?.markdown).includes("готово")),
+    ).toBe(true);
   });
 
   it("routes the /help command to a reply", async () => {
@@ -122,7 +124,9 @@ describe("bot integration (fake update, no network)", () => {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await bot.handleUpdate(textUpdate(555, "/help") as any);
-    expect(sent.some((c) => c.method === "sendMessage" && String(c.payload.text).includes("Команды"))).toBe(true);
+    expect(
+      sent.some((c) => c.method === "sendRichMessage" && String(c.payload.rich_message?.markdown).includes("Команды")),
+    ).toBe(true);
   });
 
   it("drops an unauthorized user (allowlist) without creating a user or replying", async () => {
@@ -142,7 +146,7 @@ describe("bot integration (fake update, no network)", () => {
     await bot.handleUpdate(textUpdate(555, "привет") as any);
 
     expect(called).toBe(false);
-    expect(sent.filter((c) => c.method === "sendMessage")).toHaveLength(0);
+    expect(sent.filter((c) => c.method === "sendMessage" || c.method === "sendRichMessage")).toHaveLength(0);
     expect(await t.db.select().from(users)).toHaveLength(0);
   });
 });
