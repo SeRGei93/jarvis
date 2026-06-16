@@ -26,14 +26,18 @@ export interface AdminAppOptions {
   staticRoot?: string;
 }
 
+/** Public subpath the built Mini App is served under (matches Vite `base`). */
+const MINIAPP_BASE = "/miniapp";
+
 /**
  * Build the single-process HTTP surface (ROADMAP §2):
  *   - `GET /health`            — liveness, always available
  *   - `POST <webhookPath>`     — Telegram webhook (503 until the bot is up)
  *   - `/admin/api/*`           — admin REST API behind initData auth
+ *   - `/miniapp` + `/miniapp/assets/*` — the built admin Mini App (static)
  *
- * Static Mini App serving (`frontend/dist`) is mounted in Task 9, after the API
- * routes, once the build output exists — keeping route precedence unambiguous.
+ * Static Mini App serving (`frontend/dist`) is mounted after the API routes so
+ * route precedence stays unambiguous.
  */
 export function buildAdminApp(opts: AdminAppOptions): Hono {
   const app = new Hono();
@@ -48,15 +52,24 @@ export function buildAdminApp(opts: AdminAppOptions): Hono {
 
   app.route("/admin/api", buildAdminApiRouter(opts.getDeps, opts.auth));
 
-  // Built Mini App (frontend/dist). It uses HashRouter, so only "/", "/index.html"
-  // and "/assets/*" reach the server — registered AFTER the API/health/webhook so
-  // they always take precedence (no catch-all that could shadow them). A no-op
-  // (404) until the frontend is built. Prod container paths are finalized in M9.
+  // Built Mini App (frontend/dist), served under "/miniapp" (Vite `base`). It
+  // uses HashRouter, so only "/miniapp", "/miniapp/index.html" and the absolute
+  // "/miniapp/assets/*" asset URLs reach the server — registered AFTER the
+  // API/health/webhook so they always take precedence (no catch-all that could
+  // shadow them). A no-op (404) until the frontend is built. The external Caddy
+  // proxies the public domain here, so the @BotFather menu button URL is
+  // https://<domain>/miniapp.
   const staticRoot = opts.staticRoot ?? DEFAULT_STATIC_ROOT;
   const serveIndex = serveStatic({ root: staticRoot, rewriteRequestPath: () => "/index.html" });
-  app.use("/assets/*", serveStatic({ root: staticRoot }));
-  app.get("/", serveIndex);
-  app.get("/index.html", serveIndex);
+  // Assets arrive as /miniapp/assets/* — strip the base so they resolve under
+  // staticRoot (frontend/dist/assets/*).
+  app.use(
+    `${MINIAPP_BASE}/assets/*`,
+    serveStatic({ root: staticRoot, rewriteRequestPath: (p) => p.slice(MINIAPP_BASE.length) }),
+  );
+  app.get(MINIAPP_BASE, serveIndex);
+  app.get(`${MINIAPP_BASE}/`, serveIndex);
+  app.get(`${MINIAPP_BASE}/index.html`, serveIndex);
 
   if (!opts.auth.botToken || opts.auth.adminUserIds.length === 0) {
     log.warn(

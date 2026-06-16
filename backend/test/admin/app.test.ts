@@ -105,14 +105,19 @@ describe("buildAdminApp static Mini App serving", () => {
     try {
       const app = makeApp({ staticRoot: dir });
 
-      const root = await app.request("/");
-      expect(root.status).toBe(200);
-      expect(await root.text()).toContain('id="root"');
+      const index = await app.request("/miniapp");
+      expect(index.status).toBe(200);
+      expect(await index.text()).toContain('id="root"');
 
-      const asset = await app.request("/assets/app.js");
+      // Trailing-slash variant resolves to the same index.
+      expect((await app.request("/miniapp/")).status).toBe(200);
+
+      const asset = await app.request("/miniapp/assets/app.js");
       expect(asset.status).toBe(200);
 
-      // Static must not shadow the API, health, or 404 routing.
+      // Static lives under /miniapp and must not shadow the API, health, or
+      // 404 routing — and the bare root no longer serves the app.
+      expect((await app.request("/")).status).toBe(404);
       expect((await app.request("/health")).status).toBe(200);
       expect((await app.request("/admin/api/me")).status).toBe(401);
       expect((await app.request("/no-such-path")).status).toBe(404);

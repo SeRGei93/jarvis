@@ -1,10 +1,16 @@
 # jarvis — production deployment (root of the monorepo).
 #
 #   app     one Node container: Telegram bot + cron + admin API + Mini App (static)
-#   nginx   TLS termination + reverse-proxy to app:8080, serves the ACME challenge
-#   certbot issues / auto-renews the Let's Encrypt certificate
+#   searxng metasearch engine the app queries for web search (internal only)
+#   redis   cache/coordination backend for searxng (internal only)
 #
-# First deploy:  make deploy   (provisions .env, builds, issues SSL, starts everything)
+# TLS + the public domain are handled by an EXTERNAL Caddy that lives on the
+# shared `edge` network and reverse-proxies to this app by container name:
+#     reverse_proxy jarvis-app:8080
+# The Mini App is at https://<domain>/miniapp (the @BotFather menu-button URL).
+#
+# Prereq: the shared network must exist once on the host —  docker network create edge
+# First deploy:  make deploy   (provisions .env, builds, starts everything).
 # See docs/deployment.md. Values like DOMAIN / secrets come from the root .env.
 
 services:
@@ -12,6 +18,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    # Fixed name so the external Caddy can target `jarvis-app:8080` on `edge`.
+    container_name: jarvis-app
     env_file:
       - .env
     environment:
@@ -29,7 +37,10 @@ services:
     volumes:
       - ./data/db:/data
     expose:
-      - "8080" # internal only — nginx fronts it
+      - "8080" # not published to the host — reached by Caddy over the `edge` network
+    networks:
+      - default # private project net (reaches searxng/redis)
+      - edge    # shared net with the external Caddy
     # Plain list (not condition) so app still boots even if searxng is slow.
     depends_on:
       - searxng
@@ -67,37 +78,13 @@ services:
       retries: 5
       start_period: 20s
 
-  nginx:
-    image: nginx:1.27-alpine
-    environment:
-      DOMAIN: "${DOMAIN:?set DOMAIN in .env, e.g. make env}"
-      # only substitute ${DOMAIN} in templates — leave nginx's own $vars intact
-      NGINX_ENVSUBST_FILTER: DOMAIN
-    volumes:
-      - ./deploy/nginx/templates:/etc/nginx/templates:ro
-      - ./data/letsencrypt:/etc/letsencrypt:ro
-      - ./data/certbot-www:/var/www/certbot:ro
-    ports:
-      - "80:80"
-      - "443:443"
-    depends_on:
-      - app
-    # reload every 6h so renewed certificates are picked up without a restart
-    command: ["/bin/sh", "-c", "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"]
-    restart: unless-stopped
-
-  certbot:
-    image: certbot/certbot
-    volumes:
-      - ./data/letsencrypt:/etc/letsencrypt
-      - ./data/certbot-www:/var/www/certbot
-    # initial issuance is done by deploy/init-letsencrypt.sh; this loop renews.
-    entrypoint: ["/bin/sh", "-c", "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done"]
-    restart: unless-stopped
+networks:
+  default: # private project network (created automatically)
+  edge:
+    external: true # shared network with the external Caddy (create once: docker network create edge)
 
 # All persistent state lives in the host-visible ./data directory:
 #   ./data/db           libSQL database file (avocado.db)
 #   ./data/db/web-cache web fetch/search cache (app mounts ./data/db → /data, WEB_CACHE_DIR=/data/web-cache)
 #   ./data/redis        redis persistence (searxng cache/coordination)
-#   ./data/letsencrypt  SSL certificates (shared: certbot writes, nginx reads)
-#   ./data/certbot-www  ACME http-01 challenge webroot (shared: certbot ↔ nginx)
+# TLS certificates are owned by the external Caddy — not stored under ./data.

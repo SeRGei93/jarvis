@@ -28,4 +28,3 @@ backend/test
 .DS_Store
 .idea
 .vscode
-deploy/letsencrypt

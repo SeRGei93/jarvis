@@ -3,7 +3,7 @@ SHELL   := /bin/bash
 COMPOSE := docker compose
 
 .DEFAULT_GOAL := help
-.PHONY: help env build ssl up down restart logs ps deploy rebuild local local-logs local-down
+.PHONY: help env build up down restart logs ps deploy rebuild local local-logs local-down
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -15,10 +15,7 @@ env: ## Create/fill the root .env (interactive). FORCE=1 to re-provision.
 build: ## Build the app image
 	@$(COMPOSE) build
 
-ssl: ## Issue the Let's Encrypt certificate (idempotent)
-	@deploy/init-letsencrypt.sh
-
-up: ## Start all services
+up: ## Start all services (joins the external `edge` network — see deploy)
 	@$(COMPOSE) up -d
 
 down: ## Stop all services
@@ -33,7 +30,7 @@ logs: ## Tail service logs
 ps: ## Show service status
 	@$(COMPOSE) ps
 
-deploy: ## First-time deploy: env + build + SSL + start everything
+deploy: ## First-time deploy: env + build + start everything (TLS via external Caddy)
 	@deploy/deploy.sh all
 
 rebuild: ## Rebuild the app image and restart just the app

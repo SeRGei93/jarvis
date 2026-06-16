@@ -2,7 +2,7 @@
 #
 # jarvis — single runtime image: the Node backend (Telegram bot + cron + admin
 # API) serves the built admin Mini App as static. One process, one port (8080).
-# nginx terminates TLS in front of it (see docker-compose.yaml).
+# An external Caddy terminates TLS and proxies to it (see docker-compose.yaml).
 
 # ── 1. Build the admin Mini App (→ /frontend/dist) ───────────────────────────
 FROM node:22-alpine AS frontend

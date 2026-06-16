@@ -80,9 +80,10 @@ npm run build    # → frontend/dist, served by the backend (single origin)
 
 Telegram only opens a Mini App from a public **`https://`** URL with a valid certificate — `http://localhost` will not load in the Telegram client. The `initData` HMAC check itself is transport-agnostic, but the client needs HTTPS to fetch the app.
 
-- **Local testing:** expose the backend over HTTPS with a tunnel (`cloudflared tunnel --url http://localhost:8080` or `ngrok http 8080`) and set that URL as the Mini App in **@BotFather** (Menu Button / `web_app`).
+- The Mini App is served under the **`/miniapp`** subpath, so the @BotFather URL is `https://<domain>/miniapp` (locally `<tunnel-url>/miniapp`).
+- **Local testing:** expose the backend over HTTPS with a tunnel (`cloudflared tunnel --url http://localhost:8080` or `ngrok http 8080`) and set `<tunnel-url>/miniapp` as the Mini App in **@BotFather** (Menu Button / `web_app`).
 - **Webhook mode** (`TELEGRAM_USE_WEBHOOK=1`) likewise needs a public HTTPS `TELEGRAM_WEBHOOK_URL`; the default long-polling mode does not.
-- A production domain + TLS termination (reverse proxy / CDN) and the single-container build land in **Milestone 9**.
+- A production domain + TLS termination (handled by an external Caddy reverse proxy) and the single-container build land in **Milestone 9** — see [Deployment](deployment.md).
 
 ## Code map
 

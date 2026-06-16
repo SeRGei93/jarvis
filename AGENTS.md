@@ -60,7 +60,7 @@ Vite + React 18 + Mantine 7 + `@twa-dev/sdk`, HashRouter. `lib/api` (typed clien
 | Cron Scheduler | `docs/scheduler.md` | node-cron polls, due tasks → chat pipeline → notify |
 | Configuration | `docs/configuration.md` | `.env` secrets and DB-backed settings |
 | Admin Mini App | `docs/admin.md` | Hono admin API, `initData` auth, React Mini App (M8) |
-| Deployment | `docs/deployment.md` | Docker + nginx + Let's Encrypt, deploy.sh, Makefile (M9) |
+| Deployment | `docs/deployment.md` | Docker + external Caddy (TLS) on shared `edge` net, deploy.sh, Makefile (M9) |
 
 ## Next
 **M9** — deploy & data migration: multi-stage Dockerfile (build frontend → serve from the single backend container), npm-scripts, Postgres → libSQL data migration script.
