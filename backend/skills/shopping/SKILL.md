@@ -79,26 +79,29 @@ Call `fetch_url` for EVERY candidate link — both Kufar and store URLs.
 
 ## OUTPUT FORMAT
 
-Group by source: **Kufar (б/у)** and **Магазины (новое)**. Each product as a bullet with link, source, price, and **extracted details from seller description**:
+Group by source: **Kufar (б/у)** and **Магазины (новое)**. Each product as a bullet with a **bold clickable link** as the lead, then price + **extracted details from seller description**. `==highlight==` the single cheapest price across all groups (once):
 
 **Kufar (б/у):**
-- [iPhone 15 Pro 256GB — Natural Titanium](url) — 2 800 BYN. Отличное состояние, пользовался 8 месяцев в чехле и со стеклом. Коробка, документы, оригинальная зарядка. Face ID работает идеально, батарея 96%. Частное лицо, Минск, Центр.
-- [iPhone 15 Pro 128GB — Black](url) — 2 500 BYN. Куплен в iSpace 6 мес назад, на гарантии до августа. Небольшая царапина на рамке (видно только под углом). Комплект: коробка + чек + чехол Spigen. Магазин-комиссионка, Минск, Серебрянка.
-- [iPhone 15 Pro 256GB — White Titanium](url) — 2 650 BYN. Покупался в подарок, пользовались мало — состояние 9/10. Полный комплект. Возможен торг при быстрой сделке. Частное лицо, Гомель.
+- **[iPhone 15 Pro 256GB — Natural Titanium](url)** — 2 800 BYN. Отличное состояние, пользовался 8 месяцев в чехле и со стеклом. Коробка, документы, оригинальная зарядка. Face ID работает идеально, батарея 96%. Частное лицо, Минск, Центр.
+- **[iPhone 15 Pro 128GB — Black](url)** — ==2 500 BYN==. Куплен в iSpace 6 мес назад, на гарантии до августа. Небольшая царапина на рамке (видно только под углом). Комплект: коробка + чек + чехол Spigen. Магазин-комиссионка, Минск, Серебрянка.
+- **[iPhone 15 Pro 256GB — White Titanium](url)** — 2 650 BYN. Покупался в подарок, пользовались мало — состояние 9/10. Полный комплект. Возможен торг при быстрой сделке. Частное лицо, Гомель.
 
 **Магазины (новое):**
-- [iPhone 15 Pro 256GB — Blue Titanium](url) — 21vek.by, 3 499 BYN ~~3 799~~ (акция до 28 февраля). Гарантия 24 мес, доставка за 1 день, самовывоз сегодня. В наличии 3 шт.
-- [iPhone 15 Pro 256GB — Natural Titanium](url) — shop.by, от 3 450 BYN. 5 предложений от разных продавцов. Гарантия 12–24 мес в зависимости от продавца.
-- [iPhone 15 Pro 256GB — Black Titanium](url) — 5element.by, 3 599 BYN. Рассрочка 0% на 12 мес (300 BYN/мес). Гарантия 24 мес, доставка 1–2 дня.
+- **[iPhone 15 Pro 256GB — Blue Titanium](url)** — 21vek.by, 3 499 BYN ~~3 799~~ (акция до 28 февраля). Гарантия 24 мес, доставка за 1 день, самовывоз сегодня. В наличии 3 шт.
+- **[iPhone 15 Pro 256GB — Natural Titanium](url)** — shop.by, от 3 450 BYN. 5 предложений от разных продавцов. Гарантия 12–24 мес в зависимости от продавца.
+- **[iPhone 15 Pro 256GB — Black Titanium](url)** — 5element.by, 3 599 BYN. Рассрочка 0% на 12 мес (300 BYN/мес). Гарантия 24 мес, доставка 1–2 дня.
 
-Б/у на Kufar от 2 500 BYN, новые от 3 450 BYN. Разница ~1 000 BYN. Самый выгодный б/у вариант — iPhone 15 Pro 128GB за 2 500 BYN (ещё на гарантии).
-
-When the same product is offered by several sources, end with a compact price-comparison Markdown table:
+When the same product is offered by several sources, add a compact price-comparison Markdown table (numbers right-aligned):
 ```
-| Источник      | Цена, BYN | Состояние | Гарантия |
-|:--------------|----------:|:----------|:---------|
-| Kufar         | 850       | б/у, 1 год| —        |
-| 5element      | 1090      | новый     | 24 мес   |
+| Источник  | Цена, BYN | Состояние  | Гарантия |
+|:----------|----------:|:-----------|:---------|
+| Kufar     |       850 | б/у, 1 год | —        |
+| 5element  |      1090 | новый      | 24 мес   |
+```
+
+End with one `> ` recommendation line:
+```
+> Самый выгодный б/у вариант — iPhone 15 Pro 128GB за 2 500 BYN (ещё на гарантии); новые от 3 450 BYN, разница ~1 000 BYN.
 ```
 
 **Extract per listing:**

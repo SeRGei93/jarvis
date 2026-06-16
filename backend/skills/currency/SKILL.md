@@ -46,8 +46,14 @@ Return rates as a Markdown table (numbers right-aligned). Adapt columns to the r
 ```
 | Валюта | НБРБ   | Покупка | Продажа |
 |:-------|-------:|--------:|--------:|
-| USD    | 2.9332 | 2.92    | 2.97    |
-| EUR    | 3.1850 | 3.17    | 3.22    |
+| USD    | 2.9332 |    2.92 | ==2.97== |
+| EUR    | 3.1850 |    3.17 |    3.22 |
+```
+
+If the rates imply a notable move, add one short takeaway line:
+
+```
+> Доллар за неделю подрос на 0.8%.
 ```
 
 Be concise: users need numbers, not explanations. Note any source failures.

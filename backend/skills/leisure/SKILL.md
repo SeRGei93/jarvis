@@ -188,11 +188,12 @@ Build response per RESPONSE FORMAT below. Add summary at the end.
 Keep listings as bullet lists (the clickable link leads each item). A compact Markdown table is fine only for comparing several items across a few short shared fields — never for items with long descriptions or addresses.
 
 Each item as a bullet with link, details, and price:
-- [Концерт Би-2 — Минск Арена](url) — 22 февраля, 19:00, билеты 45–120 BYN. 18+
-- [Выставка "Дали. Сюрреализм"](url) — до 15 марта, ежедн. 10:00–20:00, Национальный художественный музей. 12 BYN
-- [Ресторан «Васильки»](url) — белорусская кухня, пр. Независимости 18, средний чек 40–60 BYN
+- **[Концерт Би-2 — Минск Арена](url)** — 22 февраля, 19:00 · билеты ==45–120 BYN== · Минск-Арена. 18+
+- **[Выставка «Дали. Сюрреализм»](url)** — до 15 марта, ежедн. 10:00–20:00 · 12 BYN · Национальный художественный музей.
+- **[Ресторан «Васильки»](url)** — белорусская кухня · средний чек 40–60 BYN · пр. Независимости 18.
 
-End with 1-2 sentence recommendation.
+End with a 1-2 sentence recommendation as a closing `>` line:
+> Если хочется атмосферного вечера — берите билеты на Би-2, а перед концертом загляните в «Васильки» поужинать.
 
 ## FINAL CHECKLIST
 

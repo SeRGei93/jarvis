@@ -106,7 +106,11 @@ For route planning, suggest these services:
 | №125         | 07:40       | 08:25    | ежедн.   |
 ```
 
-  For per-stop timetables, a `| Остановка | Время |` table is fine.
+  For per-stop timetables, a `| Остановка | Время |` table is fine. If useful, add one short note about frequency:
+
+```
+> В часы пик интервал 8–10 минут.
+```
 - If the user's city is not on ZippyBus — say so and suggest Яндекс Карты / 2ГИС.
 - Language: always respond in the user's language.
 

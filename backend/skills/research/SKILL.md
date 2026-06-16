@@ -65,21 +65,15 @@ Keep listings as bullet lists (the clickable link leads each item). A compact Ma
 
 ### Finding Format
 ```
-**Headline or Key Point**
-Brief summary (1-2 sentences)
-Date/Time (if relevant)
-https://exact-url-from-web-fetch
+- **[Headline or Key Point](https://exact-url-from-web-fetch)** — brief summary (1-2 sentences). Date/Time if relevant.
 ```
 
 ### Example
 ```
-**Tesla снижает цены на Model 3 в Европе**
-Снижение на 5-8% для стимулирования продаж в условиях конкуренции с китайскими производителями.
-15 февраля 2026
-https://www.reuters.com/business/autos/tesla-cuts-model-3-prices-europe-2026-02-15
+- **[Tesla снижает цены на Model 3 в Европе](https://www.reuters.com/business/autos/tesla-cuts-model-3-prices-europe-2026-02-15)** — снижение на 5-8% для стимулирования продаж в условиях конкуренции с китайскими производителями. 15 февраля 2026.
 
 **Выводы**
-Ценовая война на рынке электромобилей усиливается. Tesla реагирует на давление китайских брендов.
+> Ценовая война на рынке электромобилей усиливается. Tesla реагирует на давление китайских брендов.
 ```
 
 ## SELF-EVALUATION (Before Sending)
