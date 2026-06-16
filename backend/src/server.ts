@@ -5,7 +5,7 @@ import { env } from "./config/env.js";
 import { libsql, db } from "./db/client.js";
 import { mastra, storage } from "./mastra/index.js";
 import { createChatService, type ChatService } from "./app.js";
-import { ensurePopulated } from "./content/store.js";
+import { reconcileDefaults } from "./content/store.js";
 import {
   DEFAULTS_PROMPTS_DIR,
   DEFAULTS_SKILLS_DIR,
@@ -115,17 +115,18 @@ function startScheduler(svc: ChatService): void {
 }
 
 /**
- * Populate the file-backed skill/prompt store from the image's bundled defaults
- * on first run (idempotent — a no-op once the persistent volume has content).
+ * Reconcile the file-backed skill/prompt store with the image's bundled defaults.
+ * First run populates the empty store; later deploys deliver changed defaults to
+ * never-edited files only, preserving admin edits (see {@link reconcileDefaults}).
  * MUST complete before {@link createChatService}, which constructs SkillService
  * and immediately reads skills/prompts from the store.
  */
 async function populateContentStore(): Promise<void> {
-  const [skillsCopied, promptsCopied] = await Promise.all([
-    ensurePopulated(skillsStoreDir(), DEFAULTS_SKILLS_DIR),
-    ensurePopulated(promptsStoreDir(), DEFAULTS_PROMPTS_DIR),
+  const [skills, prompts] = await Promise.all([
+    reconcileDefaults(skillsStoreDir(), DEFAULTS_SKILLS_DIR),
+    reconcileDefaults(promptsStoreDir(), DEFAULTS_PROMPTS_DIR),
   ]);
-  log.info({ skillsCopied, promptsCopied }, "content store ready");
+  log.info({ skills, prompts }, "content store ready");
 }
 
 /**

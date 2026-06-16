@@ -38,29 +38,19 @@ A new Telegram contact is mapped to an internal user by `identity.resolveTelegra
 |----------|-------|
 | First chunk | sent as a new message immediately |
 | Subsequent chunks | `editMessageText`, throttled to ~1 call/sec |
-| In-flight text | **plain** (no `parse_mode`) + a `▌` cursor — raw markdown rarely parses as MarkdownV2 mid-stream |
+| In-flight text | **plain** (no formatting) + a `▌` cursor — rich rendering is applied only at finalize |
 | Skip conditions | unchanged text · length > 3800 · text ends in an incomplete link |
 | Typing indicator | stopped on the first streamed chunk |
-| Finalize | convert to MarkdownV2, split at 4096, edit the streamed message for part 1, send the rest |
-| Parse failure | retry the same text without `parse_mode` (plain) |
+| Finalize | split at 32768, **upgrade** the streamed message to a rich message (`editMessageText({markdown})`) for part 1, `sendRichMessage` the rest |
+| Send failure | retry the same text as plain (`editMessageText`/`sendMessage` with no rich) |
 
 When `handleUserMessage` was rejected (prompt-guard / rate limit) nothing streams, so `finalize` simply sends the rejection text.
 
 ## Formatting
 
-`format.ts` ports the Go goldmark logic onto the [`marked`](https://marked.js.org) lexer, emitting Telegram **MarkdownV2**:
+Replies are sent as **Bot API 10.1 rich messages** (`sendRichMessage`, grammY 1.44+). Telegram's rich markdown is a **GitHub-flavored-Markdown superset** (tables, headings, lists, blockquotes, spoilers, math, …), so the LLM's markdown is passed through **verbatim** — there is no MarkdownV2 escaping step. The output-format contract the model follows lives in `prompts/FORMAT.md`.
 
-| Markdown | MarkdownV2 |
-|----------|-----------|
-| `**bold**` / headings | `*bold*` |
-| `*italic*` | plain text (Go parity) |
-| `` `code` `` / ```` ```fenced``` ```` | kept (backtick/backslash escaped) |
-| `[t](url)` · bare URLs | links (url parens escaped) |
-| lists | `•` / `1\.` with nesting |
-| tables | plain rows, bold header |
-| `~~s~~` | `~s~` |
-
-`splitMessage(text, 4096)` breaks long replies on the nearest paragraph → line → word boundary (500-char search window, code-point counted), with a hard cut as the last resort.
+`format.ts` is therefore tiny: a `RichContent` type plus `splitMessage(text, 32768)`, which breaks the rare over-long reply on the nearest paragraph → line → word boundary (500-char search window, code-point counted), with a hard cut as the last resort. The 32768 bound is the rich-message limit (vs 4096 for the plain in-flight preview).
 
 ## Commands
 
@@ -85,7 +75,7 @@ An `authorize` middleware reads `telegram_allowed_users` from settings (`setting
 
 ## Notifications (Messenger)
 
-`messenger.ts` wraps `bot.api` with `sendMessage` (format + split + plain fallback), `sendTyping`, and `startTypingLoop` (re-sends typing every 4s). It is the non-streaming send path used for command replies and for [cron notifications](scheduler.md#notifications).
+`messenger.ts` wraps `bot.api` with `sendMessage` (split + `sendRichMessage` + plain fallback), `sendTyping`, and `startTypingLoop` (re-sends typing every 4s). It is the non-streaming send path used for command replies and for [cron notifications](scheduler.md#notifications).
 
 ## Webhook (optional, minimal)
 
@@ -103,7 +93,7 @@ Long polling is the default. Setting `TELEGRAM_USE_WEBHOOK=1` and a public `TELE
 |------|----------------|
 | `bot.ts` | grammY wiring: allowlist → commands → text/voice → error handler; `createBot()` |
 | `stream.ts` | throttled `editMessageText` streamer |
-| `format.ts` | markdown → MarkdownV2 + `splitMessage` |
+| `format.ts` | `RichContent` type + `splitMessage` (rich-message limit) |
 | `voice.ts` | download + transcribe a voice note |
 | `commands.ts` | slash-command handlers + `BOT_COMMANDS` menu |
 | `identity.ts` | get-or-create user/channel for a Telegram contact |

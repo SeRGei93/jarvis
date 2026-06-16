@@ -202,7 +202,10 @@ make rebuild     # rebuild + restart app only (the external Caddy keeps running)
 ```
 
 Migrations and the idempotent seed run automatically on every app start
-(`deploy/docker-entrypoint.sh` → `node dist/db/seed.js`).
+(`deploy/docker-entrypoint.sh` → `node dist/db/seed.js`). Skill/prompt default
+changes shipped in the new image are also reconciled into the store on boot —
+delivered to files the admin never edited, preserving admin edits (see
+[Configuration](configuration.md#skills-and-prompts-file-backed-store-m12)).
 
 ## Data & backups
 

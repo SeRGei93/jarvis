@@ -53,7 +53,9 @@ The `timeouts.http_client` value is the per-request timeout for the `currency_ra
 
 ## Skills and prompts (file-backed store, M12)
 
-Skills and system prompts are **files, not DB rows**. Repo-bundled defaults ship in the image and are copied onto a persistent volume on first run (**populate-if-empty**); afterwards the app reads *and* writes the store, so admin edits survive redeploys.
+Skills and system prompts are **files, not DB rows**. Repo-bundled defaults ship in the image and are reconciled onto a persistent volume at boot (`reconcileDefaults`): the first run populates the empty store, and a later deploy that ships changed defaults delivers them **only to files the admin never edited** — admin edits made via the Mini App are preserved. A `.content-manifest.json` in each store records the default hash installed per file (the baseline used to tell "untouched" from "edited"); its `version` lets an unchanged image skip the walk. Afterwards the app reads *and* writes the store, so admin edits survive redeploys.
+
+> Caveat: a store populated before the manifest existed has no per-file baseline, so files that already diverged from the new defaults are preserved (not auto-updated) on the first reconcile — apply those via the admin UI if wanted.
 
 | What | Repo defaults | Runtime store | Used by |
 |------|---------------|---------------|---------|

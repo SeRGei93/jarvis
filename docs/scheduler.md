@@ -44,7 +44,7 @@ A **rejected** result (prompt-guard or rate limit, `result.rejected`) is recorde
 
 ## Notifications
 
-Delivery goes through `Messenger.sendMessage(notification_chat_id, text)` (MarkdownV2 + 4096 split + plain fallback). `shouldNotify` (ported from Go) suppresses noise:
+Delivery goes through `Messenger.sendMessage(notification_chat_id, text)` (rich message + split + plain fallback). `shouldNotify` (ported from Go) suppresses noise:
 
 - **Immediate** tasks always notify (the user explicitly asked).
 - Otherwise the result is suppressed when it is empty, shorter than 20 chars with a negative word, contains a marker (`NO_CHANGES`, `NO_RESULT`, `NOTHING_FOUND`, `NO_NEW_LISTINGS`, …), or exactly matches a "no changes" phrase (`НЕТ ИЗМЕНЕНИЙ`, `НИЧЕГО`, …).

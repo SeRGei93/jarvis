@@ -6,7 +6,7 @@
 Telegram AI assistant — a TypeScript + Mastra rewrite of avocado-ai (Go). Monorepo: `backend/` (Node service) + `frontend/` (admin Mini App — React + Vite + Mantine). Migration **milestones 0–8 done**.
 
 ## Tech Stack
-Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + LibSQLVector) · `drizzle-orm` 0.45 · Vercel AI SDK v6 · zod v4 · grammY (polling + opt. webhook) · `marked` (md→MarkdownV2) · node-cron (M7) · Hono (M8) · pino · vitest.
+Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + LibSQLVector) · `drizzle-orm` 0.45 · Vercel AI SDK v6 · zod v4 · grammY 1.44 (polling + opt. webhook; Bot API 10.1 rich messages) · node-cron (M7) · Hono (M8) · pino · vitest.
 
 ## Structure (`backend/src/`)
 | Dir | Contents |
