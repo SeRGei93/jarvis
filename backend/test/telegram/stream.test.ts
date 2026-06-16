@@ -1,36 +1,30 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createStreamer, STREAM_CURSOR, type TelegramSender } from "../../src/telegram/stream.js";
+import { createStreamer, type TelegramSender } from "../../src/telegram/stream.js";
 
 interface Call {
-  op: "send" | "edit";
+  op: "draft" | "send";
   text: string;
-  rich: boolean;
-  messageId?: number;
+  rich: boolean; // for "send": rich vs plain fallback
+  draftId?: number;
 }
 
-/** Coerce string | {markdown} into [text, isRich]. */
-function content(c: string | { markdown: string }): [string, boolean] {
-  return typeof c === "string" ? [c, false] : [c.markdown, true];
-}
+const DRAFT_ID = 7;
 
 class FakeApi implements TelegramSender {
   calls: Call[] = [];
-  nextId = 100;
   failRich = false;
 
-  async sendMessage(_chatId: number, text: string) {
-    this.calls.push({ op: "send", text, rich: false });
-    return { message_id: this.nextId++ };
-  }
-  async editMessageText(_chatId: number, messageId: number, c: string | { markdown: string }) {
-    const [text, rich] = content(c);
-    this.calls.push({ op: "edit", text, rich, messageId });
-    if (rich && this.failRich) throw new Error("can't parse rich");
-    return true;
+  async sendRichMessageDraft(_chatId: number, draftId: number, richMessage: { markdown: string }) {
+    this.calls.push({ op: "draft", text: richMessage.markdown, rich: true, draftId });
+    return {};
   }
   async sendRichMessage(_chatId: number, richMessage: { markdown: string }) {
     this.calls.push({ op: "send", text: richMessage.markdown, rich: true });
     if (this.failRich) throw new Error("can't parse rich");
+    return {};
+  }
+  async sendMessage(_chatId: number, text: string) {
+    this.calls.push({ op: "send", text, rich: false });
     return {};
   }
 }
@@ -45,30 +39,25 @@ beforeEach(() => {
   clock = 0;
 });
 
-describe("createStreamer — streaming", () => {
-  it("sends the first chunk (plain), then edits subsequent chunks (accumulated + cursor)", async () => {
-    const s = createStreamer(api, 42, { now: () => clock, throttleMs: 1000 });
+describe("createStreamer — streaming (rich drafts)", () => {
+  it("sends the first draft immediately, then throttled accumulated drafts", async () => {
+    const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock, throttleMs: 1000 });
 
     s.onText("hello");
     await tick();
-    expect(api.calls[0]).toMatchObject({ op: "send", text: "hello" + STREAM_CURSOR, rich: false });
+    expect(api.calls[0]).toMatchObject({ op: "draft", text: "hello", draftId: DRAFT_ID });
 
     clock = 1000;
     s.onText("hello world");
     await tick();
-    expect(api.calls[1]).toMatchObject({
-      op: "edit",
-      text: "hello world" + STREAM_CURSOR,
-      rich: false,
-      messageId: 100,
-    });
+    expect(api.calls[1]).toMatchObject({ op: "draft", text: "hello world", draftId: DRAFT_ID });
   });
 
-  it("throttles edits within the window", async () => {
-    const s = createStreamer(api, 42, { now: () => clock, throttleMs: 1000 });
+  it("throttles ticks within the window", async () => {
+    const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock, throttleMs: 1000 });
 
     s.onText("a");
-    await tick(); // first send (no throttle)
+    await tick(); // first draft (no throttle)
     clock = 500;
     s.onText("ab");
     await tick(); // 500 < 1000 -> skipped
@@ -80,15 +69,15 @@ describe("createStreamer — streaming", () => {
     expect(api.calls).toHaveLength(2);
   });
 
-  it("skips a chunk that exceeds the plain-text guard", async () => {
-    const s = createStreamer(api, 42, { now: () => clock });
-    s.onText("x".repeat(4000));
+  it("skips a chunk that exceeds the draft guard", async () => {
+    const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock });
+    s.onText("x".repeat(33000));
     await tick();
     expect(api.calls).toHaveLength(0);
   });
 
   it("skips a chunk ending in an incomplete link", async () => {
-    const s = createStreamer(api, 42, { now: () => clock });
+    const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock });
     s.onText("see [docs");
     await tick();
     expect(api.calls).toHaveLength(0);
@@ -96,12 +85,12 @@ describe("createStreamer — streaming", () => {
     s.onText("see [docs](http://e.com)");
     await tick();
     expect(api.calls).toHaveLength(1);
-    expect(api.calls[0]!.op).toBe("send");
+    expect(api.calls[0]!.op).toBe("draft");
   });
 
-  it("stops the typing indicator once, on the first chunk", async () => {
+  it("stops the typing indicator once, on the first draft", async () => {
     let firstCount = 0;
-    const s = createStreamer(api, 42, { now: () => clock, onFirstChunk: () => firstCount++ });
+    const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock, onFirstChunk: () => firstCount++ });
     s.onText("x");
     await tick();
     clock = 99999;
@@ -113,73 +102,71 @@ describe("createStreamer — streaming", () => {
 });
 
 describe("createStreamer — finalize", () => {
-  it("upgrades the streamed message to rich for part 1 and sends the rest as rich", async () => {
-    const s = createStreamer(api, 42, { now: () => clock });
+  it("persists the reply via sendRichMessage, splitting a huge reply", async () => {
+    const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock });
     s.onText("hi");
-    await tick(); // message_id 100
+    await tick(); // one draft
 
     const long = "word ".repeat(7000); // > 32768 -> splits
     await s.finalize(long);
 
-    const rich = api.calls.filter((c) => c.rich);
-    expect(rich.some((c) => c.op === "edit" && c.messageId === 100)).toBe(true);
-    expect(rich.some((c) => c.op === "send")).toBe(true);
+    const sends = api.calls.filter((c) => c.op === "send" && c.rich);
+    expect(sends.length).toBeGreaterThan(1);
+    // finalize persists; it does not emit more drafts.
+    expect(api.calls.filter((c) => c.op === "draft")).toHaveLength(1);
   });
 
-  it("retries with a plain edit when the rich edit fails", async () => {
+  it("retries as plain text when the rich send fails", async () => {
     api.failRich = true;
-    const s = createStreamer(api, 42, { now: () => clock });
-    s.onText("hi");
-    await tick(); // send -> message_id 100
+    const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock });
 
     await s.finalize("hello world");
 
-    const edits = api.calls.filter((c) => c.op === "edit");
-    expect(edits.some((c) => c.rich)).toBe(true); // attempted rich, threw
-    expect(edits.some((c) => !c.rich && c.messageId === 100)).toBe(true); // plain retry
+    const sends = api.calls.filter((c) => c.op === "send");
+    expect(sends.some((c) => c.rich)).toBe(true); // attempted rich, threw
+    expect(sends.some((c) => !c.rich && c.text === "hello world")).toBe(true); // plain retry
   });
 
-  it("waits for an in-flight stream send before finalizing (no duplicate, no stuck cursor)", async () => {
-    // Gate the first sendMessage so it is still in flight when finalize runs.
+  it("waits for an in-flight draft before persisting the reply", async () => {
+    // Gate the first draft so it is still in flight when finalize runs.
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
+    const order: string[] = [];
     const gatedApi = {
-      calls: [] as Call[],
-      async sendMessage(_c: number, text: string) {
-        gatedApi.calls.push({ op: "send", text, rich: false });
+      async sendRichMessageDraft(_c: number, _d: number, _r: { markdown: string }) {
+        order.push("draft-start");
         await gate;
-        return { message_id: 100 };
+        order.push("draft-done");
+        return {};
       },
-      async editMessageText(_c: number, messageId: number, c: string | { markdown: string }) {
-        const [text, rich] = content(c);
-        gatedApi.calls.push({ op: "edit", text, rich, messageId });
-        return true;
+      async sendRichMessage(_c: number, _r: { markdown: string }) {
+        order.push("send");
+        return {};
       },
-      async sendRichMessage(_c: number, richMessage: { markdown: string }) {
-        gatedApi.calls.push({ op: "send", text: richMessage.markdown, rich: true });
+      async sendMessage(_c: number, _t: string) {
         return {};
       },
     };
-    const s = createStreamer(gatedApi, 42, { now: () => clock });
+    const s = createStreamer(gatedApi, 42, DRAFT_ID, { now: () => clock });
 
-    s.onText("hi"); // starts the (gated) first send
-    const fin = s.finalize("final answer"); // must await the in-flight send
-    release(); // let the stream send resolve -> messageId = 100
+    s.onText("hi"); // starts the (gated) draft
+    const fin = s.finalize("final answer"); // must await the in-flight draft first
+    release();
     await fin;
 
-    // Exactly one send (the stream one); finalize edited that message, did not send a duplicate.
-    expect(gatedApi.calls.filter((c) => c.op === "send")).toHaveLength(1);
-    expect(gatedApi.calls.some((c) => c.op === "edit" && c.messageId === 100 && c.rich)).toBe(true);
+    // The persisted send happens only after the in-flight draft settled.
+    expect(order).toEqual(["draft-start", "draft-done", "send"]);
   });
 
-  it("sends a new rich message when nothing was streamed", async () => {
+  it("sends a rich message when nothing was streamed", async () => {
     let firstCount = 0;
-    const s = createStreamer(api, 7, { now: () => clock, onFirstChunk: () => firstCount++ });
+    const s = createStreamer(api, 7, DRAFT_ID, { now: () => clock, onFirstChunk: () => firstCount++ });
     await s.finalize("just a reply");
 
     expect(firstCount).toBe(1);
+    expect(api.calls.filter((c) => c.op === "draft")).toHaveLength(0);
     const sends = api.calls.filter((c) => c.op === "send");
     expect(sends).toHaveLength(1);
-    expect(sends[0]!.rich).toBe(true);
+    expect(sends[0]!).toMatchObject({ rich: true, text: "just a reply" });
   });
 });

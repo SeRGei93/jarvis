@@ -14,25 +14,23 @@ import type { FetchLike } from "../../src/telegram/voice.js";
 import { users, userChannels } from "../../src/db/schema.js";
 
 interface Call {
-  op: "send" | "edit" | "action" | "getFile";
+  op: "draft" | "send" | "action" | "getFile";
   text?: string;
   rich?: boolean;
 }
 
 class FakeApi {
   calls: Call[] = [];
-  nextId = 100;
-  async sendMessage(_c: number, text: string) {
-    this.calls.push({ op: "send", text, rich: false });
-    return { message_id: this.nextId++ };
-  }
-  async editMessageText(_c: number, _m: number, c: string | { markdown: string }) {
-    const rich = typeof c !== "string";
-    this.calls.push({ op: "edit", text: rich ? c.markdown : c, rich });
-    return true;
+  async sendRichMessageDraft(_c: number, _draftId: number, richMessage: { markdown: string }) {
+    this.calls.push({ op: "draft", text: richMessage.markdown, rich: true });
+    return {};
   }
   async sendRichMessage(_c: number, richMessage: { markdown: string }) {
     this.calls.push({ op: "send", text: richMessage.markdown, rich: true });
+    return {};
+  }
+  async sendMessage(_c: number, text: string) {
+    this.calls.push({ op: "send", text, rich: false });
     return {};
   }
   async sendChatAction(_c: number, _a: "typing") {
@@ -103,7 +101,7 @@ describe("processText", () => {
     };
     const { rt, api } = makeRuntime(t, chat);
 
-    await processText(rt, { id: 555, name: "Serg" }, 42, "hello");
+    await processText(rt, { id: 555, name: "Serg" }, 42, "hello", 1);
 
     // user + channel created
     const [ch] = await t.db.select().from(userChannels).where(eq(userChannels.externalId, "555"));
@@ -121,7 +119,7 @@ describe("processText", () => {
     };
     const { rt, api } = makeRuntime(t, chat);
 
-    await processText(rt, { id: 7, name: "X" }, 9, "x".repeat(99));
+    await processText(rt, { id: 7, name: "X" }, 9, "x".repeat(99), 2);
     const sends = api.calls.filter((c) => c.op === "send" && c.rich);
     expect(sends.some((c) => (c.text ?? "").includes("Слишком длинное"))).toBe(true);
   });
@@ -139,7 +137,7 @@ describe("processVoice", () => {
     };
     const { rt } = makeRuntime(t, chat, "погода завтра");
 
-    await processVoice(rt, { id: 8, name: "V" }, 21, "file-1", 5);
+    await processVoice(rt, { id: 8, name: "V" }, 21, "file-1", 5, 3);
     expect(receivedText).toBe("погода завтра");
   });
 
@@ -147,6 +145,6 @@ describe("processVoice", () => {
     t = await createTestDb();
     const chat: ChatHandler = { handleUserMessage: async () => ({ text: "x", skills: [], rejected: false }) };
     const { rt } = makeRuntime(t, chat);
-    await expect(processVoice(rt, { id: 8 }, 21, "file-1", 31)).rejects.toBeInstanceOf(TelegramReplyError);
+    await expect(processVoice(rt, { id: 8 }, 21, "file-1", 31, 4)).rejects.toBeInstanceOf(TelegramReplyError);
   });
 });

@@ -32,19 +32,18 @@ A new Telegram contact is mapped to an internal user by `identity.resolveTelegra
 
 ## Streaming
 
-`stream.ts` replaces Go's `SendMessageDraft` (Bot API 9.3 drafts, absent in grammY) with throttled `editMessageText`:
+`stream.ts` streams the reply with **Bot API 10.1 rich drafts** (`sendRichMessageDraft`, grammY 1.44+) — the evolution of Go's `SendMessageDraft`. Drafts are ephemeral previews that aren't edit-flood-limited, so the live preview is already **rich-formatted** and refreshes fast:
 
 | Behavior | Value |
 |----------|-------|
-| First chunk | sent as a new message immediately |
-| Subsequent chunks | `editMessageText`, throttled to ~2 calls/sec (`STREAM_THROTTLE_MS` 500) |
-| In-flight text | **plain** (no formatting) + a `▌` cursor — rich rendering is applied only at finalize |
-| Skip conditions | unchanged text · length > 3800 · text ends in an incomplete link |
-| Typing indicator | stopped on the first streamed chunk |
-| Finalize | split at 32768, **upgrade** the streamed message to a rich message (`editMessageText({markdown})`) for part 1, `sendRichMessage` the rest |
-| Send failure | retry the same text as plain (`editMessageText`/`sendMessage` with no rich) |
+| Each tick | `sendRichMessageDraft(chatId, draftId, {markdown})` with the accumulated text; `draftId` = the inbound `update_id` |
+| First tick | sent immediately; later ticks throttled to ~4/sec (`STREAM_THROTTLE_MS` 250) |
+| Skip conditions | in-flight send · unchanged text · length > 32000 · text ends in an incomplete link |
+| Typing indicator | stopped on the first draft |
+| Finalize | wait for the in-flight draft, then `sendRichMessage` the full reply (split at 32768); the draft expires on its own |
+| Send failure | a failed draft tick is skipped (next tick recovers); a failed finalize send retries as plain `sendMessage` |
 
-When `handleUserMessage` was rejected (prompt-guard / rate limit) nothing streams, so `finalize` simply sends the rejection text.
+When `handleUserMessage` was rejected (prompt-guard / rate limit) nothing streams, so `finalize` simply sends the rejection text. The draft's 30-second TTL is refreshed by every tick.
 
 ## Formatting
 
@@ -92,7 +91,7 @@ Long polling is the default. Setting `TELEGRAM_USE_WEBHOOK=1` and a public `TELE
 | File | Responsibility |
 |------|----------------|
 | `bot.ts` | grammY wiring: allowlist → commands → text/voice → error handler; `createBot()` |
-| `stream.ts` | throttled `editMessageText` streamer |
+| `stream.ts` | throttled `sendRichMessageDraft` streamer + rich finalize |
 | `format.ts` | `RichContent` type + `splitMessage` (rich-message limit) |
 | `voice.ts` | download + transcribe a voice note |
 | `commands.ts` | slash-command handlers + `BOT_COMMANDS` menu |

@@ -71,10 +71,19 @@ export async function isAuthorized(settings: AllowlistSettings, userId?: number)
   return allowed.length === 0 || allowed.includes(userId);
 }
 
-/** Stream a chat reply: typing indicator → handleUserMessage(onText) → finalize. */
-async function streamReply(rt: BotRuntime, userId: number, chatId: number, text: string): Promise<void> {
+/**
+ * Stream a chat reply: typing indicator → handleUserMessage(onText) → finalize.
+ * `draftId` is the inbound `update_id`, correlating the streaming rich drafts.
+ */
+async function streamReply(
+  rt: BotRuntime,
+  userId: number,
+  chatId: number,
+  text: string,
+  draftId: number,
+): Promise<void> {
   const stopTyping = rt.messenger.startTypingLoop(chatId);
-  const streamer = createStreamer(rt.api, chatId, { onFirstChunk: stopTyping });
+  const streamer = createStreamer(rt.api, chatId, draftId, { onFirstChunk: stopTyping });
   try {
     const result = await rt.chat.handleUserMessage(userId, chatId, text, streamer.onText);
     await streamer.finalize(result.text);
@@ -83,15 +92,16 @@ async function streamReply(rt: BotRuntime, userId: number, chatId: number, text:
   }
 }
 
-/** Handle an inbound text message end-to-end. */
+/** Handle an inbound text message end-to-end. `draftId` is the inbound update_id. */
 export async function processText(
   rt: BotRuntime,
   tgUser: TelegramUserInfo,
   chatId: number,
   text: string,
+  draftId: number,
 ): Promise<void> {
   const { userId } = await resolveTelegramUser(rt.db, tgUser);
-  await streamReply(rt, userId, chatId, text);
+  await streamReply(rt, userId, chatId, text, draftId);
 }
 
 /** Handle an inbound voice message: transcribe, then stream the reply. */
@@ -101,6 +111,7 @@ export async function processVoice(
   chatId: number,
   fileId: string,
   duration: number,
+  draftId: number,
 ): Promise<void> {
   const { userId } = await resolveTelegramUser(rt.db, tgUser);
   // Transcription (download + speech model) can take seconds — show typing meanwhile.
@@ -114,7 +125,7 @@ export async function processVoice(
     throw err;
   }
   stopTyping(); // streamReply starts its own typing loop
-  await streamReply(rt, userId, chatId, text);
+  await streamReply(rt, userId, chatId, text, draftId);
 }
 
 /** Register the slash-command menu so Telegram shows command hints. */
@@ -186,11 +197,19 @@ export function createBot(opts: BotOptions): Bot {
 
   bot.on("message:text", async (ctx) => {
     const from = senderInfo(ctx.from);
-    if (from) await processText(rt, from, ctx.chat.id, ctx.message.text);
+    if (from) await processText(rt, from, ctx.chat.id, ctx.message.text, ctx.update.update_id);
   });
   bot.on("message:voice", async (ctx) => {
     const from = senderInfo(ctx.from);
-    if (from) await processVoice(rt, from, ctx.chat.id, ctx.message.voice.file_id, ctx.message.voice.duration);
+    if (from)
+      await processVoice(
+        rt,
+        from,
+        ctx.chat.id,
+        ctx.message.voice.file_id,
+        ctx.message.voice.duration,
+        ctx.update.update_id,
+      );
   });
   bot.on("message", (ctx) => rt.messenger.sendMessage(ctx.chat.id, UNSUPPORTED_REPLY));
 
