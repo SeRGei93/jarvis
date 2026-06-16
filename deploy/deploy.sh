@@ -42,6 +42,15 @@ require_docker() {
   docker compose version >/dev/null 2>&1 || die "'docker compose' (v2) not available."
 }
 
+# A 32-byte random hex secret (openssl if present, else /dev/urandom).
+gen_secret() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+  else
+    head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'
+  fi
+}
+
 # ask VAR "Prompt" required|optional plain|secret "default"
 # Prefers an already-exported env var; otherwise prompts (prompt → stderr, value → stdout).
 ask() {
@@ -77,7 +86,7 @@ ensure_env() {
   # Seed prompt defaults from an existing .env if present.
   if [ -f "$ENV_FILE" ]; then set -a; . "$ENV_FILE"; set +a; fi
 
-  local domain bot openrouter admins zai openai xai google
+  local domain bot openrouter admins zai openai xai google searxng
   domain=$(ask DOMAIN "Public domain Caddy serves (e.g. jarvis.example.com)" required plain "${DOMAIN:-}")
   bot=$(ask TELEGRAM_BOT_TOKEN "Telegram bot token (@BotFather)" required secret "${TELEGRAM_BOT_TOKEN:-}")
   openrouter=$(ask OPENROUTER_API_KEY "OpenRouter API key" required secret "${OPENROUTER_API_KEY:-}")
@@ -86,6 +95,9 @@ ensure_env() {
   openai=$(ask OPENAI_API_KEY "OpenAI API key (optional)" optional secret "${OPENAI_API_KEY:-}")
   xai=$(ask XAI_API_KEY "xAI API key (optional)" optional secret "${XAI_API_KEY:-}")
   google=$(ask GOOGLE_API_KEY "Google API key (optional)" optional secret "${GOOGLE_API_KEY:-}")
+  # searxng's required secret — auto-generated; preserved across re-provisions.
+  searxng="${SEARXNG_SECRET:-}"
+  [ -n "$searxng" ] || { searxng=$(gen_secret); log "Generated a new SEARXNG_SECRET."; }
 
   umask 077
   cat > "$ENV_FILE" <<EOF
@@ -104,6 +116,9 @@ XAI_API_KEY=$xai
 GOOGLE_API_KEY=$google
 
 ADMIN_USER_IDS=$admins
+
+# Required by the searxng container (auto-generated above).
+SEARXNG_SECRET=$searxng
 
 NODE_ENV=production
 LOG_LEVEL=${LOG_LEVEL:-info}
