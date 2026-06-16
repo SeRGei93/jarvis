@@ -21,7 +21,7 @@ import { IconAlertCircle, IconCheck, IconPencil, IconPlus, IconTrash, IconX } fr
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut, ApiError } from "../lib/api.js";
 import type { ModelRoles, ModelRow, MutationResult } from "../lib/types.js";
 import { useAuthGate } from "../components/AuthGate.js";
-import { ModelRoleSelect } from "../components/ModelRoleSelect.js";
+import { ModelRefSelect } from "../components/ModelRefSelect.js";
 import { errorMessage, handleError, notifySaved } from "./_configCommon.js";
 
 /** Wrapped write envelope returned by models POST/PATCH ({ ok, value: row }). */
@@ -249,7 +249,7 @@ export function ModelsScreen() {
             </Alert>
           )}
           {ROLE_FIELDS.map((f) => (
-            <ModelRoleSelect
+            <ModelRefSelect
               key={f.key}
               label={f.label}
               value={roles[f.key]}

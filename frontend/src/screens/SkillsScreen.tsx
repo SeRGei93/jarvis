@@ -27,9 +27,10 @@ import {
   IconRefresh,
   IconTrash,
 } from "@tabler/icons-react";
-import type { Skill } from "../lib/types.js";
+import type { ModelRow, Skill } from "../lib/types.js";
 import { apiDelete, apiGet, apiPost, apiPut } from "../lib/api.js";
 import { useAuthGate } from "../components/AuthGate.js";
+import { ModelRefSelect } from "../components/ModelRefSelect.js";
 import { fmtCost, handleApiError, notifyOk } from "./_adminHelpers.js";
 
 /** API shape of a skill (the wire allows a null model, unlike the strict type). */
@@ -88,6 +89,7 @@ function formFromSkill(s: SkillApi): SkillFormValues {
 export function SkillsScreen() {
   const { reportError } = useAuthGate();
   const [skills, setSkills] = useState<SkillApi[]>([]);
+  const [models, setModels] = useState<ModelRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -112,8 +114,13 @@ export function SkillsScreen() {
     setLoading(true);
     setError(null);
     try {
-      const rows = await apiGet<SkillApi[]>("/skills");
-      setSkills(rows);
+      // Models feed the "Модель" Select in the editor — load them alongside skills.
+      const [skillRows, modelRows] = await Promise.all([
+        apiGet<SkillApi[]>("/skills"),
+        apiGet<ModelRow[]>("/models"),
+      ]);
+      setSkills(skillRows);
+      setModels(modelRows);
     } catch (err) {
       setError(handleApiError(err, reportError));
     } finally {
@@ -307,10 +314,13 @@ export function SkillsScreen() {
               {...form.getInputProps("description")}
             />
             <Group grow align="flex-start">
-              <TextInput
+              <ModelRefSelect
                 label="Модель"
-                placeholder="provider:model (пусто = по умолчанию)"
-                {...form.getInputProps("model")}
+                description="Пусто = модель по умолчанию"
+                placeholder="по умолчанию"
+                value={form.values.model}
+                models={models}
+                onChange={(ref) => form.setFieldValue("model", ref)}
               />
               <NumberInput
                 label="Температура"
