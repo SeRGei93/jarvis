@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Message, Skill } from "../../domain/entities.js";
 import type { RoutableSkill } from "../../services/skill-service.js";
 import { ModelFactory } from "../models.js";
-import { SettingsService } from "../../config/settings.js";
+import { SettingsService, parseGoDuration } from "../../config/settings.js";
 import { logger } from "../../pkg/logger.js";
 
 const log = logger.child({ mod: "primary-skill" });
@@ -11,6 +11,8 @@ const log = logger.child({ mod: "primary-skill" });
 const RESEARCH = "research";
 const ONBOARDING = "onboarding";
 const RECENT_MESSAGE_WINDOW = 6;
+/** Ceiling for the pre-pass classification call when settings lack llm_request. */
+const DEFAULT_REQUEST_MS = 300_000;
 
 const PrimarySchema = z.object({
   skill: z.string().describe("the single most relevant skill name for this message"),
@@ -112,11 +114,16 @@ export class PrimarySkillSelector {
 
   private async callModel(modelRef: string, system: string, prompt: string): Promise<string> {
     if (this.selectFn) return this.selectFn(modelRef, system, prompt);
+    // Watchdog: this pre-pass runs before the orchestrator's own timeout is armed,
+    // so bound it here or a hung classification stalls the whole turn.
+    const t = await this.settings.getTimeouts();
+    const overallMs = parseGoDuration(t.llm_request) || DEFAULT_REQUEST_MS;
     const { object } = await generateObject({
       model: this.factory.model(modelRef),
       schema: PrimarySchema,
       system,
       prompt,
+      abortSignal: AbortSignal.timeout(overallMs),
     });
     return object.skill;
   }

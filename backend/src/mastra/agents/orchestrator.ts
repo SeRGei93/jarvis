@@ -226,6 +226,10 @@ export class Orchestrator {
           case "tool-result":
             onTool?.onFinish?.(chunk.payload.toolName);
             break;
+          case "tool-error":
+            // A tool threw: clear its "running" status so the Telegram spinner doesn't hang.
+            onTool?.onFinish?.(chunk.payload.toolName);
+            break;
           default:
             break;
         }
