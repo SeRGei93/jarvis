@@ -1,3 +1,8 @@
+---
+archived: 2026-06-18
+completed: 2026-06-18
+---
+
 # План: Агент-оркестратор + принятие фич Mastra
 
 **Branch:** `refactor` · **Создан:** 2026-06-17
@@ -58,12 +63,12 @@
 
 - [x] **C1. Tool-approval для рискованных тулзов.** *(своя таблица `pending_confirmations` + миграция 0003; `ConfirmationService` (create/listPending/resolve + executor-реестр); `forget`/`task_delete` пишут подтверждение вместо действия; `runChat` отдаёт `confirmations` в `ChatResult`; Telegram inline approve/decline + callbackQuery `cfm:a|d:<id>`. risky-set: forget, task_delete.)* Confirm-before-execute (удаление/трата/отправка): паттерн suspend/resume — durable строка `pending_confirmation` (своя drizzle-таблица, миграция), Telegram inline-кнопки approve/decline, матч следующего входящего. **Свою таблицу, не Mastra-снапшоты** (миграционная дисциплина). *Tests: confirmation-flow. Миграция: да.*
 - [x] **C2. Раннер запланированных задач.** *(уже реализовано в M7: `scheduler/executor.ts`+`scheduler.ts`+`wiring.ts`, стартует в `server.ts`; опрашивает активные `cron_tasks` → `ChatService.handleUserMessage` → `notification_chat_id`.)* ⚠️ Таблица `cron_tasks` уже есть (`schema.ts:109`: `scheduled_at`/`is_active`/`notification_chat_id` + индекс `idx_cron_tasks_scheduled`) — **миграция не нужна**. Добавить раннер-петлю (`node-cron`/`setInterval` с инъектируемыми часами) в always-on процессе: опрашивает созревшие активные `cron_tasks` → зовёт `ChatService.handleUserMessage` (`app.ts:36` — заявленная точка входа «for the cron scheduler») → уведомляет в `notification_chat_id`. *Tests: scheduler (инъектируемые часы). Миграция: нет.*
-- [ ] ~~**C3. Notification-inbox (новая таблица).**~~ **Свёрнуто в C2 + backlog.** Уведомления по расписанию закрываются `cron_tasks.notification_chat_id` (C2) — отдельная таблица не нужна. Полноценный inbox внешних *ad-hoc* событий (по мотивам `sendNotificationSignal`) вынесен в backlog: нет конкретного источника таких событий сейчас — завести, когда появится реальный триггер.
+- [x] ~~**C3. Notification-inbox (новая таблица).**~~ **Свёрнуто в C2 + backlog.** Уведомления по расписанию закрываются `cron_tasks.notification_chat_id` (C2) — отдельная таблица не нужна. Полноценный inbox внешних *ad-hoc* событий (по мотивам `sendNotificationSignal`) вынесен в backlog: нет конкретного источника таких событий сейчас — завести, когда появится реальный триггер.
 
 ### Фаза 4 — Watch / позже
 
-- [ ] **D1. Working-memory (schema) для стабильного профиля.** zod-профиль (имя/город/предпочтения/устойчивые инструкции). Запись — **только через `MemoryService.save`** (sensitivity/sanitize/dedup/cap); родной `updateWorkingMemory` не пускать в стор напрямую. Может поглотить часть onboarding-extraction.
-- [ ] **D2. Observational Memory (пилот thread-scoped).** Кандидат на замену `sessions.summary` — нативно, **без RAG**. Блокер: resource-scope (кросс-сессия на юзера) experimental + фоновые LLM-вызовы вне бюджета watchdog. Ревизит, когда resource-scope доедет до GA.
+- [x] **D1. Working-memory (schema) для стабильного профиля.** *(не реализовано — перенесено в ROADMAP M16 «watch»; закрыто в рамках плана.)* zod-профиль (имя/город/предпочтения/устойчивые инструкции). Запись — **только через `MemoryService.save`** (sensitivity/sanitize/dedup/cap); родной `updateWorkingMemory` не пускать в стор напрямую. Может поглотить часть onboarding-extraction.
+- [x] **D2. Observational Memory (пилот thread-scoped).** *(не реализовано — перенесено в ROADMAP M16 «watch»; закрыто в рамках плана.)* Кандидат на замену `sessions.summary` — нативно, **без RAG**. Блокер: resource-scope (кросс-сессия на юзера) experimental + фоновые LLM-вызовы вне бюджета watchdog. Ревизит, когда resource-scope доедет до GA.
 
 ---
 
