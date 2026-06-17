@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildSystemPrompt,
   buildSubAgentPrompt,
-  buildSynthesizerPrompt,
+  buildOrchestratorPrompt,
   SECURITY_INSTRUCTION,
   type PromptSkill,
 } from "../../src/mastra/agents/prompt-builder.js";
@@ -155,18 +155,36 @@ describe("buildSubAgentPrompt", () => {
   });
 });
 
-describe("buildSynthesizerPrompt", () => {
-  it("includes SYNTHESIS RULES and a [SKILL RESULTS] block keyed by skill name", () => {
-    const out = buildSynthesizerPrompt({
-      prompts: { soul: "SOUL_BODY", format: "FORMAT_BODY", synthesizer: "MERGE_RULES" },
+describe("buildOrchestratorPrompt", () => {
+  it("includes SOUL, the [SKILLS] catalog, and the pre-loaded [ACTIVE SKILL] block", () => {
+    const out = buildOrchestratorPrompt({
+      prompts: { soul: "SOUL_BODY", format: "FORMAT_BODY", integrity: "INTEGRITY_BODY" },
       user,
-      skillResults: { weather: "sunny", news: "all quiet" },
+      catalog: "- weather: forecasts\n- currency: rates",
+      primary: { name: "weather", prompt: "WEATHER_BODY", allowedTools: ["weather"] },
+      primaryReferences: [{ path: "references/guide.md" }],
       now: NOW,
     });
-    expect(out).toContain("[SYNTHESIS RULES]");
-    expect(out).toContain("MERGE_RULES");
-    expect(out).toContain("[SKILL RESULTS]");
-    expect(out).toContain("## weather\nsunny");
-    expect(out).toContain("## news\nall quiet");
+    expect(out).toContain(SECURITY_INSTRUCTION);
+    expect(out).toContain("SOUL_BODY");
+    expect(out).toContain("[DATA INTEGRITY]");
+    expect(out).toContain("[SKILLS]");
+    expect(out).toContain("- weather: forecasts");
+    expect(out).toContain("load_skill");
+    expect(out).toContain("[ACTIVE SKILL: weather]");
+    expect(out).toContain("WEATHER_BODY");
+    expect(out).toContain("[SKILL REFERENCES]");
+    expect(out).toContain("[MESSAGE FORMATTING]");
+  });
+
+  it("omits the active-skill block when no primary skill is pre-loaded", () => {
+    const out = buildOrchestratorPrompt({
+      prompts: { soul: "SOUL_BODY", format: "", integrity: "" },
+      catalog: "- weather: forecasts",
+      primary: null,
+      now: NOW,
+    });
+    expect(out).toContain("[SKILLS]");
+    expect(out).not.toContain("[ACTIVE SKILL");
   });
 });

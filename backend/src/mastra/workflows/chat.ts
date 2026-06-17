@@ -1,24 +1,18 @@
 import type { Memory } from "@mastra/memory";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "../../db/schema.js";
-import type { Message, Skill } from "../../domain/entities.js";
+import type { Message } from "../../domain/entities.js";
 import { shouldAutoCompleteOnboarding } from "../../domain/entities.js";
 import { SettingsService } from "../../config/settings.js";
 import { SkillService, derivePreviousSkills } from "../../services/skill-service.js";
 import { loadContext } from "../../services/conversation-context.js";
-import { SkillRouter } from "../agents/router.js";
+import { PrimarySkillSelector, resolveTurnConfig } from "../agents/primary-skill.js";
+import { Orchestrator } from "../agents/orchestrator.js";
 import { LlmService, type StreamCallback } from "../llm.js";
 import { MemoryService } from "../memory/memory-service.js";
 import { RollingSummaryService } from "../memory/rolling-summary.js";
 import { FactExtractor } from "../memory/fact-extractor.js";
 import { ProfileExtractor } from "../memory/profile-extractor.js";
-import { LoopGuard } from "../agents/loop-guard.js";
-import {
-  runSkillStreaming,
-  runSkillSubAgent,
-  type SkillRunContext,
-} from "../agents/skill-agent.js";
-import { synthesize } from "../agents/synthesizer.js";
 import { RateLimitService } from "../../services/rate-limit.js";
 import { UsageService } from "../../services/usage.js";
 import {
@@ -33,8 +27,7 @@ import { logger } from "../../pkg/logger.js";
 const log = logger.child({ mod: "chat" });
 
 type Db = LibSQLDatabase<typeof schema>;
-const FALLBACK_SKILL = "research";
-/** Shown to the user when generation fails or no skill could produce a result. */
+/** Shown to the user when generation fails or no answer could be produced. */
 const FALLBACK_REPLY = "Не удалось сформировать ответ. Попробуйте переформулировать запрос.";
 /** Shown to the user when the hourly message rate limit is exceeded. */
 const RATE_LIMIT_REPLY = "Слишком много сообщений за последний час. Попробуйте чуть позже.";
@@ -44,7 +37,14 @@ export interface ChatDeps {
   db: Db;
   settings: SettingsService;
   skills: SkillService;
-  router: SkillRouter;
+  /** Lightweight pre-pass: picks the primary skill + turn model (replaces the router). */
+  primarySelector: PrimarySkillSelector;
+  /** The single dynamic agent that answers (replaces router→N skills→synthesizer). */
+  orchestrator: Orchestrator;
+  /**
+   * Hand-rolled LLM service. NOT used by the chat path (the orchestrator owns it),
+   * but kept in the bundle for the admin skill test-run (admin reuses ChatDeps).
+   */
   llm: LlmService;
   memoryService: MemoryService;
   /** Maintains the per-session rolling summary of evicted dialogue history. */
@@ -52,7 +52,6 @@ export interface ChatDeps {
   /** Opportunistic long-term memory extractor (gated by agent.auto_memory). */
   factExtractor: FactExtractor;
   profileExtractor: ProfileExtractor;
-  loopGuard: LoopGuard;
   /** Mastra conversation memory (threads/messages). */
   memory: Memory;
   /** Hourly message rate limit (onboarding-bypassed). */
@@ -69,18 +68,21 @@ export interface ChatInput {
 
 export interface ChatResult {
   text: string;
-  /** Skills chosen by the router (empty when rejected). */
+  /** Primary skill chosen by the pre-pass (empty when rejected/none). */
   skills: string[];
   /** True when promptguard rejected the message (no LLM call was made). */
   rejected: boolean;
 }
 
 /**
- * Orchestrate one chat turn: promptguard → context → memories/history → route →
- * run (single stream | multi sub-agents + synthesize) → persist → onboarding
- * auto-complete. Parity with Go HandleMessageUseCase. Implemented as a flat async
- * orchestrator (not Mastra createWorkflow) so token streaming to Telegram (`onText`)
- * stays first-class — see plan Key Decisions.
+ * Orchestrate one chat turn: promptguard → context → memories/history → pre-pass
+ * (primary skill + turn model) → ONE orchestrator agent stream → persist →
+ * rolling summary → opportunistic memory → onboarding auto-complete.
+ *
+ * The agent leads with its own voice and pulls in skills on demand via `load_skill`
+ * (decision #2/#4) — no router fan-out, no synthesizer merge. Implemented as a flat
+ * async orchestrator (not Mastra createWorkflow) so token streaming to Telegram
+ * (`onText`) stays first-class.
  */
 export async function runChat(
   deps: ChatDeps,
@@ -115,104 +117,64 @@ export async function runChat(
   // Persist the user turn (durable even if generation later fails).
   await saveUserMessage(deps.memory, ctx.threadId, ctx.resourceId, text);
 
-  // 4. relevant long-term memories + core prompt bodies.
+  // 4. relevant long-term memories + core prompt bodies + model roles.
   const [memories, prompts, roles] = await Promise.all([
     deps.memoryService.loadRelevant(userId),
     deps.skills.getCorePrompts(),
     deps.settings.getModelRoles(),
   ]);
 
-  // 5. route (onboarding is forced inside resolveSkills when !onboarded).
+  // 5. pre-pass: choose the primary skill (onboarding forced when !onboarded;
+  //    research fallback) and resolve the turn's model/temperature/reasoning
+  //    (session.model override → primary skill → defaults).
   const routable = await deps.skills.getRoutableSkills();
-  const selected = await deps.router.resolveSkills({
+  const primarySkill = await deps.primarySelector.selectPrimary({
     skills: routable,
     recentMessages: recent,
     userMessage: text,
     previousSkills,
     onboarded: ctx.user.onboarded,
   });
-  const resolved = await resolveSkillObjects(deps.skills, selected);
-  log.debug({ userId, selected, resolved: resolved.map((s) => s.name), onboarded: ctx.user.onboarded }, "routed");
-
-  const agentCtx: SkillRunContext = {
-    user: ctx.user,
-    identity: ctx.identity,
-    memories,
-    prompts: { soul: prompts.soul, format: prompts.format, integrity: prompts.integrity },
-    history: recent,
-    summary: ctx.session.summary ?? null,
-    userMessage: text,
-    mem: deps.memoryService,
-    userId,
+  const primary = primarySkill ? await deps.skills.getSkillByName(primarySkill) : null;
+  const turn = resolveTurnConfig(primary, {
+    sessionModel: ctx.session.model,
     defaultModel: roles.default,
     defaultTemperature: agentCfg.default_temperature,
-    chatId,
-    sessionId: ctx.session.id,
-    db: deps.db,
-    settings: deps.settings,
-  };
+  });
+  log.debug({ userId, primarySkill: turn.skill, model: turn.model, onboarded: ctx.user.onboarded }, "pre-pass");
 
-  // 6. run: single → stream directly; multi → sub-agents in parallel → synthesize.
-  //    Any failure (no skill / all sub-agents fail / model error) degrades to a
-  //    user-facing fallback instead of throwing, so the caller always has a reply.
+  // 6. run the single orchestrator agent. Any failure degrades to a user-facing
+  //    fallback instead of throwing, so the caller always has a reply.
   let answer: string;
-  let cost = 0; // accumulated LLM cost across all legs (single, sub-agents, synthesis).
-  if (resolved.length === 0) {
-    log.warn({ userId }, "no skill resolved; using fallback reply");
+  let cost = 0;
+  try {
+    const r = await deps.orchestrator.run(
+      {
+        user: ctx.user,
+        identity: ctx.identity,
+        memories,
+        prompts: { soul: prompts.soul, format: prompts.format, integrity: prompts.integrity },
+        history: recent,
+        summary: ctx.session.summary ?? null,
+        userMessage: text,
+        primarySkill: turn.skill,
+        model: turn.model,
+        temperature: turn.temperature,
+        reasoning: turn.reasoning,
+        mem: deps.memoryService,
+        userId,
+        chatId,
+        sessionId: ctx.session.id,
+        db: deps.db,
+        settings: deps.settings,
+      },
+      onText,
+    );
+    answer = r.text || FALLBACK_REPLY;
+    cost += r.cost;
+  } catch (err) {
+    log.error({ userId, reason: err instanceof Error ? err.message : String(err) }, "generation failed; using fallback reply");
     answer = FALLBACK_REPLY;
-  } else {
-    try {
-      if (resolved.length === 1) {
-        const skill = resolved[0]!;
-        log.debug({ skill: skill.name, path: "single" }, "executing");
-        const r = await runSkillStreaming({ llm: deps.llm, loopGuard: deps.loopGuard }, skill, agentCtx, onText);
-        answer = r.text;
-        cost += r.cost;
-      } else {
-        log.debug({ skills: resolved.map((s) => s.name), path: "multi" }, "executing");
-        const results = await Promise.all(
-          resolved.map(async (s) => {
-            try {
-              const r = await runSkillSubAgent({ llm: deps.llm, loopGuard: deps.loopGuard }, s, agentCtx);
-              return [s.name, r] as const;
-            } catch (err) {
-              log.warn({ skill: s.name, reason: err instanceof Error ? err.message : String(err) }, "sub-agent failed");
-              return [s.name, { text: "", cost: 0 }] as const;
-            }
-          }),
-        );
-        for (const [, r] of results) cost += r.cost;
-        const skillResults = Object.fromEntries(
-          results.filter(([, r]) => r.text.length > 0).map(([name, r]) => [name, r.text]),
-        );
-        if (Object.keys(skillResults).length === 0) {
-          log.warn({ userId }, "all sub-agents failed; using fallback reply");
-          answer = FALLBACK_REPLY;
-        } else {
-          const synth = await synthesize(
-            deps.llm,
-            skillResults,
-            {
-              user: ctx.user,
-              identity: ctx.identity,
-              memories,
-              prompts: { soul: prompts.soul, format: prompts.format, synthesizer: prompts.synthesizer },
-              history: recent,
-              userMessage: text,
-              synthesizerModel: roles.synthesizer,
-              sessionModel: ctx.session.model,
-              summary: ctx.session.summary ?? null,
-            },
-            onText,
-          );
-          answer = synth.text;
-          cost += synth.cost;
-        }
-      }
-    } catch (err) {
-      log.error({ userId, reason: err instanceof Error ? err.message : String(err) }, "generation failed; using fallback reply");
-      answer = FALLBACK_REPLY;
-    }
   }
 
   // 6a. record usage for this turn (one request; accumulated cost may be 0).
@@ -225,7 +187,7 @@ export async function runChat(
   }
 
   // 7. persist the assistant turn, tagged with the primary skill.
-  const skillTag = resolved[0]?.name ?? null;
+  const skillTag = turn.skill || null;
   await saveAssistant(deps.memory, ctx.threadId, ctx.resourceId, answer, skillTag);
 
   // 7a. roll the conversation summary forward for messages now beyond the live
@@ -248,8 +210,8 @@ export async function runChat(
   //     passing. Onboarded users only (onboarding owns first-contact extraction),
   //     gated by agent.auto_memory (undefined = on). Best-effort: a cheap extra
   //     LLM call on the default model, routed through memoryService.save (which
-  //     applies sensitivity/dedup/cap); its cost is not metered (parity with the
-  //     dedup/summary side-calls). An extraction failure never breaks the turn.
+  //     applies sensitivity/dedup/cap); its cost is not metered. A failure never
+  //     breaks the turn.
   if (ctx.user.onboarded && (agentCfg.auto_memory ?? true)) {
     try {
       const { facts } = await deps.factExtractor.extract([
@@ -278,15 +240,5 @@ export async function runChat(
     await deps.profileExtractor.applyOnboarding(deps.db, userId, allMessages);
   }
 
-  return { text: answer, skills: resolved.map((s) => s.name), rejected: false };
-}
-
-/** Resolve skill names to Skill rows; fall back to `research` if nothing resolves. */
-async function resolveSkillObjects(skills: SkillService, names: string[]): Promise<Skill[]> {
-  const resolved = (await Promise.all(names.map((n) => skills.getSkillByName(n)))).filter(
-    (s): s is Skill => s !== null,
-  );
-  if (resolved.length > 0) return resolved;
-  const fallback = await skills.getSkillByName(FALLBACK_SKILL);
-  return fallback ? [fallback] : [];
+  return { text: answer, skills: turn.skill ? [turn.skill] : [], rejected: false };
 }

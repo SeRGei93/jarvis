@@ -10,8 +10,8 @@ import { LlmDedupChecker } from "./mastra/memory/dedup.js";
 import { RollingSummaryService, LlmSummarizer } from "./mastra/memory/rolling-summary.js";
 import { FactExtractor } from "./mastra/memory/fact-extractor.js";
 import { ProfileExtractor } from "./mastra/memory/profile-extractor.js";
-import { SkillRouter } from "./mastra/agents/router.js";
-import { LoopGuard } from "./mastra/agents/loop-guard.js";
+import { PrimarySkillSelector } from "./mastra/agents/primary-skill.js";
+import { Orchestrator } from "./mastra/agents/orchestrator.js";
 import { createConversationMemory } from "./mastra/memory/history.js";
 import { RateLimitService } from "./services/rate-limit.js";
 import { UsageService } from "./services/usage.js";
@@ -47,8 +47,8 @@ export interface ChatService {
 
 /**
  * Composition root for the chat stack: wires the settings cache, model factory,
- * LLM service, skill/memory/profile services, router, loop guard and Mastra
- * conversation memory into a single `handleUserMessage` entry point.
+ * skill/memory/profile services, the primary-skill pre-pass, the orchestrator
+ * agent and Mastra conversation memory into a single `handleUserMessage` entry point.
  *
  * `conversationMemory.lastMessages` is taken from `settings.agent.max_history`
  * (runChat re-reads it per turn, so admin changes take effect on the next turn).
@@ -58,7 +58,6 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
   const [roles, agentCfg] = await Promise.all([settings.getModelRoles(), settings.getAgent()]);
 
   const factory = new ModelFactory();
-  const llm = new LlmService(factory, settings);
   // Skills/prompts come from the file-backed content store (SKILLS_DIR/PROMPTS_DIR),
   // not the DB. The store must be populated before this runs (server.ts boot).
   const skills = opts.skills ?? new SkillService();
@@ -67,8 +66,10 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
   const rollingSummary = new RollingSummaryService(opts.db, new LlmSummarizer(factory, settings));
   const factExtractor = new FactExtractor(factory, settings);
   const profileExtractor = new ProfileExtractor(factory, settings);
-  const router = new SkillRouter(factory, settings);
-  const loopGuard = new LoopGuard();
+  const primarySelector = new PrimarySkillSelector(factory, settings);
+  const orchestrator = new Orchestrator({ skills, settings, factory });
+  // Used only by the admin skill test-run (admin reuses ChatDeps), not the chat path.
+  const llm = new LlmService(factory, settings);
   const memory = createConversationMemory(opts.storage, agentCfg.max_history);
   const rateLimit = new RateLimitService(opts.db);
   const usage = new UsageService(opts.db);
@@ -77,13 +78,13 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
     db: opts.db,
     settings,
     skills,
-    router,
+    primarySelector,
+    orchestrator,
     llm,
     memoryService,
     rollingSummary,
     factExtractor,
     profileExtractor,
-    loopGuard,
     memory,
     rateLimit,
     usage,

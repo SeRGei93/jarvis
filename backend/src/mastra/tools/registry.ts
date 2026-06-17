@@ -74,3 +74,22 @@ export function resolveTools(allowedTools: string[], ctx: ToolContext): ToolSet 
   log.debug({ resolved: Object.keys(out), skipped }, "resolved skill tools");
   return out;
 }
+
+/**
+ * Build the union of EVERY tool bucket. The orchestrator registers all skill
+ * tools up front (decision #2 / A2: AI SDK can't add tools mid-generation), then
+ * gates the live set per step via `prepareStep -> activeTools`. `load_skill` is
+ * added separately by the orchestrator, not here.
+ */
+export function resolveAllTools(ctx: ToolContext): ToolSet {
+  const out: ToolSet = {
+    ...buildMemoryTools(ctx.mem, ctx.userId),
+    ...buildCurrencyTools(ctx),
+    ...buildWebTools(ctx),
+    ...buildTaskTools(ctx),
+    ...buildProfileTools(ctx),
+    ...buildSkillRefTools(ctx),
+  };
+  log.debug({ count: Object.keys(out).length }, "resolved all tools");
+  return out;
+}

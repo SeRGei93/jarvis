@@ -51,12 +51,17 @@ export interface SubAgentPromptInput {
   now?: Date;
 }
 
-export interface SynthesizerPromptInput {
-  prompts: { soul: string; format: string; synthesizer: string };
+export interface OrchestratorPromptInput {
+  prompts: { soul: string; format: string; integrity: string };
   user?: User | null;
   memories?: StoredMemory[];
   identity?: BotIdentity | null;
-  skillResults: Record<string, string>;
+  /** Compact one-line-per-skill routing catalog (A1: `name: when-to-apply`). */
+  catalog: string;
+  /** Primary skill pre-loaded by the pre-pass (full instructions), or null. */
+  primary?: PromptSkill | null;
+  /** References of the pre-loaded primary skill. */
+  primaryReferences?: SkillReference[];
   summary?: string | null;
   now?: Date;
 }
@@ -150,6 +155,22 @@ function referencesHint(refs?: SkillReference[]): string {
   return lines.join("\n");
 }
 
+function catalogBlock(catalog: string): string {
+  const c = catalog.trim();
+  if (!c) return "";
+  return [
+    "[SKILLS]",
+    "You have specialized skills, listed below as `name: when to apply`.",
+    "When a request matches a skill, call the load_skill tool with that skill's name FIRST — it returns the skill's instructions and enables its tools for the rest of this turn. Load several skills when a request spans more than one.",
+    c,
+  ].join("\n");
+}
+
+function primarySkillBlock(skill?: PromptSkill | null): string {
+  if (!skill) return "";
+  return [`[ACTIVE SKILL: ${skill.name}]`, "Already loaded for this turn:", skill.prompt].join("\n");
+}
+
 function formattingBlock(format: string): string {
   return format.trim() ? `[MESSAGE FORMATTING]\n${format.trim()}` : "";
 }
@@ -209,6 +230,38 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   return join(parts);
 }
 
+/**
+ * Orchestrator system prompt: security → SOUL → CAPABILITIES → USER → KNOWLEDGE →
+ * SUMMARY → INTEGRITY → SKILLS catalog → ACTIVE (primary) skill → primary refs →
+ * FORMAT → DATE. The single dynamic agent leads with its own voice and loads more
+ * skills on demand via `load_skill` (decision #2). Integrity is always included —
+ * the orchestrator always carries tools.
+ */
+export function buildOrchestratorPrompt(input: OrchestratorPromptInput): string {
+  const soul = hasPromptOverride(input.identity)
+    ? input.identity!.systemPromptOverride
+    : input.prompts.soul;
+  const integrity = input.prompts.integrity.trim()
+    ? `[DATA INTEGRITY]\n${input.prompts.integrity.trim()}`
+    : "";
+  const parts = [
+    SECURITY_INSTRUCTION,
+    soul,
+    selfContext(input.identity),
+    userContext(input.user),
+    memoryContext(input.memories),
+    summaryContext(input.summary),
+    integrity,
+    catalogBlock(input.catalog),
+    primarySkillBlock(input.primary),
+    referencesHint(input.primaryReferences),
+    formattingBlock(input.prompts.format),
+    dateTimeContext(input.user, input.now),
+  ];
+  logIncluded("orchestrator", parts);
+  return join(parts);
+}
+
 /** Sub-agent prompt (multi-skill leg): no SOUL/CAPABILITIES/FORMAT. */
 export function buildSubAgentPrompt(input: SubAgentPromptInput): string {
   const parts = [
@@ -222,34 +275,6 @@ export function buildSubAgentPrompt(input: SubAgentPromptInput): string {
     dateTimeContext(input.user, input.now),
   ];
   logIncluded("sub-agent", parts);
-  return join(parts);
-}
-
-/** Synthesizer prompt: security → SOUL → CAPABILITIES → USER → KNOWLEDGE → SYNTHESIS RULES → FORMAT → SKILL RESULTS → DATE. */
-export function buildSynthesizerPrompt(input: SynthesizerPromptInput): string {
-  const soul = hasPromptOverride(input.identity)
-    ? input.identity!.systemPromptOverride
-    : input.prompts.soul;
-  const synthRules = input.prompts.synthesizer.trim()
-    ? `[SYNTHESIS RULES]\n${input.prompts.synthesizer.trim()}`
-    : "";
-  const results = Object.entries(input.skillResults);
-  const resultsBlock = results.length
-    ? ["[SKILL RESULTS]", ...results.map(([name, text]) => `## ${name}\n${text}`)].join("\n\n")
-    : "";
-  const parts = [
-    SECURITY_INSTRUCTION,
-    soul,
-    selfContext(input.identity),
-    userContext(input.user),
-    memoryContext(input.memories),
-    summaryContext(input.summary),
-    synthRules,
-    formattingBlock(input.prompts.format),
-    resultsBlock,
-    dateTimeContext(input.user, input.now),
-  ];
-  logIncluded("synthesizer", parts);
   return join(parts);
 }
 

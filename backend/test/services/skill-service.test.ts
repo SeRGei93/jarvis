@@ -1,7 +1,11 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { writeFileSync, utimesSync } from "node:fs";
 import { join } from "node:path";
-import { SkillService, derivePreviousSkills } from "../../src/services/skill-service.js";
+import {
+  SkillService,
+  derivePreviousSkills,
+  formatSkillCatalog,
+} from "../../src/services/skill-service.js";
 import { tempContent, type ContentFixture } from "../helpers/content.js";
 import type { Message } from "../../src/domain/entities.js";
 
@@ -28,6 +32,21 @@ describe("derivePreviousSkills", () => {
   });
 });
 
+describe("formatSkillCatalog", () => {
+  it("renders one '- name: when-to-apply' line per skill and collapses whitespace", () => {
+    expect(
+      formatSkillCatalog([
+        { name: "weather", description: "  Weather\nforecasts " },
+        { name: "chat", description: "Casual chat" },
+      ]),
+    ).toBe("- weather: Weather forecasts\n- chat: Casual chat");
+  });
+
+  it("returns an empty string for no skills", () => {
+    expect(formatSkillCatalog([])).toBe("");
+  });
+});
+
 describe("SkillService", () => {
   it("loads all skills and the routable subset", async () => {
     c = tempContent({
@@ -46,6 +65,22 @@ describe("SkillService", () => {
     const research = await svc.getSkillByName("research");
     expect(research?.allowedTools).toEqual(["web_search"]);
     expect(await svc.getSkillByName("missing")).toBeNull();
+  });
+
+  it("builds a compact one-line-per-skill catalog of the routable subset", async () => {
+    c = tempContent({
+      skills: [
+        { name: "research", description: "Research a topic\n  with sources", routable: true },
+        { name: "currency", description: "Currency rates", routable: true },
+        { name: "reminder", description: "deliver reminders", routable: false },
+      ],
+    });
+    const catalog = await c.skills.getSkillCatalog();
+    // One line per routable skill; descriptions collapsed; cron-only skill excluded.
+    expect(catalog.split("\n").sort()).toEqual([
+      "- currency: Currency rates",
+      "- research: Research a topic with sources",
+    ]);
   });
 
   it("loads prompts and reflects updates after invalidate()", async () => {
