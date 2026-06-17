@@ -8,7 +8,7 @@ import { SkillService, derivePreviousSkills } from "../../services/skill-service
 import { loadContext } from "../../services/conversation-context.js";
 import { PrimarySkillSelector, resolveTurnConfig } from "../agents/primary-skill.js";
 import { Orchestrator } from "../agents/orchestrator.js";
-import { LlmService, type StreamCallback } from "../llm.js";
+import { LlmService, type StreamCallback, type ToolEvents } from "../llm.js";
 import { MemoryService } from "../memory/memory-service.js";
 import { RollingSummaryService } from "../memory/rolling-summary.js";
 import { FactExtractor } from "../memory/fact-extractor.js";
@@ -88,6 +88,7 @@ export async function runChat(
   deps: ChatDeps,
   input: ChatInput,
   onText?: StreamCallback,
+  onTool?: ToolEvents,
 ): Promise<ChatResult> {
   const { userId, chatId, text } = input;
 
@@ -169,6 +170,7 @@ export async function runChat(
         settings: deps.settings,
       },
       onText,
+      onTool,
     );
     answer = r.text || FALLBACK_REPLY;
     cost += r.cost;

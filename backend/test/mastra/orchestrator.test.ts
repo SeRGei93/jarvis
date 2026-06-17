@@ -148,6 +148,22 @@ describe("Orchestrator", () => {
     expect(toolsAt(model.doStreamCalls.length - 1)).toContain("currency_rates");
   });
 
+  it("emits tool-start/finish events off fullStream while streaming text (B2)", async () => {
+    const model = mockModel([toolCallChunks("load_skill", { name: "currency" }), textChunks("converted")]);
+    const { orch } = orchestrator(model);
+    const started: string[] = [];
+    const finished: string[] = [];
+
+    const r = await orch.run(makeCtx({ primarySkill: "research" }), undefined, {
+      onStart: (n) => started.push(n),
+      onFinish: (n) => finished.push(n),
+    });
+
+    expect(r.text).toBe("converted");
+    expect(started).toContain("load_skill"); // tool-call chunk surfaced
+    expect(finished).toContain("load_skill"); // tool-result chunk surfaced
+  });
+
   it("strips tool-call syntax leaked into the answer text", async () => {
     const leaked = 'Answer.\nweb_search("x")\nEnd.';
     const model = mockModel([textChunks(leaked)]);

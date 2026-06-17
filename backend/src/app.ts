@@ -3,7 +3,7 @@ import type { LibSQLStore } from "@mastra/libsql";
 import * as schema from "./db/schema.js";
 import { SettingsService } from "./config/settings.js";
 import { ModelFactory } from "./mastra/models.js";
-import { LlmService, type StreamCallback } from "./mastra/llm.js";
+import { LlmService, type StreamCallback, type ToolEvents } from "./mastra/llm.js";
 import { SkillService } from "./services/skill-service.js";
 import { MemoryService } from "./mastra/memory/memory-service.js";
 import { LlmDedupChecker } from "./mastra/memory/dedup.js";
@@ -39,6 +39,7 @@ export interface ChatService {
     chatId: number,
     text: string,
     onText?: StreamCallback,
+    onTool?: ToolEvents,
   ): Promise<ChatResult>;
   deps: ChatDeps;
   /** Release external resources on shutdown. */
@@ -101,8 +102,8 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
 
   return {
     deps,
-    handleUserMessage: (userId, chatId, text, onText) =>
-      runChat(deps, { userId, chatId, text }, onText),
+    handleUserMessage: (userId, chatId, text, onText, onTool) =>
+      runChat(deps, { userId, chatId, text }, onText, onTool),
     close: async () => {},
   };
 }

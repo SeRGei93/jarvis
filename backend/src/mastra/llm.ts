@@ -34,6 +34,16 @@ export interface LlmResult {
 
 export type StreamCallback = (accumulatedText: string) => void;
 
+/**
+ * Tool-activity callbacks for surfacing live "🔎 ищу… / 💱 конвертирую…" statuses
+ * while the agent runs tools. Emitted from the orchestrator's `fullStream` loop;
+ * the Telegram layer maps tool names to friendly status lines (B2).
+ */
+export interface ToolEvents {
+  onStart?: (toolName: string) => void;
+  onFinish?: (toolName: string) => void;
+}
+
 function toModelMessages(messages: Message[]): ModelMessage[] {
   return messages.map((m) => ({ role: m.role, content: m.content })) as ModelMessage[];
 }

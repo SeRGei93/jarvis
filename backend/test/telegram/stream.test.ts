@@ -53,6 +53,32 @@ describe("createStreamer — streaming (rich drafts)", () => {
     expect(api.calls[1]).toMatchObject({ op: "draft", text: "hello world", draftId: DRAFT_ID });
   });
 
+  it("shows a tool status draft before text, then text takes over (B2)", async () => {
+    const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock, throttleMs: 1000 });
+
+    s.status("🔎 ищу…");
+    await tick();
+    expect(api.calls[0]).toMatchObject({ op: "draft", text: "🔎 ищу…" });
+
+    clock = 1000;
+    s.onText("the answer");
+    await tick();
+    expect(api.calls[1]).toMatchObject({ op: "draft", text: "the answer" });
+  });
+
+  it("ignores tool status once answer text has begun (never clobbers the answer)", async () => {
+    const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock, throttleMs: 1000 });
+
+    s.onText("partial answer");
+    await tick();
+    expect(api.calls).toHaveLength(1);
+
+    s.status("🔎 ищу…"); // text already started -> ignored
+    await tick();
+    expect(api.calls).toHaveLength(1);
+    expect(api.calls[0]).toMatchObject({ text: "partial answer" });
+  });
+
   it("throttles ticks within the window", async () => {
     const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock, throttleMs: 1000 });
 

@@ -15,6 +15,7 @@ import {
   extractCost,
   startWatchdog,
   type StreamCallback,
+  type ToolEvents,
 } from "../llm.js";
 import { resolveAllTools, type ToolContext } from "../tools/registry.js";
 import {
@@ -117,7 +118,11 @@ export class Orchestrator {
     });
   }
 
-  async run(ctx: OrchestratorRunContext, onText?: StreamCallback): Promise<OrchestratorResult> {
+  async run(
+    ctx: OrchestratorRunContext,
+    onText?: StreamCallback,
+    onTool?: ToolEvents,
+  ): Promise<OrchestratorResult> {
     const t = await this.deps.settings.getTimeouts();
     const activityMs = parseGoDuration(t.llm_activity) || DEFAULT_ACTIVITY_MS;
     const overallMs = parseGoDuration(t.llm_request) || DEFAULT_REQUEST_MS;
@@ -197,17 +202,29 @@ export class Orchestrator {
         maxSteps: MAX_STEPS,
         modelSettings: { temperature: ctx.temperature },
         ...(providerOptions ? { providerOptions } : {}),
-        // Reset the idle watchdog after every step (incl. tool steps).
-        onStepFinish: () => wd.reset(),
         // Gate the live tool set: load_skill + the loaded skills' tools (A2/decision #2).
         prepareStep: () => ({ activeTools: activeToolNames(loadedSkills, skillToolMap, registered) }),
       });
 
+      // Drive the loop off fullStream (B2): reset the watchdog on EVERY chunk (incl.
+      // tool steps), accumulate answer text, and surface tool activity as statuses.
       let acc = "";
-      for await (const delta of out.textStream) {
+      for await (const chunk of out.fullStream) {
         wd.reset();
-        acc += delta;
-        onText?.(acc);
+        switch (chunk.type) {
+          case "text-delta":
+            acc += chunk.payload.text;
+            onText?.(acc);
+            break;
+          case "tool-call":
+            onTool?.onStart?.(chunk.payload.toolName);
+            break;
+          case "tool-result":
+            onTool?.onFinish?.(chunk.payload.toolName);
+            break;
+          default:
+            break;
+        }
       }
 
       const cost = extractCost(await out.providerMetadata) ?? 0;

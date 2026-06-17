@@ -71,9 +71,35 @@ export async function isAuthorized(settings: AllowlistSettings, userId?: number)
   return allowed.length === 0 || allowed.includes(userId);
 }
 
+/** Friendly live status lines shown while the agent runs a tool (B2). */
+const TOOL_STATUS: Record<string, string> = {
+  load_skill: "🧩 подключаю навык…",
+  web_search: "🔎 ищу в интернете…",
+  web_search_batch: "🔎 ищу в интернете…",
+  search_news: "📰 ищу новости…",
+  fetch_url: "🌐 читаю страницу…",
+  currency_rates: "💱 узнаю курс…",
+  weather: "🌤 смотрю погоду…",
+  kufar_search: "🛒 ищу объявления…",
+  avby_search: "🚗 ищу авто…",
+  rabota_search: "💼 ищу вакансии…",
+  transport_search: "🚌 смотрю расписание…",
+  relax_search: "🎭 ищу досуг…",
+  relax_afisha: "🎭 смотрю афишу…",
+  med103_doctor_search: "🩺 ищу врача…",
+  med103_clinic_search: "🏥 ищу клинику…",
+};
+/** Generic fallback status for any other tool. */
+const DEFAULT_TOOL_STATUS = "⏳ обрабатываю…";
+
+function toolStatusLine(toolName: string): string {
+  return TOOL_STATUS[toolName] ?? DEFAULT_TOOL_STATUS;
+}
+
 /**
- * Stream a chat reply: typing indicator → handleUserMessage(onText) → finalize.
- * `draftId` is the inbound `update_id`, correlating the streaming rich drafts.
+ * Stream a chat reply: typing indicator → handleUserMessage(onText, onTool) →
+ * finalize. `draftId` is the inbound `update_id`, correlating the streaming rich
+ * drafts. Tool activity surfaces as transient "🔎 ищу…" status drafts (B2).
  */
 async function streamReply(
   rt: BotRuntime,
@@ -85,7 +111,9 @@ async function streamReply(
   const stopTyping = rt.messenger.startTypingLoop(chatId);
   const streamer = createStreamer(rt.api, chatId, draftId, { onFirstChunk: stopTyping });
   try {
-    const result = await rt.chat.handleUserMessage(userId, chatId, text, streamer.onText);
+    const result = await rt.chat.handleUserMessage(userId, chatId, text, streamer.onText, {
+      onStart: (toolName) => streamer.status(toolStatusLine(toolName)),
+    });
     await streamer.finalize(result.text);
   } finally {
     stopTyping();

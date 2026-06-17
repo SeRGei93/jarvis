@@ -40,6 +40,12 @@ export interface StreamerOptions {
 export interface Streamer {
   /** Wire as the chat workflow `onText` callback (receives accumulated text). */
   onText: StreamCallback;
+  /**
+   * Show a transient tool-activity status (e.g. "🔎 ищу…") as a draft. Ignored once
+   * answer text has begun streaming or the reply is finalized, so it never clobbers
+   * the real answer (B2).
+   */
+  status(label: string): void;
   /** Persist the finalized reply as rich message(s) (split if huge). */
   finalize(fullText: string): Promise<void>;
 }
@@ -78,6 +84,7 @@ export function createStreamer(
   let lastSentAt = 0;
   let sending = false;
   let started = false; // have we sent at least one draft?
+  let textStarted = false; // has answer text begun streaming?
   let firstChunkFired = false;
   let finalized = false;
   // Tracks the in-flight draft so finalize can wait for it — a late draft must
@@ -115,11 +122,20 @@ export function createStreamer(
   const onText: StreamCallback = (acc: string): void => {
     if (finalized || sending) return;
     if (acc === "" || acc === lastSentText) return;
+    textStarted = true; // answer text is now flowing — status drafts stop here
     if ([...acc].length > STREAM_MAX_DRAFT_LEN) return; // near the limit: wait for finalize
     if (endsWithIncompleteLink(acc)) return;
     // Throttle ticks after the first — the first draft is sent immediately.
     if (started && now() - lastSentAt < throttleMs) return;
     pending = flush(acc);
+  };
+
+  // Transient tool-activity status — shown only before answer text begins, so it
+  // never overwrites the real answer. Sent immediately (status changes are rare).
+  const status = (label: string): void => {
+    if (finalized || textStarted || sending) return;
+    if (label === "" || label === lastSentText) return;
+    pending = flush(label);
   };
 
   /** Persist one finalize part as a rich message; fall back to plain text. */
@@ -144,5 +160,5 @@ export function createStreamer(
     }
   }
 
-  return { onText, finalize };
+  return { onText, status, finalize };
 }
