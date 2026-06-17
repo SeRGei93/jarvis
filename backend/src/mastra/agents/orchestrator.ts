@@ -18,6 +18,7 @@ import {
   type ToolEvents,
 } from "../llm.js";
 import { resolveAllTools, type ToolContext } from "../tools/registry.js";
+import type { ConfirmationService } from "../confirmations/confirmation-service.js";
 import {
   buildLoadSkillTool,
   buildSkillToolMap,
@@ -81,6 +82,8 @@ export interface OrchestratorRunContext {
   db: Db;
   settings: SettingsService;
   skillsRoot?: string;
+  /** Confirm-before-execute for risky tools (C1); when set, forget/task_delete gate. */
+  confirmations?: ConfirmationService;
   /** Caller-supplied cancellation, composed with the internal watchdog. */
   abortSignal?: AbortSignal;
 }
@@ -146,6 +149,7 @@ export class Orchestrator {
       db: ctx.db,
       settings: ctx.settings,
       skillsRoot: ctx.skillsRoot,
+      confirmations: ctx.confirmations,
     };
     const loadSkill = buildLoadSkillTool({ skills: this.deps.skills, skillsRoot: ctx.skillsRoot });
     const tools: ToolsInput = { [LOAD_SKILL_TOOL_NAME]: loadSkill, ...resolveAllTools(toolCtx) };

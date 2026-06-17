@@ -6,6 +6,7 @@ import { runChat, type ChatDeps } from "../../src/mastra/workflows/chat.js";
 import { PrimarySkillSelector, type SelectPrimaryFn } from "../../src/mastra/agents/primary-skill.js";
 import type { Orchestrator, OrchestratorRunContext } from "../../src/mastra/agents/orchestrator.js";
 import { MemoryService } from "../../src/mastra/memory/memory-service.js";
+import { ConfirmationService } from "../../src/mastra/confirmations/confirmation-service.js";
 import type { DedupChecker } from "../../src/mastra/memory/dedup.js";
 import type { RollingSummaryService } from "../../src/mastra/memory/rolling-summary.js";
 import type { FactExtractor } from "../../src/mastra/memory/fact-extractor.js";
@@ -123,6 +124,7 @@ function makeDeps(
     memory: createConversationMemory(new LibSQLStore({ id: "chat-test", url: t.url }), 15),
     rateLimit: new RateLimitService(t.db),
     usage: new UsageService(t.db),
+    confirmations: new ConfirmationService(t.db, new MemoryService(t.db, dedup)),
   };
   return { deps, orch, summaryCalls, factCalls };
 }

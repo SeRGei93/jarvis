@@ -1,7 +1,9 @@
-import { Bot, type BotConfig, type Context } from "grammy";
+import { Bot, InlineKeyboard, type Api, type BotConfig, type Context } from "grammy";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "../db/schema.js";
 import type { SettingsService } from "../config/settings.js";
+import type { ChatResult } from "../mastra/workflows/chat.js";
+import type { ConfirmationRequest, ConfirmationResult } from "../mastra/confirmations/confirmation-service.js";
 import { resolveTelegramUser, type TelegramUserInfo } from "./identity.js";
 import { createStreamer, type TelegramSender } from "./stream.js";
 import { transcribeVoice, type VoiceApi, type VoiceTranscriber, type FetchLike } from "./voice.js";
@@ -38,6 +40,11 @@ export interface AllowlistSettings {
   getAllowedUsers(): Promise<number[]>;
 }
 
+/** Resolves a risky-tool confirmation when the user taps approve/decline (C1). */
+export interface ConfirmationResolver {
+  resolve(userId: number, id: number, approved: boolean): Promise<ConfirmationResult>;
+}
+
 /** Everything the message/command handlers need, bundled once in createBot. */
 export interface BotRuntime {
   api: TelegramSender & VoiceApi;
@@ -48,6 +55,8 @@ export interface BotRuntime {
   token: string;
   fetchFn: FetchLike;
   commandDeps: CommandDeps;
+  /** Risky-tool confirmations (C1); absent → confirmation buttons are not handled. */
+  confirmations?: ConfirmationResolver;
 }
 
 export interface BotOptions {
@@ -57,6 +66,8 @@ export interface BotOptions {
   chat: ChatHandler;
   speech: VoiceTranscriber;
   commandDeps: CommandDeps;
+  /** Risky-tool confirmation resolver (C1); wired to ChatService.deps.confirmations. */
+  confirmations?: ConfirmationResolver;
   /** Voice download fetch (tests). */
   fetchFn?: FetchLike;
   /** grammY Bot config passthrough (tests inject `botInfo` to run offline). */
@@ -107,7 +118,7 @@ async function streamReply(
   chatId: number,
   text: string,
   draftId: number,
-): Promise<void> {
+): Promise<ChatResult> {
   const stopTyping = rt.messenger.startTypingLoop(chatId);
   const streamer = createStreamer(rt.api, chatId, draftId, { onFirstChunk: stopTyping });
   try {
@@ -115,8 +126,25 @@ async function streamReply(
       onStart: (toolName) => streamer.status(toolStatusLine(toolName)),
     });
     await streamer.finalize(result.text);
+    return result;
   } finally {
     stopTyping();
+  }
+}
+
+/**
+ * Send approve/decline inline-keyboard messages for any risky-tool confirmations
+ * the turn requested (C1). callback_data is `cfm:<a|d>:<id>`, matched below.
+ */
+async function sendConfirmations(api: Api, chatId: number, requests?: ConfirmationRequest[]): Promise<void> {
+  if (!requests?.length) return;
+  for (const r of requests) {
+    const kb = new InlineKeyboard()
+      .text("✅ Подтвердить", `cfm:a:${r.id}`)
+      .text("❌ Отменить", `cfm:d:${r.id}`);
+    await api
+      .sendMessage(chatId, r.summary || "Подтвердите действие:", { reply_markup: kb })
+      .catch((err) => log.warn({ reason: errMessage(err) }, "send confirmation buttons failed"));
   }
 }
 
@@ -127,9 +155,9 @@ export async function processText(
   chatId: number,
   text: string,
   draftId: number,
-): Promise<void> {
+): Promise<ChatResult> {
   const { userId } = await resolveTelegramUser(rt.db, tgUser);
-  await streamReply(rt, userId, chatId, text, draftId);
+  return streamReply(rt, userId, chatId, text, draftId);
 }
 
 /** Handle an inbound voice message: transcribe, then stream the reply. */
@@ -140,7 +168,7 @@ export async function processVoice(
   fileId: string,
   duration: number,
   draftId: number,
-): Promise<void> {
+): Promise<ChatResult> {
   const { userId } = await resolveTelegramUser(rt.db, tgUser);
   // Transcription (download + speech model) can take seconds — show typing meanwhile.
   const stopTyping = rt.messenger.startTypingLoop(chatId);
@@ -153,7 +181,7 @@ export async function processVoice(
     throw err;
   }
   stopTyping(); // streamReply starts its own typing loop
-  await streamReply(rt, userId, chatId, text, draftId);
+  return streamReply(rt, userId, chatId, text, draftId);
 }
 
 /** Register the slash-command menu so Telegram shows command hints. */
@@ -190,6 +218,7 @@ export function createBot(opts: BotOptions): Bot {
     token: opts.token,
     fetchFn: opts.fetchFn ?? fetch,
     commandDeps: opts.commandDeps,
+    confirmations: opts.confirmations,
   };
 
   // Allowlist gate: drop unauthorized updates silently (parity with Go authorize()).
@@ -223,21 +252,40 @@ export function createBot(opts: BotOptions): Bot {
     runCommand(ctx.chat.id, senderInfo(ctx.from), (uid) => cmdResetOnboarding(rt.commandDeps, uid, ctx.chat.id)),
   );
 
+  // Risky-tool confirmations (C1): user taps approve/decline → resolve + report.
+  bot.callbackQuery(/^cfm:(a|d):(\d+)$/, async (ctx) => {
+    const from = senderInfo(ctx.from);
+    if (!from || !rt.confirmations) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+    const approved = ctx.match![1] === "a";
+    const id = Number(ctx.match![2]);
+    const { userId } = await resolveTelegramUser(rt.db, from);
+    const res = await rt.confirmations.resolve(userId, id, approved);
+    await ctx.answerCallbackQuery({ text: res.message.slice(0, 200) });
+    // Replace the buttons with the outcome so it can't be tapped twice.
+    await ctx.editMessageText(res.message).catch(() => {});
+  });
+
   bot.on("message:text", async (ctx) => {
     const from = senderInfo(ctx.from);
-    if (from) await processText(rt, from, ctx.chat.id, ctx.message.text, ctx.update.update_id);
+    if (!from) return;
+    const result = await processText(rt, from, ctx.chat.id, ctx.message.text, ctx.update.update_id);
+    await sendConfirmations(bot.api, ctx.chat.id, result.confirmations);
   });
   bot.on("message:voice", async (ctx) => {
     const from = senderInfo(ctx.from);
-    if (from)
-      await processVoice(
-        rt,
-        from,
-        ctx.chat.id,
-        ctx.message.voice.file_id,
-        ctx.message.voice.duration,
-        ctx.update.update_id,
-      );
+    if (!from) return;
+    const result = await processVoice(
+      rt,
+      from,
+      ctx.chat.id,
+      ctx.message.voice.file_id,
+      ctx.message.voice.duration,
+      ctx.update.update_id,
+    );
+    await sendConfirmations(bot.api, ctx.chat.id, result.confirmations);
   });
   bot.on("message", (ctx) => rt.messenger.sendMessage(ctx.chat.id, UNSUPPORTED_REPLY));
 

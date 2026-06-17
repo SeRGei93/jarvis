@@ -72,6 +72,7 @@ async function startBot(svc: ChatService): Promise<Bot | undefined> {
     chat: svc,
     speech,
     commandDeps,
+    confirmations: svc.deps.confirmations,
   });
 
   await applyBotCommands(b.api).catch((err) =>

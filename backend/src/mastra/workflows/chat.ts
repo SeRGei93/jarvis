@@ -8,6 +8,7 @@ import { SkillService, derivePreviousSkills } from "../../services/skill-service
 import { loadContext } from "../../services/conversation-context.js";
 import { PrimarySkillSelector, resolveTurnConfig } from "../agents/primary-skill.js";
 import { Orchestrator } from "../agents/orchestrator.js";
+import { ConfirmationService, type ConfirmationRequest } from "../confirmations/confirmation-service.js";
 import { LlmService, type StreamCallback, type ToolEvents } from "../llm.js";
 import { MemoryService } from "../memory/memory-service.js";
 import { RollingSummaryService } from "../memory/rolling-summary.js";
@@ -58,6 +59,8 @@ export interface ChatDeps {
   rateLimit: RateLimitService;
   /** Per-user cost/request accounting. */
   usage: UsageService;
+  /** Confirm-before-execute for risky tools (C1). */
+  confirmations: ConfirmationService;
 }
 
 export interface ChatInput {
@@ -72,6 +75,8 @@ export interface ChatResult {
   skills: string[];
   /** True when promptguard rejected the message (no LLM call was made). */
   rejected: boolean;
+  /** Risky-tool confirmations requested this turn — the UI shows approve/decline (C1). */
+  confirmations?: ConfirmationRequest[];
 }
 
 /**
@@ -144,6 +149,10 @@ export async function runChat(
   });
   log.debug({ userId, primarySkill: turn.skill, model: turn.model, onboarded: ctx.user.onboarded }, "pre-pass");
 
+  // Snapshot pending confirmations so we can surface only the ones created THIS
+  // turn (a risky tool may record one mid-turn instead of acting — C1).
+  const confirmationsBefore = await deps.confirmations.pendingIds(userId, ctx.session.id);
+
   // 6. run the single orchestrator agent. Any failure degrades to a user-facing
   //    fallback instead of throwing, so the caller always has a reply.
   let answer: string;
@@ -168,6 +177,7 @@ export async function runChat(
         sessionId: ctx.session.id,
         db: deps.db,
         settings: deps.settings,
+        confirmations: deps.confirmations,
       },
       onText,
       onTool,
@@ -242,5 +252,16 @@ export async function runChat(
     await deps.profileExtractor.applyOnboarding(deps.db, userId, allMessages);
   }
 
-  return { text: answer, skills: turn.skill ? [turn.skill] : [], rejected: false };
+  // Surface confirmations a risky tool requested THIS turn (created since the
+  // pre-turn snapshot) so the UI can show approve/decline buttons (C1).
+  let confirmations: ConfirmationRequest[] | undefined;
+  try {
+    const pending = await deps.confirmations.listPending(userId, ctx.session.id);
+    const fresh = pending.filter((c) => !confirmationsBefore.has(c.id));
+    if (fresh.length) confirmations = fresh;
+  } catch (err) {
+    log.warn({ userId, reason: err instanceof Error ? err.message : String(err) }, "confirmation surfacing failed");
+  }
+
+  return { text: answer, skills: turn.skill ? [turn.skill] : [], rejected: false, confirmations };
 }

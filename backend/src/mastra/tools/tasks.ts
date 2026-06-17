@@ -315,6 +315,20 @@ export function buildTaskTools(ctx: ToolContext): ToolSet {
         const existing = await getOwnedTask(ctx, task_id);
         if (!existing) return { error: `Task ${task_id} not found` };
 
+        // C1: destructive — request confirmation instead of deleting, when wired.
+        if (ctx.confirmations) {
+          await ctx.confirmations.create({
+            userId: ctx.userId,
+            chatId: ctx.chatId,
+            sessionId: ctx.sessionId,
+            toolName: "task_delete",
+            args: { task_id },
+            summary: `Удалить задачу #${task_id} «${existing.name}»?`,
+          });
+          log.debug({ op: "delete", task_id }, "task_delete -> confirmation requested");
+          return { message: "Запрошено подтверждение у пользователя — дождитесь ответа на кнопки." };
+        }
+
         await ctx.db
           .delete(cronTasks)
           .where(and(eq(cronTasks.id, task_id), eq(cronTasks.userId, ctx.userId)));

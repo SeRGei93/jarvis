@@ -209,6 +209,37 @@ export const settings = sqliteTable("settings", {
   updatedAt: updatedAt(),
 });
 
+// ── pending_confirmations ─────────────────────────────────────────────────────
+// Durable confirm-before-execute state for risky tools (delete/spend/send) — C1.
+// A risky tool call records its intent here instead of acting; the user approves
+// or declines via Telegram inline buttons, and the next callback resolves the row.
+// This is OUR own table (not Mastra suspend/resume snapshots) — migration discipline.
+export const pendingConfirmations = sqliteTable(
+  "pending_confirmations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    chatId: integer("chat_id").notNull(),
+    sessionId: integer("session_id").references(() => sessions.id, { onDelete: "cascade" }),
+    // The risky tool to run on approval (e.g. "forget", "task_delete").
+    toolName: text("tool_name").notNull(),
+    // The tool arguments to execute on approval (validated by the tool's executor).
+    args: text("args", { mode: "json" }).notNull(),
+    // Human-readable summary shown next to the approve/decline buttons.
+    summary: text("summary").notNull().default(""),
+    // pending → approved | declined (terminal).
+    status: text("status").notNull().default("pending"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("idx_pending_confirmations_user").on(t.userId),
+    index("idx_pending_confirmations_status").on(t.status),
+  ],
+);
+
 // ── models ──────────────────────────────────────────────────────────────────
 // Available `provider:model` refs for UI + role validation.
 export const models = sqliteTable("models", {

@@ -1,13 +1,14 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
-import { MemoryService } from "../memory/memory-service.js";
 import { containsInjection } from "../../pkg/promptguard.js";
+import type { ToolContext } from "./registry.js";
 import { logger } from "../../pkg/logger.js";
 
 const log = logger.child({ mod: "memory-tools" });
 
 /** Build the per-user memory tools (remember/forget/list_memories). */
-export function buildMemoryTools(mem: MemoryService, userId: number): ToolSet {
+export function buildMemoryTools(ctx: ToolContext): ToolSet {
+  const { mem, userId } = ctx;
   return {
     remember: tool({
       description: "Save a durable fact about the user for future conversations.",
@@ -31,6 +32,19 @@ export function buildMemoryTools(mem: MemoryService, userId: number): ToolSet {
       description: "Delete a stored memory by its id (obtained from list_memories).",
       inputSchema: z.object({ memory_id: z.number().int() }),
       execute: async ({ memory_id }) => {
+        // C1: destructive — request confirmation instead of deleting, when wired.
+        if (ctx.confirmations) {
+          await ctx.confirmations.create({
+            userId,
+            chatId: ctx.chatId,
+            sessionId: ctx.sessionId,
+            toolName: "forget",
+            args: { memory_id },
+            summary: `Удалить из памяти запись #${memory_id}?`,
+          });
+          log.debug({ id: memory_id }, "forget -> confirmation requested");
+          return { message: "Запрошено подтверждение у пользователя — дождитесь ответа на кнопки." };
+        }
         const ok = await mem.delete(userId, memory_id);
         log.debug({ id: memory_id, ok }, "forget");
         return { message: ok ? `Memory #${memory_id} deleted` : "Memory not found" };

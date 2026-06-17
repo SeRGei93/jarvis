@@ -12,6 +12,7 @@ import { FactExtractor } from "./mastra/memory/fact-extractor.js";
 import { ProfileExtractor } from "./mastra/memory/profile-extractor.js";
 import { PrimarySkillSelector } from "./mastra/agents/primary-skill.js";
 import { Orchestrator } from "./mastra/agents/orchestrator.js";
+import { ConfirmationService } from "./mastra/confirmations/confirmation-service.js";
 import { createConversationMemory } from "./mastra/memory/history.js";
 import { RateLimitService } from "./services/rate-limit.js";
 import { UsageService } from "./services/usage.js";
@@ -71,6 +72,7 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
   const orchestrator = new Orchestrator({ skills, settings, factory });
   // Used only by the admin skill test-run (admin reuses ChatDeps), not the chat path.
   const llm = new LlmService(factory, settings);
+  const confirmations = new ConfirmationService(opts.db, memoryService);
   const memory = createConversationMemory(opts.storage, agentCfg.max_history);
   const rateLimit = new RateLimitService(opts.db);
   const usage = new UsageService(opts.db);
@@ -89,6 +91,7 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
     memory,
     rateLimit,
     usage,
+    confirmations,
   };
 
   const routableCount = (await skills.getRoutableSkills()).length;

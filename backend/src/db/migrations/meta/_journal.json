@@ -22,6 +22,13 @@
       "when": 1781718662784,
       "tag": "0002_pretty_mathemanic",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1781729374104,
+      "tag": "0003_parallel_patriot",
+      "breakpoints": true
     }
   ]
 }

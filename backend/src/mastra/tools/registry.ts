@@ -3,6 +3,7 @@ import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "../../db/schema.js";
 import { MemoryService } from "../memory/memory-service.js";
 import type { SettingsService } from "../../config/settings.js";
+import type { ConfirmationService } from "../confirmations/confirmation-service.js";
 import { buildMemoryTools } from "./memory-tools.js";
 import { buildCurrencyTools, CURRENCY_TOOL_NAMES } from "./currency.js";
 import { buildWebTools, WEB_TOOL_NAMES } from "./web.js";
@@ -27,6 +28,12 @@ export interface ToolContext {
   settings: SettingsService;
   /** Filesystem root for skill references; defaults to the seed skills dir (Task 6). */
   skillsRoot?: string;
+  /**
+   * Confirm-before-execute service (C1). When present, risky tools (forget,
+   * task_delete) record a confirmation instead of acting. Absent in the admin
+   * skill test-run, where tools execute directly.
+   */
+  confirmations?: ConfirmationService;
 }
 
 interface Bucket {
@@ -50,7 +57,7 @@ export function resolveTools(allowedTools: string[], ctx: ToolContext): ToolSet 
   if (allowedTools.length === 0) return {};
 
   const buckets: Bucket[] = [
-    { names: MEMORY_TOOL_NAMES, get: once(() => buildMemoryTools(ctx.mem, ctx.userId)) },
+    { names: MEMORY_TOOL_NAMES, get: once(() => buildMemoryTools(ctx)) },
     { names: CURRENCY_TOOL_NAMES, get: once(() => buildCurrencyTools(ctx)) },
     { names: WEB_TOOL_NAMES, get: once(() => buildWebTools(ctx)) },
     { names: TASK_TOOL_NAMES, get: once(() => buildTaskTools(ctx)) },
@@ -83,7 +90,7 @@ export function resolveTools(allowedTools: string[], ctx: ToolContext): ToolSet 
  */
 export function resolveAllTools(ctx: ToolContext): ToolSet {
   const out: ToolSet = {
-    ...buildMemoryTools(ctx.mem, ctx.userId),
+    ...buildMemoryTools(ctx),
     ...buildCurrencyTools(ctx),
     ...buildWebTools(ctx),
     ...buildTaskTools(ctx),
