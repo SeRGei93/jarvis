@@ -14,9 +14,9 @@ jarvis/
       domain/    entities (zod + invariant constants), memory-classifier, sensitivity-filter
       mastra/    models (provider:model factory), llm (stream/watchdog/cost/retries/fallback),
                  strip-leaked-tools, speech,
-                 agents/ (router, prompt-builder, skill-agent, synthesizer, loop-guard),
+                 agents/ (orchestrator, primary-skill, prompt-builder, skill-agent, loop-guard),
                  memory/ (memory-service, rolling-summary, fact-extractor, dedup, profile-extractor, history+message I/O),
-                 tools/ (web bucket, memory-tools, currency, tasks, profile-tools, skill-ref, registry),
+                 tools/ (web bucket, load-skill, memory-tools, currency, tasks, profile-tools, skill-ref, registry),
                  workflows/ (chat),
                  index.ts (Mastra instance: storage)
       pkg/       logger (pino + redact), promptguard, bootstrap-env
@@ -48,6 +48,7 @@ jarvis/
 ## Key Decisions
 - **libSQL, not Postgres** — one relational engine for config + memory. No vector store: long-term memory is capped (50) and loaded whole (M13), not RAG-retrieved.
 - **AI SDK v6, not Genkit** — `provider:model` factory; watchdog / cost / retries / fallback ported from Go.
+- **Single orchestrator Agent (mastra-adoption)** — the chat path is **one dynamic Mastra `Agent`** (`agents/orchestrator.ts`) whose `instructions`/`model`/`tools` are functions of a per-request `RequestContext` pulled live from `SettingsService`/`SkillService` (DI preserved; Agent kept standalone, not on a `Mastra` instance). It replaces the old router → N skill-agents → synthesizer. A cheap pre-pass (`primary-skill.ts`) picks the primary skill + turn model. ALL tools register up front and are gated per step via `prepareStep → activeTools`, widened by the `load_skill` tool (progressive skill loading). Stream off `agent.stream().fullStream`; our own `AbortSignal` watchdog (Mastra has no timeout) + `stripLeakedToolCalls` post-stream. Risky tools (`forget`/`task_delete`) go through **confirm-before-execute** (`ConfirmationService` + `pending_confirmations`). `skill-agent`/`loop-guard` survive only for the admin skill test-run.
 - **Memory** — long-term facts in a plain `memories` table (load-all + LLM dedup, M13); written by explicit `remember`/onboarding **and** an opportunistic extractor (`agent.auto_memory`, M14). Dialogue history via Mastra Memory + a per-session rolling summary (`sessions.summary`, M14). MCP `memory` server dropped.
 - **No session encryption** — messages stored plaintext in libSQL.
 - **Config in DB** — `.env` = secrets only; `SettingsService` caches + hot-reloads.
@@ -56,6 +57,6 @@ jarvis/
 - **Admin Mini App, one origin (M8)** — the Hono admin API (`/admin/api`) and the built React Mini App share the single backend HTTP server (`@hono/node-server`); auth = Telegram `initData` HMAC-SHA256 + `ADMIN_USER_IDS` (deny-by-default, distinct from the in-DB chat allowlist). Admin writes call `SettingsService`/`SkillService` `invalidate()` for hot-reload. Routers are mounted from `admin/api/index.ts`; handlers read deps + `adminUserId` from Hono context.
 
 ## Parity Constants (verified against Go)
-permanent cap `50` · onboarding `@4` msgs · max_history `50` (was 15, M14) · watchdog `30s` · llm_request `300s` · maxSteps `30` · maxRetries `3` · sub-agent loop cap `2`@`5min` · synthesizer temp `0.3` · sub-agent model `skill.model || roles.default` · cron poll `60s`/`5s` · task watchdog `llm_request+30s`.
+permanent cap `50` · onboarding `@4` msgs · max_history `50` (was 15, M14) · watchdog `30s` · llm_request `300s` · orchestrator maxSteps `50` · maxRetries `3` · admin skill-test loop cap `2`@`5min` · sub-agent model `skill.model || roles.default` · cron poll `60s`/`5s` · task watchdog `llm_request+30s`.
 
-**Diverged from Go:** no vector/RAG/embeddings — dedup is an LLM check, not cosine `0.92` (M13). Web search/scraping is the native `web` tool bucket, not MCP (M11). Memory extraction is opportunistic (`agent.auto_memory`) on top of `remember` + onboarding (M14). `exec` tool not ported.
+**Diverged from Go:** single dynamic orchestrator `Agent` with progressive `load_skill` tool-gating replaces the router → skills → synthesizer pipeline (mastra-adoption; `maxSteps 50`). No vector/RAG/embeddings — dedup is an LLM check, not cosine `0.92` (M13). Web search/scraping is the native `web` tool bucket, not MCP (M11). Memory extraction is opportunistic (`agent.auto_memory`) on top of `remember` + onboarding (M14). `exec` tool not ported.
