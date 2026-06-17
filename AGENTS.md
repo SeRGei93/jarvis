@@ -13,9 +13,9 @@ Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + Lib
 |-----|----------|
 | `config/` | `env` (zod secrets, + `SKILLS_DIR`/`PROMPTS_DIR`), `settings` (DB cache + hot-reload), `settings-keys` |
 | `content/` | file-backed skill/prompt store: `paths`, `store` (populate + atomic write + frontmatter), `skill-repository`, `prompt-repository` |
-| `db/` | `schema` (12 tables — no `skills`/`prompts`), `migrations/`, `client`, `vector`, `migrate`, `seed` (code seed), `seed-data` |
+| `db/` | `schema` (13 tables — incl. `pending_confirmations`, no `skills`/`prompts`), `migrations/`, `client`, `migrate`, `seed` (code seed), `seed-data` |
 | `domain/` | `entities` (+ constants), `memory-classifier`, `sensitivity-filter` |
-| `mastra/` | `models`, `llm`, `strip-leaked-tools`, `embeddings`, `speech`, `agents/{router,prompt-builder,skill-agent,synthesizer,loop-guard}`, `memory/{memory-service,profile-extractor,history}`, `tools/{memory-tools,registry}`, `workflows/chat`, `index` |
+| `mastra/` | `models`, `llm`, `strip-leaked-tools`, `speech`, `agents/{primary-skill,orchestrator,prompt-builder,skill-agent,loop-guard}`, `confirmations/confirmation-service`, `memory/{memory-service,profile-extractor,history,…}`, `tools/{load-skill,memory-tools,registry,…}`, `workflows/chat`, `index` |
 | `services/` | `skill-service` (file-backed via content repos), `conversation-context`, `rate-limit`, `usage` |
 | `telegram/` | `bot`, `stream`, `format`, `voice`, `messenger`, `identity`, `commands`, `errors` (grammY transport, M6) |
 | `scheduler/` | `schedule`, `executor`, `scheduler` (node-cron), `wiring` — due cron tasks → chat pipeline → notify (M7) |
@@ -54,7 +54,7 @@ Vite + React 18 + Mantine 7 + `@twa-dev/sdk`, HashRouter. `lib/api` (typed clien
 | README | `README.md` | Project landing page |
 | Getting Started | `docs/getting-started.md` | Install, migrate, seed, run, test |
 | Architecture | `docs/architecture.md` | Layering, structure, dependency rules |
-| Chat Pipeline | `docs/chat-pipeline.md` | route → runSkills → synthesize, agents, memory |
+| Chat Pipeline | `docs/chat-pipeline.md` | pre-pass → orchestrator agent, load_skill, guardrails, tool approval, evals |
 | Tools & MCP | `docs/tools.md` | built-in tools, MCP `search`, rate limit & usage |
 | Telegram Bot | `docs/telegram.md` | grammY transport, streaming, voice, commands, allowlist |
 | Cron Scheduler | `docs/scheduler.md` | node-cron polls, due tasks → chat pipeline → notify |

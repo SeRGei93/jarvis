@@ -23,13 +23,14 @@ domain (pure) ← config / services ← mastra adapters ← app.ts / server.ts (
 |-----|----------|
 | `config/` | `env` (zod secrets, + `SKILLS_DIR`/`PROMPTS_DIR`), `settings` (DB cache + hot-reload), `settings-keys` |
 | `content/` | file-backed skill/prompt store: `paths`, `store` (populate + atomic write + frontmatter), `skill-repository`, `prompt-repository` |
-| `db/` | `schema` (12 tables — no `skills`/`prompts`), `migrations/`, `client`, `migrate`, `seed` (code seed), `seed-data` |
+| `db/` | `schema` (13 tables — incl. `pending_confirmations`, no `skills`/`prompts`), `migrations/`, `client`, `migrate`, `seed` (code seed), `seed-data` |
 | `domain/` | `entities` (zod + invariant constants), `memory-classifier`, `sensitivity-filter` |
 | `mastra/` | `models`, `llm`, `strip-leaked-tools`, `speech`, `index` (Mastra instance) |
-| `mastra/agents/` | `router`, `prompt-builder`, `skill-agent`, `synthesizer`, `loop-guard` |
+| `mastra/agents/` | `primary-skill` (pre-pass), `orchestrator` (the agent), `prompt-builder`, `skill-agent` + `loop-guard` (admin test-run only) |
+| `mastra/confirmations/` | `confirmation-service` (confirm-before-execute for risky tools) |
 | `mastra/memory/` | `memory-service` (load-all + cap), `rolling-summary`, `fact-extractor`, `dedup` (LLM), `profile-extractor`, `history` (+ message I/O) |
-| `mastra/tools/` | `registry` (bucket resolver), `memory-tools`, `currency`, `web` (native web bucket), `tasks`, `profile-tools`, `skill-ref` |
-| `mastra/workflows/` | `chat` (route → runSkills → synthesize) |
+| `mastra/tools/` | `registry` (`resolveTools`/`resolveAllTools`), `load-skill`, `memory-tools`, `currency`, `web` (native web bucket), `tasks`, `profile-tools`, `skill-ref` |
+| `mastra/workflows/` | `chat` (pre-pass → orchestrator agent) |
 | `services/` | `skill-service`, `conversation-context`, `web/` (SearXNG search, browser-free fetch + SSRF guard, parsers + Belarus verticals) |
 | `pkg/` | `logger` (pino + redact), `promptguard`, `bootstrap-env` |
 | `app.ts` | composition root — `createChatService()` → `handleUserMessage()` |
@@ -47,7 +48,7 @@ domain (pure) ← config / services ← mastra adapters ← app.ts / server.ts (
 
 ## Parity Constants (verified against Go)
 
-permanent cap `50` · onboarding `@4` msgs · max_history `50` (was 15, M14) · watchdog `30s` · `llm_request` `300s` · maxSteps `30` · maxRetries `3` · sub-agent loop cap `2`@`5min` · synthesizer temp `0.3`. **Diverged from Go:** no vector/RAG/embeddings — dedup is an LLM check, not cosine `0.92` (M13); memory extraction is opportunistic (`agent.auto_memory`) on top of `remember` + onboarding (M14); web tools are **native** (`services/web/` + the `web` bucket), no external MCP server; the Go MCP `exec` tool is not ported.
+permanent cap `50` · onboarding `@4` msgs · max_history `50` · watchdog `30s` · `llm_request` `300s` · orchestrator maxSteps `50` · maxRetries `3`. (The old per-skill cap `30`, sub-agent loop cap `2`@`5min`, and synthesizer temp `0.3` now apply only to the admin skill test-run.) **Design choices:** no vector/RAG/embeddings — dedup is an LLM check (M13); memory extraction is opportunistic (`agent.auto_memory`, M14) on top of `remember` + onboarding; web tools are **native** (`services/web/` + the `web` bucket), no external MCP server; no model-driven code execution; the chat path is one dynamic Mastra `Agent` with progressive `load_skill` tool-gating (Mastra `Workspace` skills evaluated, not adopted — they don't gate tools).
 
 ## See Also
 

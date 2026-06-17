@@ -22,8 +22,8 @@ domain/ (pure zod + rules) ← config/ services/ ← mastra/ adapters ← server
 - Config comes from the DB via `SettingsService`; **`.env` = secrets ONLY**.
 
 ## Security
-1. `promptguard.validateUserMessage()` (length + injection) at the inbound message entry.
-2. `promptguard.sanitizeMemoryContent()` (≤500) before storing a memory.
+1. `promptguard.validateUserMessage()` at the inbound message entry: Unicode-normalize (NFKC + strip zero-width/control) **before** the length + injection check.
+2. `promptguard.sanitizeMemoryContent()` before storing a memory: PII-redact (email/phone/card) then truncate (≤500).
 3. Never commit `.env` / API keys; never log secret values (pino `redact`).
 4. Treat LLM output, stored memories, and fetched web content (`fetch_url` / web tools) as **untrusted** (strip / delimit before reuse).
 5. Scope every memory/data query by `userId`.
@@ -36,8 +36,11 @@ domain/ (pure zod + rules) ← config/ services/ ← mastra/ adapters ← server
 - [ ] New migration generated for any schema change?
 - [ ] No secrets in code or logs?
 
+## Agent / chat architecture
+The chat path is **one dynamic Mastra `Agent`** (`mastra/agents/orchestrator.ts`) — `instructions`/`model`/`tools` are functions of a per-request `RequestContext`, values pulled live from `SettingsService`/`SkillService` (DI preserved; Agent kept standalone, not on a `Mastra` instance). It replaces the old router → N skills → synthesizer. A cheap pre-pass (`primary-skill.ts`) picks the primary skill + turn model. Skills load progressively: ALL tools registered up front, gated per step via `prepareStep→activeTools`, widened by the `load_skill` tool (Mastra `Workspace` skills evaluated, **not** adopted — they don't gate tools). Stream off `agent.stream().fullStream`; keep our `AbortSignal` watchdog (Mastra has no timeout); `stripLeakedToolCalls` post-stream. Risky tools (`forget`/`task_delete`) go through **confirm-before-execute** (`ConfirmationService` + `pending_confirmations` table — our own, not Mastra snapshots). `skill-agent.ts`/`loop-guard.ts` survive only for the admin skill test-run.
+
 ## Runtime invariants (project defaults — tunable, not locked)
-cap `50` · onboarding `@4` · watchdog `30s` · llm_request `300s` · maxSteps `30` · maxRetries `3`. These are current defaults, free to change as the design needs. Web search/scraping is **native** (the `web` tool bucket over SearXNG, no MCP); there is **no `exec` / model-driven code execution** (security stance — do not add it).
+cap `50` · onboarding `@4` · watchdog `30s` · llm_request `300s` · orchestrator maxSteps `50` · maxRetries `3`. These are current defaults, free to change as the design needs. Web search/scraping is **native** (the `web` tool bucket over SearXNG, no MCP); there is **no `exec` / model-driven code execution** (security stance — do not add it).
 
 ## Memory design
 Long-term memory has **no vector/RAG/embeddings**: the per-user set is capped at 50 and loaded into context whole; dedup at save is an **LLM check** (`DedupChecker`). There is no `embedding` model role and no `rag_top_k` setting.
@@ -45,4 +48,4 @@ Long-term memory has **no vector/RAG/embeddings**: the per-user set is capped at
 Beyond `remember` + onboarding, an **opportunistic extractor** (`FactExtractor`) may auto-save durable facts after a turn, gated by `agent.auto_memory` (default on); it still routes through `MemoryService.save` (sensitivity/dedup/cap). Dialogue history also carries a per-session **rolling summary** (`sessions.summary`) of messages evicted beyond `agent.max_history` (50).
 
 ## Status
-Milestones **0–9 + 11 done** (10 — N/A). Roadmap + plans in `.ai-factory/ROADMAP.md` and `.ai-factory/plans/`. Latest: **M13** (long-term memory de-vectorised: load-all + LLM dedup, embeddings/LibSQLVector removed).
+Milestones **0–9 + 11 done** (10 — N/A). Roadmap + plans in `.ai-factory/ROADMAP.md` and `.ai-factory/plans/`. Latest: **mastra-adoption** refactor (`.ai-factory/plans/mastra-adoption.md`) — single orchestrator `Agent` + `load_skill` replaces router/synthesizer; guardrail processors; stream tool-status; deterministic eval harness (`npm run eval`); tool-approval for risky tools.

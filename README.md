@@ -17,10 +17,10 @@ npm run dev                 # start the single-process service
 
 ## Key Features
 
-- **Skill-based chat** — a router picks 1–4 skills per message; one skill streams directly, several run as parallel sub-agents and are merged by a synthesizer. See [Chat Pipeline](docs/chat-pipeline.md).
+- **Agent-orchestrated chat** — one dynamic Mastra `Agent` answers in a single voice and loads skills on demand (`load_skill`, with progressively gated tools); a cheap pre-pass picks the primary skill and turn model. Live tool activity streams as status ("🔎 searching…"). See [Chat Pipeline](docs/chat-pipeline.md).
 - **Config split** — model roles, timeouts, agent params, and plans are libSQL rows hot-reloaded by `SettingsService`; **skills and prompts are files** in a content store (repo defaults populated onto a persistent volume, read+written there, hot-reloaded). See [Configuration](docs/configuration.md).
 - **Long-term memory** — durable user facts in a capped relational table (LLM dedup, no vector); saved explicitly via `remember`/onboarding **and** opportunistically as they come up. Dialogue history (Mastra Memory) carries a rolling summary so context survives a long chat. See [Chat Pipeline](docs/chat-pipeline.md).
-- **Tools** — skills get built-in tools (currency, cron tasks, profile, skill references). See [Tools](docs/tools.md).
+- **Tools** — skills get built-in tools (currency, cron tasks, profile, skill references); destructive tools (`forget`, `task_delete`) require Telegram approve/decline confirmation. See [Tools](docs/tools.md).
 - **Native web tools** — in-process web search, page fetch, Belarus marketplaces (kufar/av.by/rabota/transport/relax/103) and weather, backed by a self-hosted SearXNG (no MCP server, no rate limiter). See [Web Search](docs/web-search.md).
 - **Telegram bot** — a grammY bot (polling, or optional webhook) with throttled `editMessageText` streaming, markdown→MarkdownV2, voice→speech, commands, and an allowlist. See [Telegram Bot](docs/telegram.md).
 - **Cron scheduler** — `node-cron` polls run due `cron_tasks` through the chat pipeline and deliver the result to Telegram (`now` / `once` / recurring). See [Cron Scheduler](docs/scheduler.md).
@@ -41,7 +41,8 @@ const chat = await createChatService({ db, storage });
 const result = await chat.handleUserMessage(userId, chatId, "what's the weather and any news?", (chunk) =>
   process.stdout.write(chunk),
 );
-// → { text: "...merged answer...", skills: ["weather", "news"], rejected: false }
+// → { text: "...the agent's answer...", skills: ["weather"], rejected: false }
+// the orchestrator loads more skills mid-turn via load_skill as the request needs them
 ```
 
 ---
@@ -52,8 +53,8 @@ const result = await chat.handleUserMessage(userId, chatId, "what's the weather 
 |-------|-------------|
 | [Getting Started](docs/getting-started.md) | Prerequisites, install, migrate, seed, run, test |
 | [Architecture](docs/architecture.md) | Layering, structure, dependency rules |
-| [Chat Pipeline](docs/chat-pipeline.md) | route → runSkills → synthesize, agents, memory, entry point |
-| [Tools](docs/tools.md) | built-in tools (currency, cron tasks, profile, skill references) |
+| [Chat Pipeline](docs/chat-pipeline.md) | pre-pass → orchestrator agent, load_skill, guardrails, tool approval, evals |
+| [Tools](docs/tools.md) | built-in tools, `load_skill`, tool approval for risky tools |
 | [Web Search](docs/web-search.md) | native web bucket — SearXNG search, fetch, marketplaces, weather |
 | [Telegram Bot](docs/telegram.md) | grammY transport, streaming, voice, commands, allowlist |
 | [Cron Scheduler](docs/scheduler.md) | node-cron polls, due tasks → chat pipeline → notify |
