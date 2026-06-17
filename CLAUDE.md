@@ -36,12 +36,13 @@ domain/ (pure zod + rules) ← config/ services/ ← mastra/ adapters ← server
 - [ ] New migration generated for any schema change?
 - [ ] No secrets in code or logs?
 
-## Parity with Go (keep exact)
-cap `50` · onboarding `@4` · watchdog `30s` · llm_request `300s` · maxSteps `30` · maxRetries `3`. Web search/scraping is **native** (the `web` tool bucket over SearXNG, no MCP); `exec` not ported.
+## Runtime invariants (project defaults — tunable, not locked)
+cap `50` · onboarding `@4` · watchdog `30s` · llm_request `300s` · maxSteps `30` · maxRetries `3`. These are current defaults, free to change as the design needs. Web search/scraping is **native** (the `web` tool bucket over SearXNG, no MCP); there is **no `exec` / model-driven code execution** (security stance — do not add it).
 
-**Diverges from Go (M13):** long-term memory has **no vector/RAG/embeddings**. The per-user set is capped at 50, so it is loaded into context whole; dedup at save is an **LLM check** (`DedupChecker`), not cosine `0.92`. The `embedding` model role and `rag_top_k` setting are gone.
+## Memory design
+Long-term memory has **no vector/RAG/embeddings**: the per-user set is capped at 50 and loaded into context whole; dedup at save is an **LLM check** (`DedupChecker`). There is no `embedding` model role and no `rag_top_k` setting.
 
-**Diverges from Go (M14):** memory is no longer write-only-on-demand. Beyond `remember` + onboarding, an **opportunistic extractor** (`FactExtractor`) may auto-save durable facts after a turn, gated by `agent.auto_memory` (default on); it still routes through `MemoryService.save` (sensitivity/dedup/cap). Dialogue history also carries a per-session **rolling summary** (`sessions.summary`) of messages evicted beyond `agent.max_history` (raised 15 → 50).
+Beyond `remember` + onboarding, an **opportunistic extractor** (`FactExtractor`) may auto-save durable facts after a turn, gated by `agent.auto_memory` (default on); it still routes through `MemoryService.save` (sensitivity/dedup/cap). Dialogue history also carries a per-session **rolling summary** (`sessions.summary`) of messages evicted beyond `agent.max_history` (50).
 
 ## Status
-Milestones **0–9 + 11 done** (10 — N/A: new project, no Go migration). Roadmap + plans in `.ai-factory/ROADMAP.md` and `.ai-factory/plans/`. Latest: **M13** (long-term memory de-vectorised: load-all + LLM dedup, embeddings/LibSQLVector removed).
+Milestones **0–9 + 11 done** (10 — N/A). Roadmap + plans in `.ai-factory/ROADMAP.md` and `.ai-factory/plans/`. Latest: **M13** (long-term memory de-vectorised: load-all + LLM dedup, embeddings/LibSQLVector removed).
