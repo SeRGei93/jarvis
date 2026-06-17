@@ -346,14 +346,17 @@ export function buildWebTools(
           .optional()
           .describe("Request timeout in ms, default 30000, max 120000"),
       }),
-      execute: async ({ url, timeoutMs }) => {
+      execute: async ({ url, timeoutMs }, { abortSignal }) => {
         try {
           const deps = await resolveDeps();
           const effectiveTimeout = timeoutMs ?? deps.timeoutMs;
+          // Thread the agent watchdog's abort signal into the fetch so an
+          // aborted turn really cancels the in-flight HTTP request.
           const md = await fetchPageAsMarkdown(url, effectiveTimeout, {
             fetchFn: deps.fetchFn,
             pageParsers: WEB_PAGE_PARSERS,
             articleHandler,
+            signal: abortSignal,
           });
           return markUntrusted(md, url);
         } catch (err) {

@@ -66,6 +66,44 @@ describe("MemoryService", () => {
     expect(await m.listPermanent(1)).toHaveLength(50);
   });
 
+  it("redacts an email address before storing", async () => {
+    const m = await setup();
+    const r = await m.save(1, "fact", "reach me at john.doe@example.com anytime");
+    expect(r.saved).toBe(true);
+    const [stored] = await m.listPermanent(1);
+    expect(stored!.content).toContain("[redacted]");
+    expect(stored!.content).not.toContain("john.doe@example.com");
+  });
+
+  it("redacts a phone number before storing", async () => {
+    const m = await setup();
+    const r = await m.save(1, "fact", "my number is +375 29 123-45-67 call me");
+    expect(r.saved).toBe(true);
+    const [stored] = await m.listPermanent(1);
+    expect(stored!.content).toContain("[redacted]");
+    expect(stored!.content).not.toContain("123-45-67");
+  });
+
+  it("redacts a credit-card number before storing", async () => {
+    const m = await setup();
+    const r = await m.save(1, "fact", "card 4111 1111 1111 1111 for groceries");
+    expect(r.saved).toBe(true);
+    const [stored] = await m.listPermanent(1);
+    expect(stored!.content).toContain("[redacted]");
+    expect(stored!.content).not.toContain("4111 1111 1111 1111");
+    expect(stored!.content).not.toContain("4111111111111111");
+  });
+
+  it("does not redact ordinary years or short numbers", async () => {
+    const m = await setup();
+    const r = await m.save(1, "fact", "moved to Minsk in 2019 and paid 250 BYN");
+    expect(r.saved).toBe(true);
+    const [stored] = await m.listPermanent(1);
+    expect(stored!.content).not.toContain("[redacted]");
+    expect(stored!.content).toContain("2019");
+    expect(stored!.content).toContain("250");
+  });
+
   it("delete removes only the owner's memory", async () => {
     const m = await setup();
     const saved = await m.save(1, "fact", "deletable fact");

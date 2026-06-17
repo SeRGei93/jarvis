@@ -35,19 +35,27 @@ const NBRB_URL = "https://api.nbrb.by/exrates/rates?periodicity=0";
 const BELARUSBANK_URL = "https://belarusbank.by/api/kursExchange?city=Минск";
 const MYFIN_URL = "https://myfin.by/currency/minsk";
 
-/** GET `url` with a per-request AbortController timeout; returns the Response or throws. */
+/**
+ * GET `url` with a per-request AbortController timeout; returns the Response or
+ * throws. When a caller `signal` (the agent watchdog) is supplied it is composed
+ * with the timeout via `AbortSignal.any`, so EITHER aborts the in-flight fetch.
+ */
 async function fetchWithTimeout(
   fetchFn: typeof globalThis.fetch,
   url: string,
   timeoutMs: number,
+  callerSignal?: AbortSignal,
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const signal = callerSignal
+    ? AbortSignal.any([controller.signal, callerSignal])
+    : controller.signal;
   try {
     return await fetchFn(url, {
       method: "GET",
       headers: { "User-Agent": USER_AGENT },
-      signal: controller.signal,
+      signal,
     });
   } finally {
     clearTimeout(timer);
@@ -59,6 +67,7 @@ async function fetchNBRB(
   fetchFn: typeof globalThis.fetch,
   currencies: string[],
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<CurrencySource> {
   const source: CurrencySource = {
     name: "Национальный банк Республики Беларусь (НБРБ)",
@@ -68,7 +77,7 @@ async function fetchNBRB(
   };
   const started = Date.now();
   try {
-    const resp = await fetchWithTimeout(fetchFn, source.url, timeoutMs);
+    const resp = await fetchWithTimeout(fetchFn, source.url, timeoutMs, signal);
     if (!resp.ok) {
       log.warn({ source: "nbrb", url: source.url, status: resp.status }, "nbrb non-200");
       source.error = `status code: ${resp.status}`;
@@ -104,6 +113,7 @@ async function fetchBelarusbank(
   fetchFn: typeof globalThis.fetch,
   currencies: string[],
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<CurrencySource> {
   const source: CurrencySource = {
     name: "Беларусбанк (курсы покупки/продажи, г. Минск)",
@@ -113,7 +123,7 @@ async function fetchBelarusbank(
   };
   const started = Date.now();
   try {
-    const resp = await fetchWithTimeout(fetchFn, source.url, timeoutMs);
+    const resp = await fetchWithTimeout(fetchFn, source.url, timeoutMs, signal);
     if (!resp.ok) {
       log.warn({ source: "belarusbank", url: source.url, status: resp.status }, "belarusbank non-200");
       source.error = `status code: ${resp.status}`;
@@ -193,6 +203,7 @@ async function fetchMyfin(
   fetchFn: typeof globalThis.fetch,
   currencies: string[],
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<CurrencySource> {
   const source: CurrencySource = {
     name: "Myfin.by (лучшие курсы в Минске)",
@@ -202,7 +213,7 @@ async function fetchMyfin(
   };
   const started = Date.now();
   try {
-    const resp = await fetchWithTimeout(fetchFn, source.url, timeoutMs);
+    const resp = await fetchWithTimeout(fetchFn, source.url, timeoutMs, signal);
     if (!resp.ok) {
       log.warn({ source: "myfin", url: source.url, status: resp.status }, "myfin non-200");
       source.error = `status code: ${resp.status}`;
@@ -244,17 +255,19 @@ export function buildCurrencyTools(
             "Currency code to look up (e.g. USD, EUR, RUB). If empty, returns rates for USD, EUR, RUB.",
           ),
       }),
-      execute: async ({ currency }) => {
+      execute: async ({ currency }, { abortSignal }) => {
         const currencies =
           currency && currency.trim() !== "" ? [currency.trim().toUpperCase()] : [...DEFAULT_CURRENCIES];
 
         const timeouts = await ctx.settings.getTimeouts();
         const timeoutMs = parseGoDuration(timeouts.http_client) || FETCH_TIMEOUT_FALLBACK_MS;
 
+        // Thread the agent watchdog's abort signal into each source fetch so an
+        // aborted turn really cancels the in-flight HTTP requests.
         const settled = await Promise.allSettled([
-          fetchNBRB(fetchFn, currencies, timeoutMs),
-          fetchBelarusbank(fetchFn, currencies, timeoutMs),
-          fetchMyfin(fetchFn, currencies, timeoutMs),
+          fetchNBRB(fetchFn, currencies, timeoutMs, abortSignal),
+          fetchBelarusbank(fetchFn, currencies, timeoutMs, abortSignal),
+          fetchMyfin(fetchFn, currencies, timeoutMs, abortSignal),
         ]);
 
         const fallbacks: Array<{ name: string; url: string; source: string }> = [

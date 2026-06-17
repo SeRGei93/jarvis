@@ -39,6 +39,12 @@ export interface FetchPageOptions {
   articleHandler?: (url: string, timeoutMs: number) => Promise<string | null>;
   /** Read/write the on-disk fetch cache; default `true`. */
   useCache?: boolean;
+  /**
+   * Caller abort signal (e.g. the agent watchdog). Composed with the internal
+   * per-request timeout via `AbortSignal.any`, so EITHER aborts the in-flight
+   * HTTP request. Optional — omit for the legacy timeout-only behaviour.
+   */
+  signal?: AbortSignal;
 }
 
 /** Realistic Chrome UA (mirrors the browser layer in the source repo). */
@@ -153,11 +159,17 @@ export async function fetchRawHtml(
     fetchFn?: typeof globalThis.fetch;
     lookupFn?: LookupFn;
     maxRedirects?: number;
+    /**
+     * Caller abort signal (e.g. the agent watchdog). Composed with the internal
+     * per-request timeout via `AbortSignal.any` — EITHER aborts the fetch.
+     */
+    signal?: AbortSignal;
   } = {},
 ): Promise<string> {
   const fetchFn = opts.fetchFn ?? globalThis.fetch;
   const lookupFn = opts.lookupFn;
   const maxRedirects = opts.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
+  const callerSignal = opts.signal;
 
   let currentUrl = url;
   let hops = 0;
@@ -169,13 +181,19 @@ export async function fetchRawHtml(
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    // Compose the timeout signal with the caller's (watchdog) signal: EITHER
+    // firing aborts the request. Fall back to the timeout-only signal when no
+    // caller signal is supplied (preserves legacy behaviour).
+    const signal = callerSignal
+      ? AbortSignal.any([controller.signal, callerSignal])
+      : controller.signal;
 
     let response: Response;
     try {
       response = await fetchFn(encodeBrackets(currentUrl), {
         method: "GET",
         redirect: "manual",
-        signal: controller.signal,
+        signal,
         headers: REQUEST_HEADERS,
       });
     } finally {
@@ -308,6 +326,7 @@ export async function fetchPageAsMarkdown(
     const rawHtml = await fetchRawHtml(url, timeoutMs, {
       fetchFn: opts.fetchFn,
       lookupFn: opts.lookupFn,
+      signal: opts.signal,
     });
 
     // 4) Specialised parsers — first match wins.
