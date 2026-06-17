@@ -53,6 +53,8 @@ export interface SettingsTimeouts {
 export interface AgentConfig {
   max_history: number;
   default_temperature: number;
+  /** Opportunistic long-term memory (auto-save durable facts). Default on. */
+  auto_memory: boolean;
 }
 
 // ── prompts (prompts table) ─────────────────────────────────────────────────

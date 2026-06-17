@@ -27,4 +27,11 @@ export interface TimeoutsConfig {
 export interface AgentConfig {
   max_history: number;
   default_temperature: number;
+  /**
+   * Opportunistic long-term memory: when on, after each turn an extractor may
+   * save durable facts the user stated in passing (in addition to the explicit
+   * `remember` tool + onboarding). Undefined is treated as ON by consumers
+   * (older DB rows predate this key). A deliberate divergence from Go parity.
+   */
+  auto_memory?: boolean;
 }

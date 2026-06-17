@@ -52,12 +52,17 @@ export const userChannels = sqliteTable(
 
 // ── sessions ──────────────────────────────────────────────────────────────
 // thread_id links a session to its Mastra Memory thread (set in Task 23).
+// summary/summary_msg_count hold the rolling summary of dialogue history evicted
+// beyond the max_history window: `summary` folds the oldest messages, and
+// `summary_msg_count` records how many of the thread's oldest messages it covers.
 export const sessions = sqliteTable("sessions", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   chatId: integer("chat_id").notNull().unique(),
   userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
   model: text("model").notNull(),
   threadId: text("thread_id"),
+  summary: text("summary"),
+  summaryMsgCount: integer("summary_msg_count").notNull().default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

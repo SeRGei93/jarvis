@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Memory } from "@mastra/memory";
 import type { MastraDBMessage } from "@mastra/core/agent/message-list";
 import type { LibSQLStore } from "@mastra/libsql";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "../../db/schema.js";
 import { sessions } from "../../db/schema.js";
@@ -19,6 +19,10 @@ type Db = LibSQLDatabase<typeof schema>;
  * `lastMessages` = settings.agent.max_history.
  */
 export function createConversationMemory(storage: LibSQLStore, lastMessages: number): Memory {
+  // NOTE: this `lastMessages` is fixed at boot. The live per-turn window is the
+  // explicit slice in getRecentMessages (chat.ts re-reads agent.max_history each
+  // turn), so admin changes take effect without a restart.
+  log.debug({ lastMessages }, "conversation memory created (lastMessages = agent.max_history)");
   return new Memory({
     storage,
     options: {
@@ -56,15 +60,37 @@ export async function resolveThreadId(db: Db, sessionId: number): Promise<string
 }
 
 /**
- * Start a fresh conversation thread for a session (the `/new` command). Mastra
- * Memory exposes no delete API, so instead of clearing `mastra_messages` we point
- * the session at a brand-new thread id; `resolveThreadId` reads `sessions.threadId`
- * first, so the next turn sees an empty history. Old messages are orphaned but
- * invisible (plaintext, low volume). Parity with Go StartNewSession (history reset).
+ * Start a fresh conversation thread for a session (the `/new` command): point the
+ * session at a brand-new thread id (so the next turn sees empty history) and reset
+ * the rolling summary (it summarised the OLD conversation). Then purge the old
+ * thread's messages so they don't accumulate forever.
+ *
+ * Mastra Memory exposes no delete API and `mastra_messages` is not in our drizzle
+ * schema, so the purge is a raw SQL DELETE by `thread_id`. Best-effort: a failure
+ * (e.g. the table not yet created) is logged and never breaks `/new`. Parity with
+ * Go StartNewSession (history reset); long-term `memories` are untouched.
  */
 export async function rotateThread(db: Db, sessionId: number): Promise<string> {
+  const [s] = await db.select({ threadId: sessions.threadId }).from(sessions).where(eq(sessions.id, sessionId));
+  const oldThreadId = s?.threadId ?? null;
+
   const threadId = `${threadIdForSession(sessionId)}-${randomUUID()}`;
-  await db.update(sessions).set({ threadId, updatedAt: new Date() }).where(eq(sessions.id, sessionId));
+  await db
+    .update(sessions)
+    .set({ threadId, summary: null, summaryMsgCount: 0, updatedAt: new Date() })
+    .where(eq(sessions.id, sessionId));
+
+  if (oldThreadId) {
+    try {
+      await db.run(sql`DELETE FROM mastra_messages WHERE thread_id = ${oldThreadId}`);
+      log.info({ sessionId, oldThreadId }, "orphaned thread messages purged");
+    } catch (err) {
+      log.warn(
+        { sessionId, oldThreadId, reason: err instanceof Error ? err.message : String(err) },
+        "orphan purge failed (continuing)",
+      );
+    }
+  }
   log.info({ sessionId, threadId }, "thread rotated (new session)");
   return threadId;
 }
@@ -148,9 +174,11 @@ export async function getRecentMessages(
   limit: number,
 ): Promise<Message[]> {
   // recall returns messages in chronological (ASC) order and ignores an orderBy
-  // override, so the newest `limit` are taken with slice(-limit). NOTE: this reads
-  // the whole thread per turn; for very long-lived threads switch to a bounded
-  // newest-first store query once the libSQL store exposes a reliable one.
+  // override, so the newest `limit` are taken with slice(-limit). This reads the
+  // whole thread per turn, but thread growth is now bounded in practice: `/new`
+  // (rotateThread) purges old messages, and history beyond max_history is folded
+  // into the rolling summary. If threads still grow unbounded for some usage,
+  // switch to a bounded newest-first store query.
   const { messages } = await memory.recall({ threadId, resourceId, perPage: false });
   const mapped: Message[] = messages
     .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")

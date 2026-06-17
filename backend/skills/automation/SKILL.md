@@ -183,10 +183,6 @@ You: [CALL task_create({
 Ищу ноутбуки в фоне, напишу когда найду варианты 👍
 ```
 
-## FINAL CHECKLIST
+## BEFORE CONFIRMING
 
-- [ ] Correct skill selected
-- [ ] Schedule format valid (cron, "once" with scheduled_at RFC3339, or "now" for background)
-- [ ] Cron in UTC, scheduled_at with timezone offset
-- [ ] Prompt is specific (what to check, conditions, thresholds)
-- [ ] Confirmation message sent (natural for "now", formal for others)
+Double-check the schedule conversion: cron in UTC, `scheduled_at` with the user's timezone offset (never `Z`), and a specific `prompt` (what to check, conditions, thresholds).

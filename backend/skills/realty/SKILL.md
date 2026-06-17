@@ -140,7 +140,6 @@ When `fetch_url`-ing sale listing pages, discard if the page contains: «сда�
 - Show price in the currency from the listing (USD for sales, USD or BYN for rentals)
 - If user asks for analytics/market overview — use `web_search` for recent reports
 - Personalize: use [KNOWLEDGE ABOUT USER] for city/district preferences if known
-- Language: respond in Russian unless user wrote in another language
 
 ## ERROR HANDLING
 

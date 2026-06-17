@@ -22,6 +22,8 @@ export interface SynthesizeContext {
   synthesizerModel: string;
   /** session.model — fallback when no synthesizer role is configured (Go parity). */
   sessionModel: string;
+  /** Rolling summary of dialogue history evicted beyond the live window (null when none). */
+  summary?: string | null;
 }
 
 /**
@@ -50,6 +52,7 @@ export async function synthesize(
     memories: ctx.memories,
     identity: ctx.identity,
     skillResults,
+    summary: ctx.summary,
   });
   const messages: Message[] = [...ctx.history, { role: "user", content: ctx.userMessage }];
 

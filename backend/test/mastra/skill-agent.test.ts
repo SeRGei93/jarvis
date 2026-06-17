@@ -91,7 +91,7 @@ describe("runSkillStreaming (single-skill path)", () => {
 });
 
 describe("runSkillSubAgent (multi-skill leg)", () => {
-  it("generates with the stripped sub-agent prompt and only the current message", async () => {
+  it("generates with the stripped sub-agent prompt and history + current message", async () => {
     const { llm, calls } = fakeLlm();
     const deps = { llm, loopGuard: new LoopGuard(() => 0) };
 
@@ -103,7 +103,8 @@ describe("runSkillSubAgent (multi-skill leg)", () => {
     expect(opts.system).toContain("[SKILL: research]");
     expect(opts.system).not.toContain("[MESSAGE FORMATTING]"); // sub-agent drops FORMAT
     expect(opts.system).not.toContain("SOUL");
-    expect(opts.messages.map((m) => m.content)).toEqual(["find cats"]); // no history
+    // Sub-agents now get the same history as the single-skill path (T4).
+    expect(opts.messages.map((m) => m.content)).toEqual(["earlier", "find cats"]);
   });
 
   it("blocks a third identical sub-agent run via the loop guard", async () => {

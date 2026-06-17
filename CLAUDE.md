@@ -37,9 +37,11 @@ domain/ (pure zod + rules) ← config/ services/ ← mastra/ adapters ← server
 - [ ] No secrets in code or logs?
 
 ## Parity with Go (keep exact)
-cap `50` · onboarding `@4` · watchdog `30s` · llm_request `300s` · maxSteps `30` · maxRetries `3`. No auto memory-extraction (only `remember` + onboarding). Web search/scraping is **native** (the `web` tool bucket over SearXNG, no MCP); `exec` not ported.
+cap `50` · onboarding `@4` · watchdog `30s` · llm_request `300s` · maxSteps `30` · maxRetries `3`. Web search/scraping is **native** (the `web` tool bucket over SearXNG, no MCP); `exec` not ported.
 
 **Diverges from Go (M13):** long-term memory has **no vector/RAG/embeddings**. The per-user set is capped at 50, so it is loaded into context whole; dedup at save is an **LLM check** (`DedupChecker`), not cosine `0.92`. The `embedding` model role and `rag_top_k` setting are gone.
+
+**Diverges from Go (M14):** memory is no longer write-only-on-demand. Beyond `remember` + onboarding, an **opportunistic extractor** (`FactExtractor`) may auto-save durable facts after a turn, gated by `agent.auto_memory` (default on); it still routes through `MemoryService.save` (sensitivity/dedup/cap). Dialogue history also carries a per-session **rolling summary** (`sessions.summary`) of messages evicted beyond `agent.max_history` (raised 15 → 50).
 
 ## Status
 Milestones **0–9 + 11 done** (10 — N/A: new project, no Go migration). Roadmap + plans in `.ai-factory/ROADMAP.md` and `.ai-factory/plans/`. Latest: **M13** (long-term memory de-vectorised: load-all + LLM dedup, embeddings/LibSQLVector removed).

@@ -15,6 +15,13 @@
       "when": 1781519787766,
       "tag": "0001_tricky_ken_ellis",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1781718662784,
+      "tag": "0002_pretty_mathemanic",
+      "breakpoints": true
     }
   ]
 }

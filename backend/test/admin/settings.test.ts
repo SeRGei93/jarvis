@@ -86,8 +86,9 @@ describe("settingsRoutes — agent", () => {
     const res = await app.request("/agent");
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
-      max_history: 15,
+      max_history: 50,
       default_temperature: 0.4,
+      auto_memory: true,
     });
   });
 
@@ -100,7 +101,19 @@ describe("settingsRoutes — agent", () => {
       body: JSON.stringify(body),
     });
     expect(res.status).toBe(200);
-    expect(await settings.getAgent()).toEqual(body);
+    // auto_memory omitted in the request -> schema default fills it true.
+    expect(await settings.getAgent()).toEqual({ ...body, auto_memory: true });
+  });
+
+  it("PUT persists auto_memory=false", async () => {
+    const { app, settings } = await makeApp();
+    const res = await app.request("/agent", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ max_history: 20, default_temperature: 0.7, auto_memory: false }),
+    });
+    expect(res.status).toBe(200);
+    expect((await settings.getAgent()).auto_memory).toBe(false);
   });
 
   it("PUT rejects out-of-range temperature", async () => {

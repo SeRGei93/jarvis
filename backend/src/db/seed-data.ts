@@ -48,10 +48,21 @@ export const SEED_TIMEOUTS = {
   llm_activity: "30s",
 } as const;
 
-/** Agent params actually read by the app. */
+/**
+ * Agent params actually read by the app.
+ * `max_history` is the per-turn dialogue window: `getRecentMessages` (chat.ts)
+ * reads it fresh each turn and slices the thread to the last N. Raised from the
+ * old 15 to 50 — modern models hold far more context, and a longer window is the
+ * single biggest lever for "remembers the conversation" (rolling-summary covers
+ * anything older). Existing DBs keep their seeded value; change it via the admin
+ * Mini App (Settings → Глубина истории).
+ */
 export const SEED_AGENT = {
-  max_history: 15,
+  max_history: 50,
   default_temperature: 0.4,
+  // Opportunistic long-term memory (extractor saves durable facts stated in
+  // passing, on top of `remember` + onboarding). Toggle from the admin Mini App.
+  auto_memory: true,
 } as const;
 
 /** Telegram chat allowlist — empty by default. */

@@ -29,6 +29,8 @@ export interface SkillRunContext {
   prompts: { soul: string; format: string; integrity: string };
   /** Recent dialogue history BEFORE the current turn (current message is appended internally). */
   history: Message[];
+  /** Rolling summary of dialogue history evicted beyond the live window (null when none). */
+  summary?: string | null;
   userMessage: string;
   mem: MemoryService;
   userId: number;
@@ -83,6 +85,7 @@ export async function runSkillStreaming(
     skill: promptSkill(skill),
     identity: ctx.identity,
     references,
+    summary: ctx.summary,
   });
   const messages: Message[] = [...ctx.history, { role: "user", content: ctx.userMessage }];
 
@@ -119,11 +122,14 @@ export async function runSkillSubAgent(
     memories: ctx.memories,
     skill: promptSkill(skill),
     references,
+    summary: ctx.summary,
   });
-  const messages: Message[] = [{ role: "user", content: ctx.userMessage }];
+  // Include dialogue history so multi-skill sub-agents have the same conversation
+  // context as the single-skill path — otherwise follow-ups lose context (T4).
+  const messages: Message[] = [...ctx.history, { role: "user", content: ctx.userMessage }];
 
   log.debug(
-    { skill: skill.name, model, temperature, tools: Object.keys(tools), refs: references.length, mode: "sub" },
+    { skill: skill.name, model, temperature, tools: Object.keys(tools), refs: references.length, history: ctx.history.length, mode: "sub" },
     "skill agent start",
   );
   const res = await deps.llm.generate({

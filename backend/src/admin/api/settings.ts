@@ -23,6 +23,8 @@ const timeoutsSchema = z.object({
 const agentSchema = z.object({
   max_history: z.number().int().min(0),
   default_temperature: z.number().min(0).max(2),
+  // Default true so older clients that PUT without this field keep memory on.
+  auto_memory: z.boolean().default(true),
 });
 
 /** Flatten zod issues to a single human-readable string (never echoes secret values). */

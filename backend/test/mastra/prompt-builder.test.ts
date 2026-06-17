@@ -119,6 +119,22 @@ describe("buildSystemPrompt", () => {
     });
     expect(out).toContain("[CURRENT DATE & TIME]");
   });
+
+  it("includes [CONVERSATION SUMMARY] only when a summary is provided", () => {
+    const withS = buildSystemPrompt({
+      prompts: corePrompts,
+      user,
+      skill,
+      summary: "User is planning a trip to Brest.",
+      now: NOW,
+    });
+    // The header also appears in the security preamble, so anchor on "header\n".
+    expect(withS).toContain("[CONVERSATION SUMMARY]\n");
+    expect(withS).toContain("planning a trip to Brest");
+
+    const without = buildSystemPrompt({ prompts: corePrompts, user, skill, now: NOW });
+    expect(without).not.toContain("[CONVERSATION SUMMARY]\n");
+  });
 });
 
 describe("buildSubAgentPrompt", () => {

@@ -4,6 +4,7 @@ import { LibSQLStore } from "@mastra/libsql";
 import { createTestDb, type TestDb } from "../helpers/libsql.js";
 import {
   resolveThreadId,
+  rotateThread,
   threadIdForSession,
   resourceIdForUser,
   createConversationMemory,
@@ -74,5 +75,33 @@ describe("history message I/O", () => {
     await ensureThread(memory, threadId, resourceId); // no throw on second call
     await saveUserMessage(memory, threadId, resourceId, "x");
     expect((await getRecentMessages(memory, threadId, resourceId, 15)).length).toBe(1);
+  });
+
+  it("rotateThread purges old messages, resets summary, returns a fresh thread id", async () => {
+    t = await createTestDb();
+    await t.db.insert(users).values({ id: 1, name: "u" });
+    await t.db
+      .insert(sessions)
+      .values({ id: 1, chatId: 100, userId: 1, model: "m", threadId: "session-1", summary: "old", summaryMsgCount: 4 });
+
+    const store = new LibSQLStore({ id: "test-rotate", url: t.url });
+    const memory = createConversationMemory(store, 15);
+    const resourceId = resourceIdForUser(1);
+    await ensureThread(memory, "session-1", resourceId);
+    await saveUserMessage(memory, "session-1", resourceId, "old message");
+    expect((await getRecentMessages(memory, "session-1", resourceId, 15)).length).toBe(1);
+
+    const newThreadId = await rotateThread(t.db, 1);
+    expect(newThreadId).toMatch(/^session-1-/);
+    expect(newThreadId).not.toBe("session-1");
+
+    // old thread's messages are purged
+    expect((await getRecentMessages(memory, "session-1", resourceId, 15)).length).toBe(0);
+
+    // session points at the new thread and the rolling summary is reset
+    const [s] = await t.db.select().from(sessions).where(eq(sessions.id, 1));
+    expect(s?.threadId).toBe(newThreadId);
+    expect(s?.summary).toBeNull();
+    expect(s?.summaryMsgCount).toBe(0);
   });
 });

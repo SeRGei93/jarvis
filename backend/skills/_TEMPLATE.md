@@ -9,6 +9,13 @@ routable: true  # Set to false only if skill is called by other skills, not dire
 
 You are a [role description]. [Brief explanation of skill purpose and capabilities].
 
+<!-- The system prompt already injects these globally — do NOT repeat them in a skill:
+     • SOUL — persona, "respond in the user's language", regional defaults (BYN, Minsk, Беларусь)
+     • INTEGRITY — tool-first, facts/URLs from tools only, verify before citing (shown when the skill has tools)
+     • FORMAT — Telegram markdown house style (tables/lists/blockquote/highlight)
+     • [USER CONTEXT] / [KNOWLEDGE ABOUT USER] / [CONVERSATION SUMMARY] context blocks
+     A skill carries only its OWN domain knowledge (slugs, tool params, sources) and output shape. -->
+
 ## [CRITICAL RULES SECTION]
 <!-- Optional: Only include if skill has strict validation requirements -->
 <!-- Example: URL validation for research/kufar/monitoring skills -->
@@ -53,11 +60,12 @@ You are a [role description]. [Brief explanation of skill purpose and capabiliti
 
 ## CONTENT RULES
 
+<!-- Skill-specific only. Do NOT add "respond in user's language" or a generic
+     "use [KNOWLEDGE ABOUT USER]" — those are global. Add a personalization bullet
+     ONLY when the skill uses the user's context in a specific way (e.g. news ranks
+     items by the user's profession; weather defaults to the user's city). -->
 - **Rule category 1:** [Specific guideline]
-- **Rule category 2:** [Specific guideline]
-- **Personalization:** Use [KNOWLEDGE ABOUT USER] to tailor responses (interests, preferences, relevant context).
 - **Structure:** [Expected output structure, e.g., "Intro → findings → conclusions"]
-- **Language:** Respond in user's language.
 
 ## ERROR HANDLING
 
@@ -106,13 +114,12 @@ End with a summary section (adapt to user's language):
 [Summary text demonstrating synthesis and insights]
 ```
 
-## FINAL CHECKLIST
-<!-- Optional: Only for complex skills requiring validation -->
+## BEFORE SENDING
+<!-- Rarely needed. ONE short sentence, only where a cheap model genuinely needs an
+     anchor (e.g. URL verification). NOT a multi-item checklist, and never restate
+     the global INTEGRITY rules. Most skills omit this section entirely. -->
 
-- [ ] [Critical check 1]
-- [ ] [Critical check 2]
-- [ ] [Critical check 3]
-...
+[One short anchor, e.g. "Drop any link you did not open with fetch_url."]
 
 ---
 
@@ -121,22 +128,21 @@ End with a summary section (adapt to user's language):
 ### When to Include Each Section:
 - **CRITICAL RULES:** Only if skill has strict validation (URL verification, data integrity, etc.)
 - **TOOL USAGE LIMITS:** Only if skill uses tools with quotas
-- **FINAL CHECKLIST:** Only for complex skills (research, monitoring, kufar) where validation is critical
+- **BEFORE SENDING:** Rarely — one line, only where a cheap model needs a verification nudge
 
 ### Design Principles:
-1. **No duplication** - State each rule once
-2. **Critical info first** - Most important rules at top
-3. **Examples mandatory** - At least one complete example
-4. **Error handling required** - Cover common failure modes
-5. **Language separation** - English instructions, localized examples
-6. **Timeout specs** - Per CLAUDE.md: all HTTP/tool calls need timeouts
-7. **Tool docs complete** - Parameters, ranges, types documented
+1. **Don't repeat global prompts** - SOUL/INTEGRITY/FORMAT and the [USER CONTEXT]/[KNOWLEDGE ABOUT USER]/[CONVERSATION SUMMARY] blocks are injected automatically. Carry only the skill's own domain knowledge and output shape.
+2. **No duplication** - State each rule once
+3. **Critical info first** - Most important rules at top
+4. **One example is plenty** - Don't pile on 4-6 near-identical examples
+5. **Checklists are a last resort** - Modern models follow stated rules. At most a ONE-line "Before sending" anchor, only where a cheap model needs it. No multi-item self-evaluation checklists (they were written for weak models).
+6. **Error handling** - Cover the common failure modes briefly
+7. **Tool docs complete** - Parameters, ranges, types documented (this IS the valuable domain knowledge — keep it)
 
 ### Common Mistakes to Avoid:
-- ❌ Repeating rules in multiple sections
-- ❌ Mixing Russian and English in instructions (examples in Russian OK)
+- ❌ Repeating global rules (respond-in-language, facts/URLs-from-tools, format house-style) — they're injected
+- ❌ Multi-item SELF-EVALUATION / FINAL CHECKLIST sections — they were for weak models
 - ❌ Vague error handling ("handle errors gracefully")
-- ❌ Missing examples or incomplete examples
-- ❌ Undefined placeholders like [USER CONTEXT] without explanation
+- ❌ Mixing Russian and English in instructions (examples in Russian OK)
 - ❌ Emoji in professional sections (🚫 ⚠️ etc.)
 - ❌ Tables in narrative format - use markdown tables

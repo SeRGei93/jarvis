@@ -37,7 +37,6 @@ routable: true
 - If `scale` ≠ 1, note it (e.g. "per 100 units" for RUB).
 - If some sources fail — show what worked, note failures.
 - Be concise: users need numbers, not explanations.
-- Language: respond in the user's language.
 
 ## OUTPUT FORMAT
 

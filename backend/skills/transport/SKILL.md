@@ -112,7 +112,6 @@ For route planning, suggest these services:
 > В часы пик интервал 8–10 минут.
 ```
 - If the user's city is not on ZippyBus — say so and suggest Яндекс Карты / 2ГИС.
-- Language: always respond in the user's language.
 
 ## EXAMPLES
 

@@ -31,7 +31,7 @@ describe("SettingsService", () => {
 
     expect((await svc.getModelRoles()).default).toBe("openrouter:google/gemini-3.1-flash-lite");
     const agent = await svc.getAgent();
-    expect(agent.max_history).toBe(15);
+    expect(agent.max_history).toBe(50);
     expect(await svc.getAllowedUsers()).toEqual([]);
     expect((await svc.getTimeouts()).llm_request).toBe("300s");
     expect(await svc.getModels()).toHaveLength(11);

@@ -7,6 +7,8 @@ import { LlmService, type StreamCallback } from "./mastra/llm.js";
 import { SkillService } from "./services/skill-service.js";
 import { MemoryService } from "./mastra/memory/memory-service.js";
 import { LlmDedupChecker } from "./mastra/memory/dedup.js";
+import { RollingSummaryService, LlmSummarizer } from "./mastra/memory/rolling-summary.js";
+import { FactExtractor } from "./mastra/memory/fact-extractor.js";
 import { ProfileExtractor } from "./mastra/memory/profile-extractor.js";
 import { SkillRouter } from "./mastra/agents/router.js";
 import { LoopGuard } from "./mastra/agents/loop-guard.js";
@@ -62,6 +64,8 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
   const skills = opts.skills ?? new SkillService();
   const dedup = new LlmDedupChecker(factory, settings);
   const memoryService = new MemoryService(opts.db, dedup);
+  const rollingSummary = new RollingSummaryService(opts.db, new LlmSummarizer(factory, settings));
+  const factExtractor = new FactExtractor(factory, settings);
   const profileExtractor = new ProfileExtractor(factory, settings);
   const router = new SkillRouter(factory, settings);
   const loopGuard = new LoopGuard();
@@ -76,6 +80,8 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
     router,
     llm,
     memoryService,
+    rollingSummary,
+    factExtractor,
     profileExtractor,
     loopGuard,
     memory,

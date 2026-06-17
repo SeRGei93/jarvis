@@ -8,6 +8,7 @@ import {
   Loader,
   NumberInput,
   Stack,
+  Switch,
   TextInput,
   Title,
 } from "@mantine/core";
@@ -49,7 +50,7 @@ export function SettingsScreen() {
   });
 
   const agentForm = useForm<AgentConfig>({
-    initialValues: { max_history: 0, default_temperature: 0 },
+    initialValues: { max_history: 0, default_temperature: 0, auto_memory: true },
     validate: {
       max_history: (v) =>
         Number.isInteger(v) && v >= 0 ? null : "Целое число ≥ 0",
@@ -186,6 +187,11 @@ export function SettingsScreen() {
               step={0.1}
               decimalScale={2}
               {...agentForm.getInputProps("default_temperature")}
+            />
+            <Switch
+              label="Долгосрочная память (auto_memory)"
+              description="Автоматически сохранять важные факты о пользователе из диалога"
+              {...agentForm.getInputProps("auto_memory", { type: "checkbox" })}
             />
             <Group justify="flex-end">
               <Button type="submit" loading={savingAgent} disabled={!agentForm.isDirty()}>

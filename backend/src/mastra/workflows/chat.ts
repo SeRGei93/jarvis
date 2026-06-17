@@ -9,6 +9,8 @@ import { loadContext } from "../../services/conversation-context.js";
 import { SkillRouter } from "../agents/router.js";
 import { LlmService, type StreamCallback } from "../llm.js";
 import { MemoryService } from "../memory/memory-service.js";
+import { RollingSummaryService } from "../memory/rolling-summary.js";
+import { FactExtractor } from "../memory/fact-extractor.js";
 import { ProfileExtractor } from "../memory/profile-extractor.js";
 import { LoopGuard } from "../agents/loop-guard.js";
 import {
@@ -45,6 +47,10 @@ export interface ChatDeps {
   router: SkillRouter;
   llm: LlmService;
   memoryService: MemoryService;
+  /** Maintains the per-session rolling summary of evicted dialogue history. */
+  rollingSummary: RollingSummaryService;
+  /** Opportunistic long-term memory extractor (gated by agent.auto_memory). */
+  factExtractor: FactExtractor;
   profileExtractor: ProfileExtractor;
   loopGuard: LoopGuard;
   /** Mastra conversation memory (threads/messages). */
@@ -134,6 +140,7 @@ export async function runChat(
     memories,
     prompts: { soul: prompts.soul, format: prompts.format, integrity: prompts.integrity },
     history: recent,
+    summary: ctx.session.summary ?? null,
     userMessage: text,
     mem: deps.memoryService,
     userId,
@@ -194,6 +201,7 @@ export async function runChat(
               userMessage: text,
               synthesizerModel: roles.synthesizer,
               sessionModel: ctx.session.model,
+              summary: ctx.session.summary ?? null,
             },
             onText,
           );
@@ -219,6 +227,45 @@ export async function runChat(
   // 7. persist the assistant turn, tagged with the primary skill.
   const skillTag = resolved[0]?.name ?? null;
   await saveAssistant(deps.memory, ctx.threadId, ctx.resourceId, answer, skillTag);
+
+  // 7a. roll the conversation summary forward for messages now beyond the live
+  //     window. Best-effort: the reply is already streamed, so a summary failure
+  //     must never break the turn. Reads the full thread (bounded read is T11).
+  try {
+    const full = await getRecentMessages(deps.memory, ctx.threadId, ctx.resourceId, 0);
+    await deps.rollingSummary.maybeUpdate({
+      sessionId: ctx.session.id,
+      allMessages: full,
+      windowSize: agentCfg.max_history,
+      currentSummary: ctx.session.summary ?? null,
+      currentCount: ctx.session.summaryMsgCount ?? 0,
+    });
+  } catch (err) {
+    log.warn({ userId, reason: err instanceof Error ? err.message : String(err) }, "rolling summary update failed");
+  }
+
+  // 7b. opportunistic long-term memory: capture durable facts the user stated in
+  //     passing. Onboarded users only (onboarding owns first-contact extraction),
+  //     gated by agent.auto_memory (undefined = on). Best-effort: a cheap extra
+  //     LLM call on the default model, routed through memoryService.save (which
+  //     applies sensitivity/dedup/cap); its cost is not metered (parity with the
+  //     dedup/summary side-calls). An extraction failure never breaks the turn.
+  if (ctx.user.onboarded && (agentCfg.auto_memory ?? true)) {
+    try {
+      const { facts } = await deps.factExtractor.extract([
+        { role: "user", content: text },
+        { role: "assistant", content: answer },
+      ]);
+      let saved = 0;
+      for (const f of facts) {
+        const r = await deps.memoryService.save(userId, f.category, f.content, ctx.session.id);
+        if (r.saved) saved++;
+      }
+      if (facts.length) log.debug({ userId, extracted: facts.length, saved }, "opportunistic memory");
+    } catch (err) {
+      log.warn({ userId, reason: err instanceof Error ? err.message : String(err) }, "opportunistic memory failed");
+    }
+  }
 
   // 8. onboarding auto-complete (msgCount includes the just-saved user + assistant turns).
   const allMessages: Message[] = [

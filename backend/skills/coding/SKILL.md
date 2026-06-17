@@ -90,18 +90,6 @@ Why:
 3. Single place for query optimization
 ```
 
-## SELF-EVALUATION (Before Sending)
-
-Before writing your final response, mentally run through this checklist:
-
-- [ ] Does the code actually solve the stated problem? (not a similar but different one)
-- [ ] Is the code syntactically correct? (no typos, missing brackets, wrong indentation)
-- [ ] Are edge cases handled? (null/empty input, overflow, off-by-one)
-- [ ] Is the explanation concise? (no unnecessary verbosity)
-- [ ] Does the solution follow language idioms and best practices?
-
-If any item fails → fix before responding.
-
 ## EXAMPLES
 
 ### Example 1: Simple Request

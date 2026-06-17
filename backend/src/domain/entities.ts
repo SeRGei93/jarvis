@@ -11,6 +11,16 @@ export const ONBOARDING_MESSAGE_THRESHOLD = 4;
 // ══════════════════════════════════════════════════════════════════════════
 // Enums
 // ══════════════════════════════════════════════════════════════════════════
+/**
+ * Long-term memory categories.
+ * - Active (written by `remember` + onboarding + the opportunistic `FactExtractor`):
+ *   `preference`, `fact`, `instruction`, `lesson`.
+ * - Reserved meta-insight categories: `reflection`, `strategy`. Valid and classified
+ *   as permanent; rendered with a "(learned <date>)" suffix in the system prompt.
+ *   No writer auto-produces them — the opportunistic extractor stays conservative on
+ *   the four concrete categories to avoid vague auto-generated entries. They remain
+ *   available for explicit/future use rather than being removed.
+ */
 export const MemoryCategory = z.enum([
   "preference",
   "fact",
@@ -59,6 +69,10 @@ export const Session = z.object({
   model: z.string(),
   /** Mastra Memory thread id (null until a thread is created). */
   threadId: z.string().nullable().optional(),
+  /** Rolling summary of dialogue history evicted beyond the max_history window. */
+  summary: z.string().nullable().optional(),
+  /** How many of the thread's oldest messages `summary` already covers. */
+  summaryMsgCount: z.number().int().default(0),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),
 });

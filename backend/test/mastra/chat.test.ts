@@ -6,6 +6,8 @@ import { runChat, type ChatDeps } from "../../src/mastra/workflows/chat.js";
 import { SkillRouter, type RouteModelFn } from "../../src/mastra/agents/router.js";
 import { MemoryService } from "../../src/mastra/memory/memory-service.js";
 import type { DedupChecker } from "../../src/mastra/memory/dedup.js";
+import type { RollingSummaryService } from "../../src/mastra/memory/rolling-summary.js";
+import type { FactExtractor } from "../../src/mastra/memory/fact-extractor.js";
 import { ProfileExtractor, type ExtractFn } from "../../src/mastra/memory/profile-extractor.js";
 import { LoopGuard } from "../../src/mastra/agents/loop-guard.js";
 import { RateLimitService } from "../../src/services/rate-limit.js";
@@ -58,6 +60,8 @@ function makeDeps(
   t: TestDb,
   routeFn: RouteModelFn,
   extractFn: ExtractFn = async () => ({ name: "Alex", city: "", timezone: "", language: "", bot_name: "", vibe: "" }),
+  summaryShouldThrow = false,
+  autoMemory = true,
 ) {
   const llmCalls = { stream: 0, generate: 0 };
   const result: LlmResult = { text: "STREAMED" };
@@ -74,20 +78,45 @@ function makeDeps(
   } as unknown as LlmService;
 
   const factory = {} as ModelFactory;
+  // Injectable rolling-summary stub — records calls, optionally fails (to prove
+  // the post-turn summary update is best-effort and never breaks the turn).
+  const summaryCalls = { n: 0 };
+  const rollingSummary = {
+    maybeUpdate: async () => {
+      summaryCalls.n++;
+      if (summaryShouldThrow) throw new Error("summary boom");
+      return null;
+    },
+  } as unknown as RollingSummaryService;
+  // Local settings so a test can flip auto_memory (delegates roles to the shared mock).
+  const settingsLocal = {
+    getModelRoles: () => settings.getModelRoles(),
+    getAgent: async () => ({ max_history: 15, default_temperature: 0.4, auto_memory: autoMemory }),
+  } as unknown as SettingsService;
+  // Injectable fact-extractor stub — records calls, returns one durable fact.
+  const factCalls = { n: 0 };
+  const factExtractor = {
+    extract: async () => {
+      factCalls.n++;
+      return { facts: [{ category: "fact" as const, content: "rides a gravel bike" }] };
+    },
+  } as unknown as FactExtractor;
   const deps: ChatDeps = {
     db: t.db,
-    settings,
+    settings: settingsLocal,
     skills: content!.skills,
-    router: new SkillRouter(factory, settings, routeFn),
+    router: new SkillRouter(factory, settingsLocal, routeFn),
     llm,
     memoryService: new MemoryService(t.db, dedup),
-    profileExtractor: new ProfileExtractor(factory, settings, extractFn),
+    rollingSummary,
+    factExtractor,
+    profileExtractor: new ProfileExtractor(factory, settingsLocal, extractFn),
     loopGuard: new LoopGuard(() => 0),
     memory: createConversationMemory(new LibSQLStore({ id: "chat-test", url: t.url }), 15),
     rateLimit: new RateLimitService(t.db),
     usage: new UsageService(t.db),
   };
-  return { deps, llmCalls };
+  return { deps, llmCalls, summaryCalls, factCalls };
 }
 
 describe("runChat", () => {
@@ -109,6 +138,64 @@ describe("runChat", () => {
       ["user", "hi there", null],
       ["assistant", "STREAMED", "chat"],
     ]);
+  });
+
+  it("rolls the conversation summary forward after the turn (best-effort)", async () => {
+    t = await createTestDb();
+    setupContent();
+    await t.db.insert(users).values({ id: 1, name: "Alex", onboarded: true });
+    const { deps, summaryCalls } = makeDeps(t, async () => ["chat"]);
+
+    await runChat(deps, { userId: 1, chatId: 100, text: "hi there" });
+
+    expect(summaryCalls.n).toBe(1);
+  });
+
+  it("a rolling-summary failure does not break the turn", async () => {
+    t = await createTestDb();
+    setupContent();
+    await t.db.insert(users).values({ id: 1, name: "Alex", onboarded: true });
+    const { deps, summaryCalls } = makeDeps(t, async () => ["chat"], undefined, true);
+
+    const res = await runChat(deps, { userId: 1, chatId: 100, text: "hi there" });
+
+    expect(res).toEqual({ text: "STREAMED", skills: ["chat"], rejected: false });
+    expect(summaryCalls.n).toBe(1);
+  });
+
+  it("opportunistic memory: saves durable facts for onboarded users", async () => {
+    t = await createTestDb();
+    setupContent();
+    await t.db.insert(users).values({ id: 1, name: "Alex", onboarded: true });
+    const { deps, factCalls } = makeDeps(t, async () => ["chat"]);
+
+    await runChat(deps, { userId: 1, chatId: 100, text: "btw I ride a gravel bike" });
+
+    expect(factCalls.n).toBe(1);
+    const perm = await deps.memoryService.listPermanent(1);
+    expect(perm.map((m) => m.content)).toContain("rides a gravel bike");
+  });
+
+  it("skips opportunistic memory when auto_memory is off", async () => {
+    t = await createTestDb();
+    setupContent();
+    await t.db.insert(users).values({ id: 1, name: "Alex", onboarded: true });
+    const { deps, factCalls } = makeDeps(t, async () => ["chat"], undefined, false, false);
+
+    await runChat(deps, { userId: 1, chatId: 100, text: "hi" });
+
+    expect(factCalls.n).toBe(0);
+  });
+
+  it("skips opportunistic memory for non-onboarded users", async () => {
+    t = await createTestDb();
+    setupContent();
+    await t.db.insert(users).values({ id: 1, name: "", onboarded: false });
+    const { deps, factCalls } = makeDeps(t, async () => ["chat"]);
+
+    await runChat(deps, { userId: 1, chatId: 100, text: "hello there friend" });
+
+    expect(factCalls.n).toBe(0);
   });
 
   it("multi skill: runs sub-agents in parallel then synthesizes", async () => {
