@@ -66,7 +66,7 @@ Registered in the command menu via `setMyCommands` (parity with the Go bot):
 | `/about` | Runs "Что ты умеешь?" through the pipeline |
 | `/reset_onboarding` | Clear the onboarding flag, then greet through the pipeline |
 
-`/new` has no Mastra delete API to lean on, so it **rotates** `sessions.threadId` to a fresh id (old messages become orphaned but invisible) and deletes `scope='session'` memories with their vectors.
+`/new` **rotates** `sessions.threadId` to a fresh id and resets the rolling summary, then — since Mastra exposes no delete API — purges the old thread's messages with a raw SQL `DELETE` (best-effort). It also deletes `scope='session'` memories; long-term (permanent) facts are untouched.
 
 ## Allowlist
 

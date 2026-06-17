@@ -30,12 +30,14 @@ text ─▶ promptguard ─▶ loadContext ─▶ rate-limit ─▶ history + me
 2. **conversation-context** — `loadContext(db, settings, userId, chatId)` loads the `User`, gets-or-creates the `Session` (model defaults to `roles.default`), loads the optional `BotIdentity`, and resolves the Mastra thread / resource ids. The Mastra thread is ensured to exist.
 3. **rate-limit** — `RateLimitService.checkAndConsume(userId)` enforces the hourly window from the user's plan (`hourly_limit`). Un-onboarded users are bypassed; over the limit the turn is rejected (canned reply, no routing). See [Configuration](configuration.md#plans-rate-limit-and-usage).
 4. **history + previousSkills** — `getRecentMessages(...)` reads the last `agent.max_history` messages; `derivePreviousSkills(...)` collects the skill tags from prior assistant turns (newest-first). The current user message is then persisted.
-5. **memories + prompts** — `MemoryService.loadRelevant(userId, text)` returns the RAG-selected long-term facts; the SOUL/FORMAT/INTEGRITY/SYNTHESIZER bodies are loaded from the file-backed prompt store (`PROMPTS_DIR`) via `SkillService`.
+5. **memories + prompts** — `MemoryService.loadRelevant(userId)` returns the user's long-term facts (the per-user set is capped at 50 and loaded whole — no vector/RAG, M13); the SOUL/FORMAT/INTEGRITY/SYNTHESIZER bodies are loaded from the file-backed prompt store (`PROMPTS_DIR`) via `SkillService`.
 6. **route** — `SkillRouter.resolveSkills(...)`. If the user is not onboarded, `onboarding` is forced and the router is bypassed; otherwise the router model returns 1–4 routable skills (falling back to `research`).
 7. **run** — see below; each leg surfaces its LLM `cost`.
 8. **record usage** — `UsageService.recordUsage(userId, cost)` accumulates the turn's cost + request count into `usage_stats`.
 9. **persist** — the assistant reply is saved to Mastra Memory, tagged in `content.metadata.skill` with the primary skill.
-10. **onboarding auto-complete** — once the message count reaches `4`, `ProfileExtractor.applyOnboarding(...)` extracts the profile, fills empty user fields, marks the user onboarded, and upserts the bot identity.
+10. **rolling summary** — best-effort: history beyond `agent.max_history` is folded into the per-session summary (`sessions.summary`), so older context survives the window. A failure never breaks the turn.
+11. **opportunistic memory** — best-effort, onboarded users only, gated by `agent.auto_memory`: `FactExtractor` saves durable facts the user mentioned in passing, routed through `MemoryService.save` (sensitivity, dedup, cap).
+12. **onboarding auto-complete** — once the message count reaches `4`, `ProfileExtractor.applyOnboarding(...)` extracts the profile, fills empty user fields, marks the user onboarded, and upserts the bot identity.
 
 ## Single vs. multi
 
@@ -55,7 +57,8 @@ security preamble (hardcoded const, not a DB row)
 SOUL  (or BotIdentity.systemPromptOverride)
 [CAPABILITIES]            ← only if a custom bot name is set
 [USER CONTEXT]            ← name / city / timezone / language
-[KNOWLEDGE ABOUT USER]    ← RAG memories; reflection/strategy get a "(learned <date>)" suffix
+[KNOWLEDGE ABOUT USER]    ← long-term facts (all, capped 50); reflection/strategy get a "(learned <date>)" suffix
+[CONVERSATION SUMMARY]    ← rolling summary of history evicted beyond max_history (when present)
 [DATA INTEGRITY]          ← only if the skill declares tools
 [SKILL: <name>]           ← the skill body
 [SKILL REFERENCES]        ← reference docs from the skill dir (read via read_skill_reference)

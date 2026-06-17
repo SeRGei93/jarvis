@@ -39,7 +39,6 @@ All built-in tools are scoped to `ctx.userId` and never touch another user's dat
 | `remember` | `content`, `category` | store a durable fact (injection-guarded, permanent scope) |
 | `forget` | `memory_id` | delete a stored memory by id |
 | `list_memories` | — | list permanent memories with ids |
-| `memory_search` | `query` | semantic search over the user's facts |
 
 ### Currency
 

@@ -10,15 +10,15 @@ jarvis/
     src/
       config/    env (zod, secrets, + SKILLS_DIR/PROMPTS_DIR), settings (DB cache + hot-reload), settings-keys
       content/   file-backed skill/prompt store: paths, store (populate-if-empty + atomicWrite + parseFrontmatter), skill-repository, prompt-repository
-      db/        schema (drizzle, 12 tables — skills/prompts dropped), migrations, client, vector, migrate, seed (code seed), seed-data
+      db/        schema (drizzle, 12 tables — skills/prompts dropped), migrations, client, migrate, seed (code seed), seed-data
       domain/    entities (zod + invariant constants), memory-classifier, sensitivity-filter
       mastra/    models (provider:model factory), llm (stream/watchdog/cost/retries/fallback),
-                 strip-leaked-tools, embeddings, speech,
+                 strip-leaked-tools, speech,
                  agents/ (router, prompt-builder, skill-agent, synthesizer, loop-guard),
-                 memory/ (memory-service, profile-extractor, history+message I/O),
-                 tools/ (memory-tools, currency, tasks, profile-tools, skill-ref, registry),
-                 mcp (MCPClient `search` → AI-SDK ToolSet), workflows/ (chat),
-                 index.ts (Mastra instance: storage+vector)
+                 memory/ (memory-service, rolling-summary, fact-extractor, dedup, profile-extractor, history+message I/O),
+                 tools/ (web bucket, memory-tools, currency, tasks, profile-tools, skill-ref, registry),
+                 workflows/ (chat),
+                 index.ts (Mastra instance: storage)
       pkg/       logger (pino + redact), promptguard, bootstrap-env
       services/  skill-service (file-backed via content repos), conversation-context, rate-limit, usage
       app.ts     composition root — createChatService() wires handleUserMessage()
@@ -41,14 +41,14 @@ jarvis/
 - `domain/*` imports nothing from config/db/mastra — pure zod types + business rules.
 - `config/` + `services/` depend on `domain` + `db`. Exception: *coordination* services may reuse mastra memory/id helpers (`conversation-context` → `history` thread/resource ids) and small router contract types (`skill-service` → `RoutableSkill`); type-only or thin helper imports, no import cycle.
 - `content/` is the file-backed skill/prompt store layer (depends on `domain` + `config` env + `pkg`). `SkillService` (services) wraps `SkillRepository`/`PromptRepository`; both take a dir, so tests point them at temp dirs (no DB).
-- `mastra/*` are adapters over AI SDK / LibSQLVector / Mastra Memory; depend on domain + config (+ services for the `chat` workflow orchestrator). `skill-ref` reads references from `SKILLS_DIR` (the content store).
+- `mastra/*` are adapters over AI SDK / Mastra Memory; depend on domain + config (+ services for the `chat` workflow orchestrator). `skill-ref` reads references from `SKILLS_DIR` (the content store).
 - `app.ts` is the composition root (`createChatService` → `handleUserMessage`); `server.ts` initializes it at boot.
-- External calls are injectable (`ModelFactory`, `SettingsService`, `fetchFn`, `Embedder`, `routeModelFn`, `extractFn`, `LoopGuard` clock) → unit tests run with zero network.
+- External calls are injectable (`ModelFactory`, `SettingsService`, `fetchFn`, `routeModelFn`, `extractFn`, `DedupChecker`, `Summarizer`, `LoopGuard` clock) → unit tests run with zero network.
 
 ## Key Decisions
-- **libSQL, not Postgres** — relational + vector in one engine; per-user RAG via vector **metadata filter** (`userId`).
+- **libSQL, not Postgres** — one relational engine for config + memory. No vector store: long-term memory is capped (50) and loaded whole (M13), not RAG-retrieved.
 - **AI SDK v6, not Genkit** — `provider:model` factory; watchdog / cost / retries / fallback ported from Go.
-- **Memory consolidated** — built-in `memories` (LibSQLVector) + Mastra Memory for dialogue history; MCP `memory` server dropped.
+- **Memory** — long-term facts in a plain `memories` table (load-all + LLM dedup, M13); written by explicit `remember`/onboarding **and** an opportunistic extractor (`agent.auto_memory`, M14). Dialogue history via Mastra Memory + a per-session rolling summary (`sessions.summary`, M14). MCP `memory` server dropped.
 - **No session encryption** — messages stored plaintext in libSQL.
 - **Config in DB** — `.env` = secrets only; `SettingsService` caches + hot-reloads.
 - **Skills & prompts = files, not DB (M12)** — `backend/{skills,prompts}` defaults populate a persistent volume (`SKILLS_DIR`/`PROMPTS_DIR`) on first run (populate-if-empty); the app reads AND writes there, so admin edits survive redeploys. Atomic write (`*.tmp`+rename) + mtime hot-reload; name/key containment validation. The `skills`/`prompts` tables are dropped; `config.yaml` → code seed (`db/seed-data.ts`), so the DB seeds only settings/models/plans.
@@ -56,4 +56,6 @@ jarvis/
 - **Admin Mini App, one origin (M8)** — the Hono admin API (`/admin/api`) and the built React Mini App share the single backend HTTP server (`@hono/node-server`); auth = Telegram `initData` HMAC-SHA256 + `ADMIN_USER_IDS` (deny-by-default, distinct from the in-DB chat allowlist). Admin writes call `SettingsService`/`SkillService` `invalidate()` for hot-reload. Routers are mounted from `admin/api/index.ts`; handlers read deps + `adminUserId` from Hono context.
 
 ## Parity Constants (verified against Go)
-dedup `0.92` · permanent cap `50` · onboarding `@4` msgs · RAG threshold/topK `10` · embedding dim `1024` · watchdog `30s` · llm_request `300s` · maxSteps `30` · maxRetries `3` · sub-agent loop cap `2`@`5min` · synthesizer temp `0.3` · sub-agent model `skill.model || roles.default` · cron poll `60s`/`5s` · task watchdog `llm_request+30s`. No automatic memory extraction (only `remember` + onboarding). MCP `search` only. `exec` tool not ported.
+permanent cap `50` · onboarding `@4` msgs · max_history `50` (was 15, M14) · watchdog `30s` · llm_request `300s` · maxSteps `30` · maxRetries `3` · sub-agent loop cap `2`@`5min` · synthesizer temp `0.3` · sub-agent model `skill.model || roles.default` · cron poll `60s`/`5s` · task watchdog `llm_request+30s`.
+
+**Diverged from Go:** no vector/RAG/embeddings — dedup is an LLM check, not cosine `0.92` (M13). Web search/scraping is the native `web` tool bucket, not MCP (M11). Memory extraction is opportunistic (`agent.auto_memory`) on top of `remember` + onboarding (M14). `exec` tool not ported.

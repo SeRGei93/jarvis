@@ -2,7 +2,7 @@
 
 > Personalized AI assistant for Telegram — a TypeScript + Mastra rewrite of **avocado-ai** (Go).
 
-Multi-provider LLM with skill-based routing, long-term memory with semantic search, native web tools, and cron — in a single Node process. Settings/models/plans live in the **database**; **skills and prompts are a file-backed store** (repo defaults on a persistent volume) — all editable from a Telegram Mini App admin; `.env` holds only secrets.
+Multi-provider LLM with skill-based routing, long-term memory (relational, capped — no vector), native web tools, and cron — in a single Node process. Settings/models/plans live in the **database**; **skills and prompts are a file-backed store** (repo defaults on a persistent volume) — all editable from a Telegram Mini App admin; `.env` holds only secrets.
 
 ## Quick Start
 
@@ -19,7 +19,7 @@ npm run dev                 # start the single-process service
 
 - **Skill-based chat** — a router picks 1–4 skills per message; one skill streams directly, several run as parallel sub-agents and are merged by a synthesizer. See [Chat Pipeline](docs/chat-pipeline.md).
 - **Config split** — model roles, timeouts, agent params, and plans are libSQL rows hot-reloaded by `SettingsService`; **skills and prompts are files** in a content store (repo defaults populated onto a persistent volume, read+written there, hot-reloaded). See [Configuration](docs/configuration.md).
-- **Consolidated memory** — long-term facts via LibSQLVector RAG (per-user, dedup, cap) plus Mastra Memory for dialogue history.
+- **Long-term memory** — durable user facts in a capped relational table (LLM dedup, no vector); saved explicitly via `remember`/onboarding **and** opportunistically as they come up. Dialogue history (Mastra Memory) carries a rolling summary so context survives a long chat. See [Chat Pipeline](docs/chat-pipeline.md).
 - **Tools** — skills get built-in tools (currency, cron tasks, profile, skill references). See [Tools](docs/tools.md).
 - **Native web tools** — in-process web search, page fetch, Belarus marketplaces (kufar/av.by/rabota/transport/relax/103) and weather, backed by a self-hosted SearXNG (no MCP server, no rate limiter). See [Web Search](docs/web-search.md).
 - **Telegram bot** — a grammY bot (polling, or optional webhook) with throttled `editMessageText` streaming, markdown→MarkdownV2, voice→speech, commands, and an allowlist. See [Telegram Bot](docs/telegram.md).
@@ -33,9 +33,9 @@ npm run dev                 # start the single-process service
 ```ts
 import { createChatService } from "./src/app.js";
 import { db } from "./src/db/client.js";
-import { storage, vector } from "./src/mastra/index.js";
+import { storage } from "./src/mastra/index.js";
 
-const chat = await createChatService({ db, storage, vector });
+const chat = await createChatService({ db, storage });
 
 // One entry point for Telegram (M6) and cron (M7); streams tokens via onText.
 const result = await chat.handleUserMessage(userId, chatId, "what's the weather and any news?", (chunk) =>
@@ -63,7 +63,7 @@ const result = await chat.handleUserMessage(userId, chatId, "what's the weather 
 
 ## Project Status
 
-Migration milestones **0–9 + M11 + M12 complete** (scaffold, DB + settings, LLM layer, memory, skills + chat workflow, tools, Telegram bot, cron scheduler, admin Mini App, deploy stack, the native web-tool bucket that replaced the external MCP `search` server, and the file-backed skill/prompt store that replaced the `skills`/`prompts` DB tables). Roadmap and remaining milestones live in `.ai-factory/ROADMAP.md`.
+Migration milestones **0–9 + M11–M13 complete; M14 (memory/context + skill-prompt cleanup) landed** (scaffold, DB + settings, LLM layer, memory, skills + chat workflow, tools, Telegram bot, cron scheduler, admin Mini App, deploy stack, the native web-tool bucket that replaced the external MCP `search` server, the file-backed skill/prompt store that replaced the `skills`/`prompts` DB tables, the de-vectorised long-term memory, and the rolling summary + opportunistic memory). Roadmap and remaining milestones live in `.ai-factory/ROADMAP.md`.
 
 ## License
 

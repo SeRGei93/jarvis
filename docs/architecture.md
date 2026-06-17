@@ -13,9 +13,9 @@ domain (pure) ← config / services ← mastra adapters ← app.ts / server.ts (
 - `domain/*` imports nothing from config/db/mastra — pure zod types + business rules.
 - `config/` + `services/` depend only on `domain` + `db`.
 - `content/` is the file-backed skill/prompt store (`SKILLS_DIR`/`PROMPTS_DIR`); `SkillService` wraps `SkillRepository`/`PromptRepository`, both taking a dir so tests point them at temp dirs.
-- `mastra/*` are adapters over the AI SDK / LibSQLVector / Mastra Memory; depend on `domain` + `config`.
+- `mastra/*` are adapters over the AI SDK / Mastra Memory; depend on `domain` + `config`.
 - `app.ts` is the composition root (wires the factory, settings, services into `handleUserMessage`).
-- External calls are injectable (`ModelFactory`, `SettingsService`, `Embedder`, `RouteModelFn`, `ExtractFn`, `LoopGuard`'s clock) → tests run with zero network.
+- External calls are injectable (`ModelFactory`, `SettingsService`, `RouteModelFn`, `ExtractFn`, `DedupChecker`, `Summarizer`, `LoopGuard`'s clock) → tests run with zero network.
 
 ## Structure (`backend/src/`)
 
@@ -23,11 +23,11 @@ domain (pure) ← config / services ← mastra adapters ← app.ts / server.ts (
 |-----|----------|
 | `config/` | `env` (zod secrets, + `SKILLS_DIR`/`PROMPTS_DIR`), `settings` (DB cache + hot-reload), `settings-keys` |
 | `content/` | file-backed skill/prompt store: `paths`, `store` (populate + atomic write + frontmatter), `skill-repository`, `prompt-repository` |
-| `db/` | `schema` (12 tables — no `skills`/`prompts`), `migrations/`, `client`, `vector`, `migrate`, `seed` (code seed), `seed-data` |
+| `db/` | `schema` (12 tables — no `skills`/`prompts`), `migrations/`, `client`, `migrate`, `seed` (code seed), `seed-data` |
 | `domain/` | `entities` (zod + invariant constants), `memory-classifier`, `sensitivity-filter` |
-| `mastra/` | `models`, `llm`, `strip-leaked-tools`, `embeddings`, `speech`, `index` (Mastra instance) |
+| `mastra/` | `models`, `llm`, `strip-leaked-tools`, `speech`, `index` (Mastra instance) |
 | `mastra/agents/` | `router`, `prompt-builder`, `skill-agent`, `synthesizer`, `loop-guard` |
-| `mastra/memory/` | `memory-service` (RAG), `profile-extractor`, `history` (+ message I/O) |
+| `mastra/memory/` | `memory-service` (load-all + cap), `rolling-summary`, `fact-extractor`, `dedup` (LLM), `profile-extractor`, `history` (+ message I/O) |
 | `mastra/tools/` | `registry` (bucket resolver), `memory-tools`, `currency`, `web` (native web bucket), `tasks`, `profile-tools`, `skill-ref` |
 | `mastra/workflows/` | `chat` (route → runSkills → synthesize) |
 | `services/` | `skill-service`, `conversation-context`, `web/` (SearXNG search, browser-free fetch + SSRF guard, parsers + Belarus verticals) |
@@ -37,17 +37,17 @@ domain (pure) ← config / services ← mastra adapters ← app.ts / server.ts (
 
 ## Key Decisions
 
-- **libSQL, not Postgres** — relational + vector in one engine; per-user RAG via vector metadata filter (`userId`).
+- **libSQL, not Postgres** — one relational engine for config + memory. No vector store: long-term memory is capped (50) and loaded whole (M13), not RAG-retrieved.
 - **AI SDK v6, not Genkit** — `provider:model` factory; watchdog / cost / retries / fallback ported from Go.
 - **Config in DB** — `.env` = secrets only; `SettingsService` caches + hot-reloads. The code seed (`db/seed-data.ts`) fills `settings`/`models`/`subscription_plans`.
 - **Skills & prompts are files, not DB rows (M12)** — repo defaults in `backend/{skills,prompts}` populate `SKILLS_DIR`/`PROMPTS_DIR` on a persistent volume on first run (populate-if-empty); the app reads and writes there, so admin edits survive redeploys. Atomic write + mtime hot-reload; the `skills`/`prompts` tables were dropped.
-- **Memory consolidated** — built-in `memories` (LibSQLVector) + Mastra Memory for dialogue history; the Go MCP `memory` server is dropped.
+- **Memory** — long-term facts in a plain `memories` table (load-all + LLM dedup, M13), written by `remember`/onboarding **and** an opportunistic extractor (`agent.auto_memory`, M14). Dialogue history via Mastra Memory + a per-session rolling summary (`sessions.summary`, M14). The Go MCP `memory` server is dropped.
 - **Chat is a flat async orchestrator** (`runChat`), not a Mastra `createWorkflow` graph — token streaming to Telegram (`onText`) stays first-class. See [Chat Pipeline](chat-pipeline.md).
 - **ESM / NodeNext** — relative imports carry `.js` extensions; dev via `tsx`, prod via `node dist`.
 
 ## Parity Constants (verified against Go)
 
-dedup `0.92` · permanent cap `50` · onboarding `@4` msgs · RAG threshold/topK `10` · embedding dim `1024` · watchdog `30s` · `llm_request` `300s` · maxSteps `30` · maxRetries `3` · sub-agent loop cap `2`@`5min` · synthesizer temp `0.3`. No automatic memory extraction (only `remember` + onboarding). The web tools are **native** (`services/web/` + the `web` tool bucket) — there is no external MCP server; the Go MCP `exec` tool is not ported.
+permanent cap `50` · onboarding `@4` msgs · max_history `50` (was 15, M14) · watchdog `30s` · `llm_request` `300s` · maxSteps `30` · maxRetries `3` · sub-agent loop cap `2`@`5min` · synthesizer temp `0.3`. **Diverged from Go:** no vector/RAG/embeddings — dedup is an LLM check, not cosine `0.92` (M13); memory extraction is opportunistic (`agent.auto_memory`) on top of `remember` + onboarding (M14); web tools are **native** (`services/web/` + the `web` bucket), no external MCP server; the Go MCP `exec` tool is not ported.
 
 ## See Also
 

@@ -1,41 +1,45 @@
 # Research
 
-Updated: 2026-06-15 01:11
+Updated: 2026-06-17 16:00
 Status: active
 
 ## Active Summary (input for /aif-plan)
 <!-- aif:active-summary:start -->
-**Topic:** Перенос web-search из репозитория `/Users/serg/GolandProjects/mcp-servers` в монорепо `jarvis`. Код web-search **встраивается нативно в `backend/`** (не как отдельный MCP-контейнер). searxng + redis остаются контейнерами.
+**Topic:** Повысить надёжность агента и качество «памяти контекста»; откалибровать промпты скилов под выросший тир моделей (писались для слабых моделей); убрать фактические ошибки и дрейф доков.
 
-**Goal:** Поисковые/скрейпинговые возможности (web_search, fetch_url, news, маркетплейсы РБ и т.п.) доступны ассистенту как **нативные AI-SDK инструменты** через `registry.ts`, без MCP-транспорта и без headless-браузера.
+**Goal:** Агент дольше и полнее помнит контекст диалога и реже теряет факты о пользователе; промпты дешевле и чище без потери дисциплины на flash-моделях; доки и self-описание агента соответствуют реальному коду.
 
-**Constraints (зафиксировано пользователем):**
-- ❌ Без Chromium/Playwright. Только нативный `fetch()` (Node 22) + `jsdom`/`turndown` для HTML→markdown. Mastra НЕ даёт fetch/HTML-хелперов (проверено: установлены только `@mastra/{core,libsql,mcp,memory,schema-compat}`).
-- 🗑️ MCP-плумбинг удаляем целиком (`mastra/mcp.ts`, `loadMcpTools`, `@mastra/mcp`, настройка `mcp_servers`, admin-страница MCP, `.mcp.json` search-entry). search был единственным живым MCP-сервером.
-- 🆕 База с нуля — миграций НЕ пишем. (`mcp_servers` — строка в key/value таблице `settings`, не колонка → изменения схемы нет в принципе.)
-- 🔧 Принцип: **не переносить тупо — адаптировать под конвенции jarvis и улучшать.**
+**Constraints:**
+- Скилы крутятся на **flash/дешёвых** моделях (`deepseek-v4-flash`, `gemini-3-flash`, `qwen3.5-flash`, роутер `gpt-oss-120b`) → защитные «якоря» дисциплины (особенно проверка URL) **не срезать подчистую**.
+- **Доменное знание** в скилах (slugs специальностей 103.by, city-slugs gismeteo, шаблоны таблиц вывода, параметры тулзов, региональные источники) **НЕ трогаем** — режем только дубли с глобальными промптами и чек-листы.
+- Стек-инварианты: ESM/NodeNext (`.js`), инъектируемость (тесты без сети), watchdog/timeout на каждый LLM/HTTP-вызов, миграция при изменении схемы.
+- Отход от Go-паритета допустим (прецедент M13), но фиксируется в `CLAUDE.md`.
 
-**Decisions:**
-- Имя инструмента: `web_fetch` → **`fetch_url`** (канон). Обновить навыки, где `web_fetch`.
-- `nesty_*` (аренда) **НЕ переносим** — сайт больше не работает. Удалить nesty-ресурсы тоже.
-- cars.av.by и kufar.by — это **SSR**, парсятся обычным fetch (браузер был только ради обхода анти-бота). Переносим на голый fetch; риск 403/анти-бот лечится реалистичными заголовками; деградирует только конкретный сайт.
-- 103by: 29 авто-сгенерированных тулзов → свернуть в `doctor_search(specialty,…)` + `clinic_search(type,…)` + `103by_services` + `103by_pharmacy` (улучшение).
-- MCP-resources (`kufar://…`, `avby://…`, `relax://…`) → маленькие lookup-тулзы или внутреннее резолвинг внутри search-тулзы (дефолт: lookup-тулзы).
-- searxng `secret_key` → из `.env`; кэш web-search → `./data/web-search` (или libSQL на свежей базе).
+**Decisions (приоритизированный бэклог):**
+- **ВЫСОКИЙ рычаг — память/надёжность:**
+  1. `max_history` 15 → 40–60 (`seed-data.ts` SEED_AGENT) + опц. rolling-summary старого хвоста. Сейчас `createConversationMemory`: `lastMessages:15, semanticRecall:false, workingMemory:false` — за окном всё теряется.
+  2. Отдавать историю мульти-скил суб-агентам. `skill-agent.ts:123` сейчас даёт воркеру только текущее сообщение (одиночный скил историю получает, мульти — нет).
+  3. Оппортунистическое сохранение фактов (LLM сам решает) поверх `remember`+онбординга; дедуп уже есть (`LlmDedupChecker`). Пересмотр Go-паритета «no auto-extraction».
+- **СРЕДНИЙ — дешевле/чище (не «надёжнее»):**
+  4. Вычистить дубли скилов с `INTEGRITY.md`/`SOUL.md`/`FORMAT.md` (facts-from-tools, URLs-exact, respond-in-language, use-[KNOWLEDGE]).
+  5. Убрать `SELF-EVALUATION`/`FINAL CHECKLIST` на дешёвых скилах → оставить 1 короткий якорь. Калибровать многословие под тир модели скила.
+- **НИЗКИЙ — гигиена:**
+  6. `about/SKILL.md:161` «written in Go» → TypeScript; синхронизировать `ARCHITECTURE.md`/`DESCRIPTION.md` с M11–M13 (вектор/RAG/embeddings уже удалены); добить `/new` cleanup осиротевших тредов; разобраться с мёртвыми категориями `reflection`/`strategy` в `prompt-builder.memoryContext`.
 
 **Open questions:**
-- **weather:** пользователь думал «у нас и так есть» — проверено, нативного weather в backend НЕТ (только web-search `weather`/gismeteo). По умолчанию переносим (крошечная, SSR). Подтвердить.
-- **realty:** завязан на nesty (выпал) → перенацелить на `kufar_search` + `web_search` или убрать навык. Решить в плане.
-- Кэш в файлах (`./data/web-search`) против libSQL-таблицы. Дефолт — файлы; libSQL опционально.
-- Глобальный rate-limiter web-search (per-second/per-month) — вероятно избыточен (у jarvis уже есть per-user планы/лимиты). Кандидат на удаление.
+- Rolling-summary делаем в этом же заходе или сначала просто поднять `max_history` и измерить? Что из Mastra Memory включать (`workingMemory`?).
+- Насколько агрессивно оппортунистическое сохранение: порог уверенности, какие категории, как не плодить мусор.
+- Один общий план или фазами (память → промпты → гигиена)?
+- `getRecentMessages` читает весь тред каждый ход (помечено в коде как риск) — чинить здесь же или отдельной задачей?
 
 **Success signals:**
-- Навыки (research, shopping, cars, jobs, transport, leisure, news, health, weather) вызывают нативные инструменты; в логах нет «tool not available; skipped».
-- `npm run typecheck` + `npm test` зелёные; HTTP-вызовы под watchdog/таймаут; `fetchFn` инъектируемый (тесты без сети).
-- В docker-compose: app + searxng + redis (+ local). Образ app без Chromium.
-- SSRF-фильтр на `fetch_url` (приватные/loopback сети заблокированы).
+- В длинном диалоге агент ссылается на сказанное >15 сообщений назад.
+- Мульти-скил фоллоу-апы не теряют контекст разговора.
+- Факт, сказанный без «запомни», переживает `/new` (через оппортунистическое сохранение).
+- `npm run typecheck` + `npm test` зелёные; LLM-вызовы под watchdog; инъекции сохранены (сеть в тестах не нужна).
+- `about` не утверждает «Go»; доки `.ai-factory` соответствуют коду.
 
-**Next step:** `/aif-plan full` — разложить на этапы: (1) вендоринг+адаптация services/web + tools/web, (2) удаление MCP-плумбинга, (3) compose searxng+redis, (4) правка навыков и seed, (5) тесты+SSRF.
+**Next step:** `/aif-plan full` — разложить по фазам: (1–3) память/контекст, (4–5) чистка промптов, (6) гигиена.
 <!-- aif:active-summary:end -->
 
 ## Sessions
@@ -66,4 +70,24 @@ Status: active
 - Источник: `/Users/serg/GolandProjects/mcp-servers/{web-search,searxng,docker-compose.yml}`
 - Цель: `backend/src/{services,mastra/tools}/`, `backend/src/db/seed.ts`, `backend/seed/config.yaml`, `backend/seed/skills/*`, `docker-compose.yaml`, `docker-compose.local.yml`
 - Ключевые файлы jarvis: `backend/src/mastra/mcp.ts` (удалить), `backend/src/mastra/tools/registry.ts` (новый бакет), `backend/src/config/settings-keys.ts`, `backend/src/db/seed.ts` (`searchOnly`)
+
+### 2026-06-17 16:00 — Аудит логики, памяти и промптов
+**What changed:**
+- Изучён весь основной поток одного хода: `chat.ts` (runChat), `router.ts`, `prompt-builder.ts`, `conversation-context.ts`, `history.ts`, `memory-service.ts`, `dedup.ts`, `skill-agent.ts`, `profile-extractor.ts`, `seed-data.ts` + 7 скилов (health/about/automation/research/chat/weather/remember) и 6 глобальных промптов.
+- Сформулирован приоритизированный бэклог (6 пунктов, 3 фазы). Пользователь принял все предложения, идём в план.
+
+**Key notes (находки):**
+- Главная слабость «памяти контекста» — **жёсткое окно 15 сообщений без сжатия** (`history.ts` createConversationMemory). SOUL обещает помнить контекст, а кормится только хвост из 15.
+- **Мульти-скил воркеры работают вслепую** — `skill-agent.ts:123` отдаёт только текущее сообщение; одиночный путь (`runSkillStreaming`) историю получает.
+- **Долгосрочная память пишется только по явной команде** (`remember`+онбординг, осознанный Go-паритет). В связке с окном 15 → факты «между делом» теряются.
+- Промпты содержат **два вещества**: доменное знание (НЕ трогать) и защитные леса под слабые модели (чек-листы самопроверки, дубли глобальных правил INTEGRITY/SOUL/FORMAT) — резать леса, калибруя под тир модели скила.
+- Тримминг промптов даёт «дешевле/быстрее/проще», но **не «надёжнее»** — надёжность/память растут от пунктов 1–3, не от объёма промптов.
+- Дрейф/ошибки: `about` говорит «написан на Go» (это TS); `ARCHITECTURE.md`/`DESCRIPTION.md` всё ещё описывают LibSQLVector/RAG/embeddings (удалены в M13); категории `reflection`/`strategy` читаются, но никем не пишутся; `/new` не удаляет старые треды (`history.rotateThread`), `getRecentMessages` читает весь тред каждый ход.
+- Модели сейчас (seed): default `gemini-3.1-flash-lite`, router `gpt-oss-120b`, synthesizer/error_correction `gemini-3-flash-preview`; скилы пинят свои flash-модели. `max_history=15`, `default_temperature=0.4`.
+
+**Links (paths):**
+- Память/контекст: `backend/src/mastra/memory/history.ts`, `backend/src/mastra/memory/memory-service.ts`, `backend/src/mastra/memory/dedup.ts`, `backend/src/db/seed-data.ts` (SEED_AGENT.max_history)
+- Поток: `backend/src/mastra/workflows/chat.ts`, `backend/src/mastra/agents/skill-agent.ts` (строка 123), `backend/src/mastra/agents/prompt-builder.ts`, `backend/src/mastra/agents/router.ts`
+- Промпты: `backend/prompts/{SOUL,FORMAT,INTEGRITY,SYNTHESIZER,MONITORING,WELCOME}.md`, `backend/skills/*/SKILL.md` (крупные: health 284, about 221, leisure 206, automation 192)
+- Дрейф доков: `.ai-factory/ARCHITECTURE.md`, `.ai-factory/DESCRIPTION.md`, `backend/skills/about/SKILL.md:161`
 <!-- aif:sessions:end -->

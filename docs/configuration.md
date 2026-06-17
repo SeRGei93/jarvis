@@ -35,9 +35,9 @@ Seeded from a typed code module (`src/db/seed-data.ts`) into the `settings` tabl
 
 | Key | Shape | Notes |
 |-----|-------|-------|
-| `model_roles` | `{ default, router, embedding, error_correction, speech, synthesizer }` | each value is a `provider:model` ref |
+| `model_roles` | `{ default, router, error_correction, speech, synthesizer }` | each value is a `provider:model` ref |
 | `timeouts` | `{ llm_request, http_client, llm_activity }` | Go-style durations (`300s`, `30s`) |
-| `agent` | `{ max_history, default_temperature, rag_top_k }` | defaults `15` / `0.4` / `10` |
+| `agent` | `{ max_history, default_temperature, auto_memory }` | defaults `50` / `0.4` / `true` |
 | `telegram_allowed_users` | `number[]` | empty = open to all |
 
 The `timeouts.http_client` value is the per-request timeout for the `currency_rates` tool and the native [web bucket](web-search.md) (fetch + verticals). Web-search infrastructure (SearXNG endpoint, cache dir) is configured via `.env` runtime flags, not DB settings.
@@ -47,9 +47,9 @@ The `timeouts.http_client` value is the per-request timeout for the `currency_ra
 - `model_roles.router` → which model the [router](chat-pipeline.md) calls.
 - `model_roles.default` → fallback model for skills that don't pin their own; also the new-session model.
 - `model_roles.synthesizer` → multi-skill merge model (falls back to the session model).
-- `agent.max_history` → how many past messages are loaded per turn.
+- `agent.max_history` → how many recent messages are loaded per turn (default `50`). Older history is folded into a per-session rolling summary (`sessions.summary`), so context isn't lost when it scrolls past the window.
 - `agent.default_temperature` → temperature for skills that leave it null.
-- `agent.rag_top_k` → number of long-term memories retrieved once a user has ≥ 10 facts.
+- `agent.auto_memory` → when on (default), an extractor saves durable facts the user mentions in passing, on top of the explicit `remember` tool and onboarding. Turn it off to limit long-term memory to explicit saves.
 
 ## Skills and prompts (file-backed store, M12)
 
