@@ -8,10 +8,12 @@ import type { AdminEnv } from "./deps.js";
 
 const log = logger.child({ mod: "admin-models" });
 
+// `provider` is NOT an input: it is the part of `ref` before the first colon
+// (the single source of truth — same parse ModelFactory uses to resolve models).
+// `label` is mandatory (a model must be human-identifiable in the UI).
 const createSchema = z.object({
   ref: z.string().min(1),
-  provider: z.string().min(1),
-  label: z.string().optional(),
+  label: z.string().trim().min(1),
   enabled: z.boolean().optional(),
   supports_tools: z.boolean().optional(),
   supports_reasoning: z.boolean().optional(),
@@ -20,14 +22,20 @@ const createSchema = z.object({
 
 const patchSchema = z
   .object({
-    provider: z.string().min(1).optional(),
-    label: z.string().optional(),
+    // No `provider` / `ref`: provider is derived from the (immutable) ref.
+    label: z.string().trim().min(1).optional(),
     enabled: z.boolean().optional(),
     supports_tools: z.boolean().optional(),
     supports_reasoning: z.boolean().optional(),
     notes: z.string().optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: "no fields to update" });
+
+/** Provider = ref prefix before the first ":"; no prefix → "openrouter" (Go parity). */
+function providerFromRef(ref: string): string {
+  const i = ref.indexOf(":");
+  return i > 0 ? ref.slice(0, i) : "openrouter";
+}
 
 /** All five role slots; each ref is optional/empty (cleared role = ""). */
 const rolesSchema = z.object({
@@ -83,8 +91,8 @@ export function modelsRoutes(): Hono<AdminEnv> {
         .insert(modelsTable)
         .values({
           ref: v.ref,
-          provider: v.provider,
-          label: v.label ?? "",
+          provider: providerFromRef(v.ref),
+          label: v.label,
           enabled: v.enabled ?? true,
           supportsTools: v.supports_tools ?? true,
           supportsReasoning: v.supports_reasoning ?? false,
@@ -117,7 +125,6 @@ export function modelsRoutes(): Hono<AdminEnv> {
     const v = parsed.data;
 
     const patch: Partial<typeof modelsTable.$inferInsert> = { updatedAt: new Date() };
-    if (v.provider !== undefined) patch.provider = v.provider;
     if (v.label !== undefined) patch.label = v.label;
     if (v.enabled !== undefined) patch.enabled = v.enabled;
     if (v.supports_tools !== undefined) patch.supportsTools = v.supports_tools;

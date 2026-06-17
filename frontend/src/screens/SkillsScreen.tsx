@@ -102,6 +102,8 @@ export function SkillsScreen() {
   const [deleteTarget, setDeleteTarget] = useState<SkillApi | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [testTarget, setTestTarget] = useState<SkillApi | null>(null);
+  // inline per-row model change: name of the skill currently being saved
+  const [savingModelName, setSavingModelName] = useState<string | null>(null);
 
   const form = useForm<SkillFormValues>({
     initialValues: emptyForm(),
@@ -175,6 +177,22 @@ export function SkillsScreen() {
     }
   }
 
+  /** Inline model change from the list — PUT only the `model` field. */
+  async function changeModel(s: SkillApi, ref: string) {
+    const model = ref.trim() === "" ? null : ref.trim();
+    if (model === (s.model ?? null)) return; // nothing changed
+    setSavingModelName(s.name);
+    try {
+      const updated = await apiPut<SkillApi>(`/skills/${encodeURIComponent(s.name)}`, { model });
+      setSkills((prev) => prev.map((x) => (x.name === s.name ? updated : x)));
+      notifyOk("Модель обновлена");
+    } catch (err) {
+      handleApiError(err, reportError);
+    } finally {
+      setSavingModelName(null);
+    }
+  }
+
   async function confirmDelete() {
     if (!deleteTarget) return;
     setDeleting(true);
@@ -217,7 +235,7 @@ export function SkillsScreen() {
       ) : skills.length === 0 ? (
         <Text c="dimmed">Скилов пока нет.</Text>
       ) : (
-        <Table.ScrollContainer minWidth={640}>
+        <Table.ScrollContainer minWidth={820}>
           <Table striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>
@@ -240,7 +258,16 @@ export function SkillsScreen() {
                       {s.description || "—"}
                     </Text>
                   </Table.Td>
-                  <Table.Td>{s.model ?? <Text c="dimmed">по умолчанию</Text>}</Table.Td>
+                  <Table.Td style={{ minWidth: 220 }}>
+                    <ModelRefSelect
+                      value={s.model ?? ""}
+                      models={models}
+                      onChange={(ref) => void changeModel(s, ref)}
+                      size="xs"
+                      placeholder="по умолчанию"
+                      disabled={savingModelName === s.name}
+                    />
+                  </Table.Td>
                   <Table.Td>
                     {s.routable ? (
                       <Badge color="green" variant="light">

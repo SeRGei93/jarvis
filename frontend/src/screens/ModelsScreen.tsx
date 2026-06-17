@@ -177,7 +177,6 @@ export function ModelsScreen() {
                   <Table.Tr>
                     <Table.Th>Включена</Table.Th>
                     <Table.Th>Ref</Table.Th>
-                    <Table.Th>Провайдер</Table.Th>
                     <Table.Th>Метка</Table.Th>
                     <Table.Th>Tools</Table.Th>
                     <Table.Th>Reasoning</Table.Th>
@@ -200,7 +199,6 @@ export function ModelsScreen() {
                           {m.ref}
                         </Text>
                       </Table.Td>
-                      <Table.Td>{m.provider}</Table.Td>
                       <Table.Td>{m.label || <Text c="dimmed">—</Text>}</Table.Td>
                       <Table.Td>{m.supportsTools ? <BoolYes /> : <BoolNo />}</Table.Td>
                       <Table.Td>{m.supportsReasoning ? <BoolYes /> : <BoolNo />}</Table.Td>
@@ -311,7 +309,6 @@ function BoolNo() {
 
 interface AddModelValues {
   ref: string;
-  provider: string;
   label: string;
   enabled: boolean;
   supports_tools: boolean;
@@ -330,7 +327,6 @@ function AddModelForm({
   const form = useForm<AddModelValues>({
     initialValues: {
       ref: "",
-      provider: "",
       label: "",
       enabled: true,
       supports_tools: true,
@@ -340,7 +336,7 @@ function AddModelForm({
     validate: {
       ref: (v) =>
         /^[^:\s]+:[^:\s].*$/.test(v.trim()) ? null : "Формат provider:model (напр. openai:gpt-4o)",
-      provider: (v) => (v.trim() ? null : "Обязательное поле"),
+      label: (v) => (v.trim() ? null : "Обязательное поле"),
     },
   });
 
@@ -349,8 +345,7 @@ function AddModelForm({
     try {
       await apiPost<ModelMutation>("/models", {
         ref: values.ref.trim(),
-        provider: values.provider.trim(),
-        label: values.label.trim() || undefined,
+        label: values.label.trim(),
         enabled: values.enabled,
         supports_tools: values.supports_tools,
         supports_reasoning: values.supports_reasoning,
@@ -371,19 +366,13 @@ function AddModelForm({
       <form onSubmit={form.onSubmit(submit)}>
         <Stack gap="md">
           <Title order={4}>Добавить модель</Title>
-          <Group grow align="flex-start">
-            <TextInput
-              label="Ref (provider:model)"
-              placeholder="openai:gpt-4o"
-              {...form.getInputProps("ref")}
-            />
-            <TextInput
-              label="Провайдер"
-              placeholder="openai"
-              {...form.getInputProps("provider")}
-            />
-          </Group>
-          <TextInput label="Метка (необязательно)" {...form.getInputProps("label")} />
+          <TextInput
+            label="Ref (provider:model)"
+            description="Провайдер берётся из префикса ref (часть до «:»)"
+            placeholder="openai:gpt-4o"
+            {...form.getInputProps("ref")}
+          />
+          <TextInput label="Метка" required {...form.getInputProps("label")} />
           <TextInput label="Заметки (необязательно)" {...form.getInputProps("notes")} />
           <Group>
             <Switch
@@ -416,7 +405,6 @@ function AddModelForm({
 // ── Edit model modal ──────────────────────────────────────────────────────────
 
 interface EditModelValues {
-  provider: string;
   label: string;
   supports_tools: boolean;
   supports_reasoning: boolean;
@@ -437,14 +425,13 @@ function EditModelModal({
   const [saving, setSaving] = useState(false);
   const form = useForm<EditModelValues>({
     initialValues: {
-      provider: "",
       label: "",
       supports_tools: true,
       supports_reasoning: false,
       notes: "",
     },
     validate: {
-      provider: (v) => (v.trim() ? null : "Обязательное поле"),
+      label: (v) => (v.trim() ? null : "Обязательное поле"),
     },
   });
 
@@ -452,7 +439,6 @@ function EditModelModal({
   useEffect(() => {
     if (target) {
       form.setValues({
-        provider: target.provider,
         label: target.label,
         supports_tools: target.supportsTools,
         supports_reasoning: target.supportsReasoning,
@@ -468,7 +454,6 @@ function EditModelModal({
     setSaving(true);
     try {
       await apiPatch<ModelMutation>(`/models/${target.id}`, {
-        provider: values.provider.trim(),
         label: values.label.trim(),
         supports_tools: values.supports_tools,
         supports_reasoning: values.supports_reasoning,
@@ -492,8 +477,7 @@ function EditModelModal({
     >
       <form onSubmit={form.onSubmit(submit)}>
         <Stack gap="md">
-          <TextInput label="Провайдер" {...form.getInputProps("provider")} />
-          <TextInput label="Метка" {...form.getInputProps("label")} />
+          <TextInput label="Метка" required {...form.getInputProps("label")} />
           <TextInput label="Заметки" {...form.getInputProps("notes")} />
           <Switch
             label="Поддержка tools"

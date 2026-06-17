@@ -44,12 +44,17 @@ describe("modelsRoutes — CRUD", () => {
     const { app, settings } = await makeApp();
     const res = await app.request(
       "/",
-      json({ ref: "openrouter:test/new-model", provider: "openrouter", label: "New" }, "POST"),
+      json({ ref: "openrouter:test/new-model", label: "New" }, "POST"),
     );
     expect(res.status).toBe(200);
-    const out = (await res.json()) as { ok: boolean; value: { id: number; ref: string } };
+    const out = (await res.json()) as {
+      ok: boolean;
+      value: { id: number; ref: string; provider: string };
+    };
     expect(out.ok).toBe(true);
     expect(out.value.ref).toBe("openrouter:test/new-model");
+    // provider is derived from the ref prefix, not supplied by the client.
+    expect(out.value.provider).toBe("openrouter");
 
     const list = await settings.getModels();
     expect(list.some((m) => m.ref === "openrouter:test/new-model")).toBe(true);
@@ -59,7 +64,7 @@ describe("modelsRoutes — CRUD", () => {
     const { app } = await makeApp();
     const res = await app.request(
       "/",
-      json({ ref: "zai:glm-5", provider: "zai" }, "POST"),
+      json({ ref: "zai:glm-5", label: "GLM" }, "POST"),
     );
     expect(res.status).toBe(400);
     expect((await res.json()).error).toContain("already exists");
@@ -67,8 +72,19 @@ describe("modelsRoutes — CRUD", () => {
 
   it("POST / rejects missing ref", async () => {
     const { app } = await makeApp();
-    const res = await app.request("/", json({ provider: "openrouter" }, "POST"));
+    const res = await app.request("/", json({ label: "X" }, "POST"));
     expect(res.status).toBe(400);
+  });
+
+  it("POST / rejects a missing/empty label", async () => {
+    const { app } = await makeApp();
+    const missing = await app.request("/", json({ ref: "openrouter:test/no-label" }, "POST"));
+    expect(missing.status).toBe(400);
+    const empty = await app.request(
+      "/",
+      json({ ref: "openrouter:test/blank-label", label: "   " }, "POST"),
+    );
+    expect(empty.status).toBe(400);
   });
 
   it("PATCH /:id updates fields", async () => {
