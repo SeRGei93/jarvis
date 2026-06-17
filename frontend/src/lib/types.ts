@@ -97,6 +97,33 @@ export interface UsageRow {
   updatedAt: Timestamp;
 }
 
+// ── cron tasks (cron_tasks table) ───────────────────────────────────────────
+// Every row is created by the assistant via the `automation` skill (its
+// `task_create` tool); there is no admin/human insert path. The admin app lists
+// them, toggles `is_active`, and deletes — creation/editing stays with the agent.
+export interface CronTask {
+  id: number;
+  userId: number;
+  sessionId: number;
+  name: string;
+  description: string;
+  /** Skill that *executes* the task (the sub-agent), not how it was created. */
+  skillName: string;
+  /** cron expression | "once" | "now" */
+  schedule: string;
+  /** epoch ms | null (set for "once" tasks) */
+  scheduledAt: Timestamp | null;
+  isActive: boolean;
+  /** "success" | "error" | null */
+  lastRunStatus: string | null;
+  lastRunError: string | null;
+  lastRunAt: Timestamp | null;
+  notificationChatId: number | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  user: { id: number; name: string; displayName: string };
+}
+
 /** Mutation envelope returned by admin write endpoints: { ok: true, value? }. */
 export interface MutationResult<T = unknown> {
   ok: boolean;

@@ -9,6 +9,7 @@ import { promptsRoutes } from "./prompts.js";
 import { usersRoutes } from "./users.js";
 import { plansRoutes } from "./plans.js";
 import { usageRoutes } from "./usage.js";
+import { tasksRoutes } from "./tasks.js";
 
 const log = logger.child({ mod: "admin-api" });
 
@@ -47,6 +48,7 @@ export function buildAdminApiRouter(getDeps: GetAdminDeps, auth: AdminAuthDeps):
   router.route("/users", usersRoutes());
   router.route("/plans", plansRoutes());
   router.route("/usage", usageRoutes());
+  router.route("/tasks", tasksRoutes());
 
   return router;
 }

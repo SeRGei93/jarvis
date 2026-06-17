@@ -3,6 +3,7 @@ import {
   type Icon,
   IconAdjustments,
   IconBox,
+  IconCalendarClock,
   IconChartBar,
   IconCpu,
   IconReportMoney,
@@ -16,6 +17,7 @@ import { PromptsScreen } from "./screens/PromptsScreen.js";
 import { PlansScreen } from "./screens/PlansScreen.js";
 import { UsersScreen } from "./screens/UsersScreen.js";
 import { UsageScreen } from "./screens/UsageScreen.js";
+import { TasksScreen } from "./screens/TasksScreen.js";
 
 /** One admin section: a route, a sidebar label/icon, and its screen component. */
 export interface NavEntry {
@@ -34,6 +36,7 @@ export interface NavEntry {
  */
 export const NAV: NavEntry[] = [
   { path: "skills", label: "Скилы", icon: IconSparkles, component: SkillsScreen },
+  { path: "tasks", label: "Задачи", icon: IconCalendarClock, component: TasksScreen },
   { path: "models", label: "Модели", icon: IconCpu, component: ModelsScreen },
   { path: "settings", label: "Настройки", icon: IconAdjustments, component: SettingsScreen },
   { path: "prompts", label: "Промпты", icon: IconBox, component: PromptsScreen },
