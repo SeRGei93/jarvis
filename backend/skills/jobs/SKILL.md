@@ -115,8 +115,8 @@ Ranges per level → Markdown table:
 | rabota_search | 3 | Main search + pagination or broadened query |
 | web_search | 4 | Salary research, company reviews, freelance |
 | fetch_url | 10 | Individual vacancy details if needed |
-| Response | 4000 chars | Rich details preferred |
-| Links | 10 max | From active listings only |
+| Response | — | Complete but scannable; no hard cap |
+| Links | 25 | From active listings only |
 
 ## ERROR HANDLING
 

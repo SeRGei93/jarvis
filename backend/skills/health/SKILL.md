@@ -264,8 +264,8 @@ Bullet list. Each bullet: **bold clickable name** as the lead, then service · p
 | med103_pharmacy | 2 | One per medicine |
 | web_search | 3 | Fallback for general queries |
 | fetch_url | 8 | Details from med103_* result URLs |
-| Response | 3500 chars | Clear and structured |
-| Links | 8 max | From tool output only |
+| Response | — | Clear and structured; no hard cap |
+| Links | 20 | From tool output only |
 
 ## ERROR HANDLING
 
@@ -282,4 +282,3 @@ Bullet list. Each bullet: **bold clickable name** as the lead, then service · p
 - [ ] No medical advice, no recommendations
 - [ ] I did not claim to "save", "record", or "remember" anything
 - [ ] Disclaimer is present at the end
-- [ ] Response is under 3500 characters

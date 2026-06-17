@@ -34,8 +34,8 @@ Fetch URL as Markdown. **Params:** url, timeoutMs
 | web_search | 5 | Split complex queries |
 | fetch_url | 10 | No retries on failure |
 | **Total tools** | **25** | Balance search/fetch |
-| **Response** | **3500 chars** | Key findings only |
-| **Links** | **5 max** | Successfully fetched only |
+| **Response** | **—** | Complete but scannable; no hard cap |
+| **Links** | **15** | Successfully fetched only |
 
 ## SOURCE FRESHNESS
 
@@ -83,8 +83,6 @@ Run this checklist explicitly — treat each item as a blocking check:
 - [ ] Every URL was fetch_urled successfully (status 200, content relevant) — if not, DELETE the link
 - [ ] Each URL is copied exactly from tool output (no manual edits)
 - [ ] No paywalls, login walls, or 404s slipped through
-- [ ] Response is under 3500 characters
-- [ ] Max 5 links included
 - [ ] Summary section present (Итоги / Summary)
 - [ ] Claims are supported by fetched content (not search snippet assumptions)
 
