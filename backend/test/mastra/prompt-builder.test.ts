@@ -175,6 +175,9 @@ describe("buildOrchestratorPrompt", () => {
     expect(out).toContain("WEATHER_BODY");
     expect(out).toContain("[SKILL REFERENCES]");
     expect(out).toContain("[MESSAGE FORMATTING]");
+    // C2: the active skill must signal its tools are already active and that the
+    // model should NOT redundantly load_skill itself on the first step.
+    expect(out).toContain('Do NOT call load_skill for "weather"');
   });
 
   it("omits the active-skill block when no primary skill is pre-loaded", () => {

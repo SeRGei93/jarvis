@@ -161,14 +161,18 @@ function catalogBlock(catalog: string): string {
   return [
     "[SKILLS]",
     "You have specialized skills, listed below as `name: when to apply`.",
-    "When a request matches a skill, call the load_skill tool with that skill's name FIRST — it returns the skill's instructions and enables its tools for the rest of this turn. Load several skills when a request spans more than one.",
+    "When a request matches a skill that is NOT already active, call the load_skill tool with that skill's name first — it returns the skill's instructions and enables its tools for the rest of this turn. Load several skills when a request spans more than one. A skill that is already active this turn does NOT need load_skill — use its tools directly.",
     c,
   ].join("\n");
 }
 
 function primarySkillBlock(skill?: PromptSkill | null): string {
   if (!skill) return "";
-  return [`[ACTIVE SKILL: ${skill.name}]`, "Already loaded for this turn:", skill.prompt].join("\n");
+  return [
+    `[ACTIVE SKILL: ${skill.name}]`,
+    `Already loaded for this turn — its tools are active now. Do NOT call load_skill for "${skill.name}"; start using its tools directly. Its instructions:`,
+    skill.prompt,
+  ].join("\n");
 }
 
 function formattingBlock(format: string): string {

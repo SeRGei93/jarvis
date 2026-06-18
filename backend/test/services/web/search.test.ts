@@ -29,6 +29,13 @@ describe("resolveSearchRegion", () => {
     expect(resolveSearchRegion("ru").resolved).toBe("ru-ru");
   });
 
+  it("maps global/world aliases to the worldwide region (not Belarus)", () => {
+    expect(resolveSearchRegion("global").resolved).toBe("wt-wt");
+    expect(resolveSearchRegion("world").resolved).toBe("wt-wt");
+    expect(resolveSearchRegion("all").resolved).toBe("wt-wt");
+    expect(resolveSearchRegion("wt").resolved).toBe("wt-wt");
+  });
+
   it("passes a xx-yy literal through unchanged", () => {
     const r = resolveSearchRegion("de-de");
     expect(r.resolved).toBe("de-de");

@@ -98,7 +98,10 @@ export const FETCH_LIMITS = {
 
 /** SearXNG endpoint and engines come from the validated env. */
 export const SEARCH_API_URL = env.SEARXNG_URL;
-export const SEARCH_ENGINES = env.SEARXNG_ENGINES ?? "google,yandex";
+// Default engines: google + bing. (yandex's SearXNG parser is currently broken —
+// it returns a parse error — so the old "google,yandex" effectively queried a
+// single engine; bing answers reliably alongside google.) Override via SEARXNG_ENGINES.
+export const SEARCH_ENGINES = env.SEARXNG_ENGINES ?? "google,bing";
 
 /** Search request shape constants. The real per-request timeout comes from
  * SettingsService at call time; these are fallbacks/limits. */
@@ -109,10 +112,13 @@ export const SEARCH_API_BACKOFF_MS = 350;
 export const MAX_BATCH_QUERIES = 8;
 
 export const REGION_ALIASES: Record<string, string> = {
-  global: DEFAULT_REGION,
-  world: DEFAULT_REGION,
-  all: DEFAULT_REGION,
-  wt: DEFAULT_REGION,
+  // "global"/"world"/"all"/"wt" → worldwide (wt-wt). These previously mapped to
+  // DEFAULT_REGION (ru-by), so asking for "world" news silently returned
+  // Belarus-only results. The bare default (no region passed) stays DEFAULT_REGION.
+  global: "wt-wt",
+  world: "wt-wt",
+  all: "wt-wt",
+  wt: "wt-wt",
   ru: "ru-ru",
   russia: "ru-ru",
   by: "ru-by",

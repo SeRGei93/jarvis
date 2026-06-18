@@ -71,6 +71,12 @@ export const ROUTING_FIXTURES: readonly RoutingFixture[] = [
     lang: "ru",
   },
   {
+    id: "news-world-ru",
+    userMessage: "Посмотри новости про утренний удар по Москве",
+    expectedSkill: "news",
+    lang: "ru",
+  },
+  {
     id: "jobs-en",
     userMessage: "Find me backend developer vacancies in Minsk",
     expectedSkill: "jobs",
