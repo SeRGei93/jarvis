@@ -16,6 +16,10 @@ const log = logger.child({ mod: "admin-users" });
 
 type Db = AdminEnv["Variables"]["deps"]["db"];
 
+/** Sent to a user when their access request is approved (M17). */
+const ACCESS_GRANTED_MSG =
+  "Доступ открыт ✅ Можете пользоваться ботом — просто напишите сообщение.";
+
 /** Partial profile patch — only the admin-editable fields, all optional. */
 const userPatchSchema = z
   .object({
@@ -30,6 +34,11 @@ const userPatchSchema = z
 /** Chat allowlist body: the Telegram user ids permitted to talk to the bot. */
 const allowlistSchema = z.object({
   userIds: z.array(z.number().int()),
+});
+
+/** Access-mode body: `open` (legacy, empty=everyone) or `approval` (gated by requests). */
+const accessModeSchema = z.object({
+  mode: z.enum(["open", "approval"]),
 });
 
 /** Flatten zod issues to a single human-readable string (never echoes PII values). */
@@ -96,7 +105,8 @@ export function usersRoutes(): Hono<AdminEnv> {
   r.get("/allowlist", async (c) => {
     const { settings } = c.var.deps;
     log.debug({ adminUserId: c.var.adminUserId }, "read chat allowlist");
-    return c.json({ userIds: await settings.getAllowedUsers() });
+    const [userIds, mode] = await Promise.all([settings.getAllowedUsers(), settings.getAccessMode()]);
+    return c.json({ userIds, mode });
   });
 
   r.put("/allowlist", async (c) => {
@@ -121,6 +131,71 @@ export function usersRoutes(): Hono<AdminEnv> {
       "chat allowlist updated",
     );
     return c.json({ ok: true, userIds: parsed.data.userIds });
+  });
+
+  r.put("/access-mode", async (c) => {
+    const { db, settings } = c.var.deps;
+    const body = await c.req.json().catch(() => undefined);
+    const parsed = accessModeSchema.safeParse(body);
+    if (!parsed.success) {
+      log.warn({ adminUserId: c.var.adminUserId }, "access-mode validation failed");
+      return c.json({ error: zodError(parsed.error) }, 400);
+    }
+    const now = new Date();
+    await db
+      .insert(settingsTable)
+      .values({ key: SettingKey.TelegramAccessMode, value: parsed.data.mode, updatedAt: now })
+      .onConflictDoUpdate({
+        target: settingsTable.key,
+        set: { value: parsed.data.mode, updatedAt: now },
+      });
+    settings.invalidate();
+    log.info({ adminUserId: c.var.adminUserId, mode: parsed.data.mode }, "access mode updated");
+    return c.json({ ok: true, mode: parsed.data.mode });
+  });
+
+  // ── access requests (M17) ───────────────────────────────────────────────────
+  // Inbox of "let me in" requests created by the bot in approval mode. Approving
+  // adds the tg id to the allowlist (via AccessRequestService) and notifies the user.
+  r.get("/requests", async (c) => {
+    const { accessRequests } = c.var.deps;
+    log.debug({ adminUserId: c.var.adminUserId }, "list access requests");
+    const rows = await accessRequests.listPending();
+    return c.json({
+      requests: rows.map((row) => ({
+        id: row.id,
+        tgUserId: row.tgUserId,
+        name: row.name,
+        username: row.username,
+        status: row.status,
+        createdAt: row.createdAt.getTime(),
+      })),
+    });
+  });
+
+  r.post("/requests/:id/approve", async (c) => {
+    const { accessRequests, notify } = c.var.deps;
+    const id = Number(c.req.param("id"));
+    if (!Number.isInteger(id)) return c.json({ error: "invalid id" }, 400);
+    const result = await accessRequests.approve(id);
+    if (!result) return c.json({ error: "request not found or already decided" }, 404);
+    // Best-effort: never fail the approval if the user can't be reached (blocked bot, etc.).
+    await notify?.(result.tgUserId, ACCESS_GRANTED_MSG)?.catch(() => {});
+    log.info(
+      { adminUserId: c.var.adminUserId, id, tgUserId: result.tgUserId },
+      "access request approved",
+    );
+    return c.json({ ok: true });
+  });
+
+  r.post("/requests/:id/reject", async (c) => {
+    const { accessRequests } = c.var.deps;
+    const id = Number(c.req.param("id"));
+    if (!Number.isInteger(id)) return c.json({ error: "invalid id" }, 400);
+    const ok = await accessRequests.reject(id);
+    if (!ok) return c.json({ error: "request not found or already decided" }, 404);
+    log.info({ adminUserId: c.var.adminUserId, id }, "access request rejected");
+    return c.json({ ok: true });
   });
 
   // ── list / get / patch ────────────────────────────────────────────────────

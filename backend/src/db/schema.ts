@@ -240,6 +240,30 @@ export const pendingConfirmations = sqliteTable(
   ],
 );
 
+// ── access_requests ───────────────────────────────────────────────────────────
+// Inbox for "let me into the bot" requests. When access mode is `approval` and an
+// unauthorized Telegram user writes, the bot records a pending row here instead of
+// silently dropping the update. The admin approves (→ tg id added to the
+// `telegram_allowed_users` setting, the actual gate) or rejects. `tgUserId` is the
+// raw Telegram user id and is UNIQUE so repeat messages refresh one row, never
+// duplicate it (and a rejected row stays rejected — no re-prompt spam).
+export const accessRequests = sqliteTable(
+  "access_requests",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    tgUserId: integer("tg_user_id").notNull().unique(),
+    name: text("name").notNull().default(""),
+    username: text("username"),
+    // pending → approved | rejected (terminal).
+    status: text("status").notNull().default("pending"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    // Set when approved/rejected; null while pending.
+    decidedAt: integer("decided_at", { mode: "timestamp" }),
+  },
+  (t) => [index("idx_access_requests_status").on(t.status)],
+);
+
 // ── models ──────────────────────────────────────────────────────────────────
 // Available `provider:model` refs for UI + role validation.
 export const models = sqliteTable("models", {

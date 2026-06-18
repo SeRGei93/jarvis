@@ -6,10 +6,17 @@ import { runSeed } from "../../src/db/seed.js";
 import { SettingsService } from "../../src/config/settings.js";
 import { UsageService } from "../../src/services/usage.js";
 import { RateLimitService } from "../../src/services/rate-limit.js";
+import { AccessRequestService } from "../../src/services/access-request-service.js";
 import { usersRoutes } from "../../src/admin/api/users.js";
 import type { AdminApiDeps } from "../../src/admin/api/deps.js";
 import type { AdminEnv } from "../../src/admin/api/deps.js";
-import { users, userChannels, subscriptionPlans, userSubscriptions } from "../../src/db/schema.js";
+import {
+  users,
+  userChannels,
+  subscriptionPlans,
+  userSubscriptions,
+  accessRequests,
+} from "../../src/db/schema.js";
 
 let t: TestDb | undefined;
 afterEach(() => {
@@ -22,7 +29,19 @@ function makeApp(db: TestDb["db"]) {
   const settings = new SettingsService(db);
   const usage = new UsageService(db);
   const rateLimit = new RateLimitService(db);
-  const deps = { db, settings, usage, rateLimit } as unknown as AdminApiDeps;
+  const accessReqs = new AccessRequestService(db, settings);
+  const notified: { tgUserId: number; text: string }[] = [];
+  const notify = async (tgUserId: number, text: string) => {
+    notified.push({ tgUserId, text });
+  };
+  const deps = {
+    db,
+    settings,
+    usage,
+    rateLimit,
+    accessRequests: accessReqs,
+    notify,
+  } as unknown as AdminApiDeps;
   const app = new Hono<AdminEnv>();
   app.use("*", async (c, next) => {
     c.set("deps", deps);
@@ -30,7 +49,7 @@ function makeApp(db: TestDb["db"]) {
     await next();
   });
   app.route("/", usersRoutes());
-  return { app, settings };
+  return { app, settings, accessRequests: accessReqs, notified };
 }
 
 async function seedUser(db: TestDb["db"], over: Partial<typeof users.$inferInsert> = {}) {
@@ -150,6 +169,78 @@ describe("usersRoutes", () => {
       body: JSON.stringify({ userIds: ["x"] }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("GET /allowlist defaults mode to 'open'; PUT /access-mode round-trips", async () => {
+    t = await createTestDb();
+    await runSeed(t.db);
+    const { app, settings } = makeApp(t.db);
+
+    const before = await app.request("/allowlist");
+    expect(((await before.json()) as any).mode).toBe("open");
+
+    const put = await app.request("/access-mode", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "approval" }),
+    });
+    expect(put.status).toBe(200);
+    expect(await settings.getAccessMode()).toBe("approval");
+
+    const after = await app.request("/allowlist");
+    expect(((await after.json()) as any).mode).toBe("approval");
+  });
+
+  it("PUT /access-mode rejects an unknown mode (400)", async () => {
+    t = await createTestDb();
+    await runSeed(t.db);
+    const { app } = makeApp(t.db);
+    const res = await app.request("/access-mode", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "nonsense" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("GET /requests lists pending; approve adds to allowlist + notifies", async () => {
+    t = await createTestDb();
+    await runSeed(t.db);
+    await t.db.insert(accessRequests).values({ tgUserId: 555, name: "Bob", username: "bob" });
+
+    const { app, settings, notified } = makeApp(t.db);
+
+    const list = await app.request("/requests");
+    expect(list.status).toBe(200);
+    const body = (await list.json()) as { requests: any[] };
+    expect(body.requests).toHaveLength(1);
+    const reqId = body.requests[0].id;
+    expect(body.requests[0]).toMatchObject({ tgUserId: 555, name: "Bob", username: "bob" });
+
+    const approve = await app.request(`/requests/${reqId}/approve`, { method: "POST" });
+    expect(approve.status).toBe(200);
+    expect(await settings.getAllowedUsers()).toContain(555);
+    expect(notified).toEqual([{ tgUserId: 555, text: expect.stringContaining("Доступ открыт") }]);
+
+    // No longer pending.
+    const after = (await (await app.request("/requests")).json()) as { requests: any[] };
+    expect(after.requests).toHaveLength(0);
+  });
+
+  it("POST /requests/:id/reject marks rejected; re-deciding is 404", async () => {
+    t = await createTestDb();
+    await runSeed(t.db);
+    await t.db.insert(accessRequests).values({ tgUserId: 777, name: "Eve" });
+    const { app, settings } = makeApp(t.db);
+    const reqId = ((await (await app.request("/requests")).json()) as { requests: any[] }).requests[0].id;
+
+    const reject = await app.request(`/requests/${reqId}/reject`, { method: "POST" });
+    expect(reject.status).toBe(200);
+    expect(await settings.getAllowedUsers()).not.toContain(777);
+
+    // Already decided → approve now 404s.
+    const approveAgain = await app.request(`/requests/${reqId}/approve`, { method: "POST" });
+    expect(approveAgain.status).toBe(404);
   });
 });
 

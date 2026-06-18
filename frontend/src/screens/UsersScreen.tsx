@@ -9,6 +9,7 @@ import {
   Loader,
   Modal,
   NumberInput,
+  SegmentedControl,
   Select,
   Stack,
   Switch,
@@ -18,9 +19,9 @@ import {
   Title,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { IconEdit, IconPlus, IconRefresh, IconX } from "@tabler/icons-react";
-import type { Plan } from "../lib/types.js";
-import { apiGet, apiPatch, apiPut } from "../lib/api.js";
+import { IconCheck, IconEdit, IconPlus, IconRefresh, IconX } from "@tabler/icons-react";
+import type { AccessMode, AccessRequest, Plan } from "../lib/types.js";
+import { apiGet, apiPatch, apiPost, apiPut } from "../lib/api.js";
 import { useAuthGate } from "../components/AuthGate.js";
 import { handleApiError, notifyOk } from "./_adminHelpers.js";
 
@@ -253,6 +254,8 @@ export function UsersScreen() {
         </Table.ScrollContainer>
       )}
 
+      <AccessRequestsPanel reportError={reportError} />
+
       <AllowlistEditor reportError={reportError} />
 
       {/* ── edit user modal ─────────────────────────────────────────── */}
@@ -289,20 +292,28 @@ export function UsersScreen() {
   );
 }
 
-/** Editor for the chat allowlist (telegram_allowed_users): add/remove ids, Save. */
-function AllowlistEditor({ reportError }: { reportError: (e: unknown) => void }) {
-  const [ids, setIds] = useState<number[]>([]);
+/** Format an epoch-ms / ISO timestamp for the requests list. */
+function fmtWhen(ts: number | string): string {
+  const d = new Date(typeof ts === "number" ? ts : Date.parse(ts));
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("ru-RU");
+}
+
+/**
+ * Inbox of pending bot-access requests (M17). Approve → the user's tg id is added
+ * to the allowlist and they get an "access granted" message; Reject → terminal.
+ */
+function AccessRequestsPanel({ reportError }: { reportError: (e: unknown) => void }) {
+  const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [actingId, setActingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState<number | "">("");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiGet<{ userIds: number[] }>("/users/allowlist");
-      setIds(res.userIds);
+      const res = await apiGet<{ requests: AccessRequest[] }>("/users/requests");
+      setRequests(res.requests);
     } catch (err) {
       setError(handleApiError(err, reportError));
     } finally {
@@ -313,6 +324,137 @@ function AllowlistEditor({ reportError }: { reportError: (e: unknown) => void })
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function decide(id: number, action: "approve" | "reject") {
+    setActingId(id);
+    try {
+      await apiPost<{ ok: boolean }>(`/users/requests/${id}/${action}`, {});
+      notifyOk(action === "approve" ? "Доступ выдан" : "Заявка отклонена");
+      await load();
+    } catch (err) {
+      handleApiError(err, reportError);
+    } finally {
+      setActingId(null);
+    }
+  }
+
+  return (
+    <Card withBorder padding="md" radius="md">
+      <Group justify="space-between" mb="xs">
+        <Text fw={600}>Заявки на доступ</Text>
+        <Group gap="xs">
+          {loading && <Loader size="xs" />}
+          <ActionIcon variant="subtle" onClick={() => void load()} aria-label="Обновить">
+            <IconRefresh size={16} />
+          </ActionIcon>
+        </Group>
+      </Group>
+      <Text size="xs" c="dimmed" mb="sm">
+        Люди, написавшие боту в режиме «только по заявке». Одобрите — и человек получит доступ.
+      </Text>
+
+      {error && (
+        <Alert color="red" mb="sm">
+          {error}
+        </Alert>
+      )}
+
+      {requests.length === 0 ? (
+        <Text size="sm" c="dimmed">
+          Нет новых заявок.
+        </Text>
+      ) : (
+        <Stack gap="xs">
+          {requests.map((req) => (
+            <Group key={req.id} justify="space-between" wrap="nowrap">
+              <div>
+                <Text fw={600} size="sm">
+                  {req.name || "—"}
+                  {req.username && (
+                    <Text span c="dimmed" fw={400}>
+                      {" "}
+                      @{req.username}
+                    </Text>
+                  )}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  id {req.tgUserId}
+                  {fmtWhen(req.createdAt) ? ` · ${fmtWhen(req.createdAt)}` : ""}
+                </Text>
+              </div>
+              <Group gap="xs" wrap="nowrap">
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="green"
+                  leftSection={<IconCheck size={14} />}
+                  loading={actingId === req.id}
+                  onClick={() => void decide(req.id, "approve")}
+                >
+                  Одобрить
+                </Button>
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  color="gray"
+                  leftSection={<IconX size={14} />}
+                  disabled={actingId === req.id}
+                  onClick={() => void decide(req.id, "reject")}
+                >
+                  Отклонить
+                </Button>
+              </Group>
+            </Group>
+          ))}
+        </Stack>
+      )}
+    </Card>
+  );
+}
+
+/** Editor for the chat allowlist (telegram_allowed_users): add/remove ids, Save. */
+function AllowlistEditor({ reportError }: { reportError: (e: unknown) => void }) {
+  const [ids, setIds] = useState<number[]>([]);
+  const [mode, setMode] = useState<AccessMode>("open");
+  const [savingMode, setSavingMode] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<number | "">("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiGet<{ userIds: number[]; mode: AccessMode }>("/users/allowlist");
+      setIds(res.userIds);
+      setMode(res.mode);
+    } catch (err) {
+      setError(handleApiError(err, reportError));
+    } finally {
+      setLoading(false);
+    }
+  }, [reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function changeMode(next: AccessMode) {
+    if (next === mode) return;
+    const prev = mode;
+    setMode(next); // optimistic
+    setSavingMode(true);
+    try {
+      await apiPut<{ ok: boolean }>("/users/access-mode", { mode: next });
+      notifyOk(next === "approval" ? "Режим: доступ по заявке" : "Режим: открыт всем");
+    } catch (err) {
+      setMode(prev); // revert on failure
+      handleApiError(err, reportError);
+    } finally {
+      setSavingMode(false);
+    }
+  }
 
   function addId() {
     if (draft === "" || !Number.isInteger(draft)) return;
@@ -347,6 +489,25 @@ function AllowlistEditor({ reportError }: { reportError: (e: unknown) => void })
         <Text fw={600}>Список доступа к боту (Telegram)</Text>
         {loading && <Loader size="xs" />}
       </Group>
+
+      <Group justify="space-between" align="center" mb="sm" wrap="nowrap">
+        <Text size="sm">Режим доступа</Text>
+        <SegmentedControl
+          value={mode}
+          onChange={(v) => void changeMode(v as AccessMode)}
+          disabled={savingMode || loading}
+          data={[
+            { label: "Открыт всем", value: "open" },
+            { label: "Только по заявке", value: "approval" },
+          ]}
+        />
+      </Group>
+      <Text size="xs" c="dimmed" mb="sm">
+        {mode === "approval"
+          ? "Доступ только из списка ниже; незнакомцы попадают в «Заявки на доступ» выше."
+          : "Пустой список = доступ всем. Непустой = только перечисленные id."}
+      </Text>
+
       <Text size="xs" c="dimmed" mb="sm">
         Telegram user id, которым разрешено общаться с ботом. Это не доступ к админке.
       </Text>

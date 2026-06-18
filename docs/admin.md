@@ -41,7 +41,7 @@ Outcomes:
 | Valid `initData` but the user is not an admin | `403` |
 | Valid admin | passes; `c.var.adminUserId` is set |
 
-> **`ADMIN_USER_IDS` is deny-by-default.** An empty list locks everyone out of the admin — unlike the in-DB `telegram_allowed_users` chat allowlist, where empty means "allow everyone to chat". The two are independent: admin access is a `.env` secret; the chat allowlist is editable from the admin.
+> **`ADMIN_USER_IDS` is deny-by-default.** An empty list locks everyone out of the admin — unlike the in-DB chat allowlist, whose meaning depends on `telegram_access_mode` (in `open` mode empty = "allow everyone to chat"; in `approval` mode only listed/approved ids chat). The two are independent: admin access is a `.env` secret; the chat allowlist + access mode are editable from the admin.
 
 Admin inputs are **trusted**: handlers apply zod typing + length caps but deliberately skip prompt-injection filtering, because admins legitimately author system prompts containing instruction-like text.
 
@@ -56,7 +56,7 @@ All routers live in `backend/src/admin/api/` and are mounted under `/admin/api` 
 | **models** | `GET/POST /models`, `PATCH/DELETE /models/:id`, `GET/PUT /models/roles` |
 | **skills** | `GET /skills`, `GET/PUT/DELETE /skills/:name`, `POST /skills`, `POST /skills/:name/test` |
 | **prompts** | `GET /prompts`, `GET/PUT /prompts/:key` (SOUL/FORMAT/INTEGRITY/SYNTHESIZER/WELCOME/MONITORING) |
-| **users** | `GET /users`, `GET/PATCH /users/:id`, `GET/PUT /users/allowlist` |
+| **users** | `GET /users`, `GET/PATCH /users/:id`, `GET/PUT /users/allowlist`, `PUT /users/access-mode`, `GET /users/requests`, `POST /users/requests/:id/approve\|reject` |
 | **plans** | `GET/POST /plans`, `PATCH/DELETE /plans/:id`, `PUT /plans/assign` |
 | **usage** | `GET /usage`, `GET /usage/user/:id`, `DELETE /usage/ratelimit/:userId` |
 
@@ -66,7 +66,15 @@ All routers live in `backend/src/admin/api/` and are mounted under `/admin/api` 
 
 ## Frontend
 
-`frontend/` is a self-contained Vite + React 18 + [Mantine](https://mantine.dev) package using `@twa-dev/sdk` (HashRouter). `src/lib/api.ts` attaches `Authorization: tma <WebApp.initData>` to every call; `src/nav.tsx` is the single source of truth for the section list. Screens: Skills (with test-run), Models (+ role assignment), Settings, Prompts, Plans, Users (+ allowlist), Usage.
+`frontend/` is a self-contained Vite + React 18 + [Mantine](https://mantine.dev) package using `@twa-dev/sdk` (HashRouter). `src/lib/api.ts` attaches `Authorization: tma <WebApp.initData>` to every call; `src/nav.tsx` is the single source of truth for the section list. Screens: Skills (with test-run), Models (+ role assignment), Settings, Prompts, Plans, Users (+ allowlist, access mode, access requests), Usage.
+
+## Access requests
+
+The Users screen also manages who may chat with the bot ([Telegram access gate](telegram.md#access-gate-allowlist--approval)):
+
+- **Access-mode toggle** — `open` (empty allowlist = everyone) vs `approval` (only allowlisted ids; unknown users must request access). Persists via `PUT /users/access-mode`.
+- **«Заявки на доступ» inbox** — pending requests created by the bot in `approval` mode (`GET /users/requests`). **Одобрить** (`POST /users/requests/:id/approve`) adds the tg id to the allowlist and DMs the user "Доступ открыт ✅"; **Отклонить** (`.../reject`) marks it rejected (terminal, no re-prompt). Backed by `AccessRequestService` + the `access_requests` table.
+- **Allowlist editor** — add/remove raw Telegram user ids manually (`GET/PUT /users/allowlist`).
 
 ```
 cd frontend && npm install

@@ -17,6 +17,7 @@ import { SpeechService } from "./mastra/speech.js";
 import { createBot, applyBotCommands } from "./telegram/bot.js";
 import type { CommandDeps } from "./telegram/commands.js";
 import { Messenger } from "./telegram/messenger.js";
+import { ensureAccessControlDefaults } from "./services/access-request-service.js";
 import { buildCronScheduler } from "./scheduler/wiring.js";
 import type { Scheduler } from "./scheduler/scheduler.js";
 import { buildAdminApp, type HonoWebhookHandler } from "./admin/app.js";
@@ -73,7 +74,13 @@ async function startBot(svc: ChatService): Promise<Bot | undefined> {
     speech,
     commandDeps,
     confirmations: svc.deps.confirmations,
+    accessRequests: svc.deps.accessRequests,
   });
+
+  // Out-of-band notifier (e.g. "access granted ✅" from the admin approval flow).
+  // For Telegram, a user's private chat id equals their user id.
+  const notifier = new Messenger(b.api);
+  svc.deps.notify = (tgUserId, text) => notifier.sendMessage(tgUserId, text);
 
   await applyBotCommands(b.api).catch((err) =>
     log.warn({ reason: err instanceof Error ? err.message : String(err) }, "setMyCommands failed"),
@@ -156,6 +163,14 @@ function main(): void {
     .then(() => createChatService({ db, storage }))
     .then(async (svc) => {
       chatService = svc;
+      // One-time opt-in to approval-gated access (merges existing Telegram users
+      // into the allowlist first, so nobody is locked out). Idempotent.
+      await ensureAccessControlDefaults(db, svc.deps.settings).catch((err) =>
+        log.warn(
+          { reason: err instanceof Error ? err.message : String(err) },
+          "access control bootstrap failed",
+        ),
+      );
       bot = await startBot(svc).catch((err) => {
         log.error({ reason: err instanceof Error ? err.message : String(err) }, "telegram bot failed to start");
         return undefined;

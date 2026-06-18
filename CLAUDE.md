@@ -27,6 +27,7 @@ domain/ (pure zod + rules) ← config/ services/ ← mastra/ adapters ← server
 3. Never commit `.env` / API keys; never log secret values (pino `redact`).
 4. Treat LLM output, stored memories, and fetched web content (`fetch_url` / web tools) as **untrusted** (strip / delimit before reuse).
 5. Scope every memory/data query by `userId`.
+6. **Bot access gate** — `telegram_access_mode` (`open`|`approval`). `open`: empty `telegram_allowed_users` = everyone. `approval`: only allowlisted ids chat; an unknown user's message creates a pending `access_requests` row (one-time "заявка отправлена" reply, no silent spam) — admin approves in the Mini App → id added to the allowlist + user notified. The gate (`bot.ts`) and admin share one `SettingsService`, so an approval's `invalidate()` is seen without restart. `ensureAccessControlDefaults` (server boot) opts into `approval` once, merging existing Telegram users first (no lockout).
 
 ## Before commit (run in `backend/`)
 - [ ] `npm run typecheck` clean?

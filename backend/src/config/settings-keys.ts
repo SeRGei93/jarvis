@@ -6,8 +6,17 @@ export const SettingKey = {
   Timeouts: "timeouts",
   Agent: "agent",
   TelegramAllowedUsers: "telegram_allowed_users",
+  TelegramAccessMode: "telegram_access_mode",
 } as const;
 export type SettingKey = (typeof SettingKey)[keyof typeof SettingKey];
+
+/**
+ * Bot access mode (`telegram_access_mode` setting).
+ * - `open`     — legacy gate: empty allowlist = everyone, non-empty = only listed.
+ * - `approval` — only ids in `telegram_allowed_users`; an unknown user's message
+ *                creates an access request instead of being silently dropped.
+ */
+export type AccessMode = "open" | "approval";
 
 export interface ModelRoles {
   default: string;

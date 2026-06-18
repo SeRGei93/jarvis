@@ -7,6 +7,7 @@ import {
   type ModelRoles,
   type TimeoutsConfig,
   type AgentConfig,
+  type AccessMode,
 } from "./settings-keys.js";
 import { logger } from "../pkg/logger.js";
 
@@ -114,6 +115,14 @@ export class SettingsService {
   }
   async getAllowedUsers(): Promise<number[]> {
     return ((await this.ensure()).get(SettingKey.TelegramAllowedUsers) ?? []) as number[];
+  }
+  /**
+   * Bot access mode. Defaults to `"open"` when the key is absent so an upgraded DB
+   * (no row yet) keeps the legacy "empty list = everyone" behaviour and never locks
+   * anyone out — `ensureAccessControlDefaults` flips it to `"approval"` explicitly.
+   */
+  async getAccessMode(): Promise<AccessMode> {
+    return ((await this.ensure()).get(SettingKey.TelegramAccessMode) ?? "open") as AccessMode;
   }
   async getModels(): Promise<ModelRow[]> {
     await this.ensure();

@@ -77,6 +77,20 @@ export interface User {
   updatedAt: Timestamp;
 }
 
+// ── bot access (settings: telegram_access_mode + access_requests table) ──────
+/** `open` = empty allowlist means everyone; `approval` = only listed, others request. */
+export type AccessMode = "open" | "approval";
+
+/** A pending "let me into the bot" request shown in the admin inbox (M17). */
+export interface AccessRequest {
+  id: number;
+  tgUserId: number;
+  name: string;
+  username: string | null;
+  status: string;
+  createdAt: Timestamp;
+}
+
 // ── subscription plans (subscription_plans table) ───────────────────────────
 export interface Plan {
   id: number;

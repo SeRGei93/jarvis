@@ -68,9 +68,14 @@ Registered in the command menu via `setMyCommands` (parity with the Go bot):
 
 `/new` **rotates** `sessions.threadId` to a fresh id and resets the rolling summary, then — since Mastra exposes no delete API — purges the old thread's messages with a raw SQL `DELETE` (best-effort). It also deletes `scope='session'` memories; long-term (permanent) facts are untouched.
 
-## Allowlist
+## Access gate (allowlist + approval)
 
-An `authorize` middleware reads `telegram_allowed_users` from settings (`settings.getAllowedUsers()`, hot-reloaded). An **empty list allows everyone**; otherwise unauthorized Telegram ids are dropped silently. See [Configuration](configuration.md).
+The gate middleware reads `telegram_access_mode` and `telegram_allowed_users` from settings (`refreshIfStale()` first, so an admin approval in the same process is seen without a restart):
+
+- **`open`** (legacy) — an **empty `telegram_allowed_users` allows everyone**; a non-empty list admits only listed ids. Others are dropped silently.
+- **`approval`** — only ids in `telegram_allowed_users` are admitted (no empty=everyone shortcut). An unknown user's message is recorded as a pending row in `access_requests` (via `AccessRequestService.record`) and they get a **one-time** "Заявка отправлена…" reply; repeat messages while pending/rejected are dropped silently. The admin approves in the Mini App (Users → «Заявки на доступ») → the tg id is added to the allowlist and the user is notified "Доступ открыт ✅".
+
+On startup, `ensureAccessControlDefaults()` runs once (idempotent): if `telegram_access_mode` is unset, it merges all existing Telegram users into the allowlist and switches the mode to `approval` — so enabling approval never locks out current users. See [Configuration](configuration.md) and [Admin Mini App](admin.md#access-requests).
 
 ## Notifications (Messenger)
 
@@ -90,7 +95,7 @@ Long polling is the default. Setting `TELEGRAM_USE_WEBHOOK=1` and a public `TELE
 
 | File | Responsibility |
 |------|----------------|
-| `bot.ts` | grammY wiring: allowlist → commands → text/voice → error handler; `createBot()` |
+| `bot.ts` | grammY wiring: access gate (allowlist/approval) → commands → text/voice → error handler; `createBot()` |
 | `stream.ts` | throttled `sendRichMessageDraft` streamer + rich finalize |
 | `format.ts` | `RichContent` type + `splitMessage` (rich-message limit) |
 | `voice.ts` | download + transcribe a voice note |
@@ -102,4 +107,5 @@ Long polling is the default. Setting `TELEGRAM_USE_WEBHOOK=1` and a public `TELE
 ## See Also
 
 - [Chat Pipeline](chat-pipeline.md) — what `handleUserMessage` does with the text the bot forwards
-- [Configuration](configuration.md) — `telegram_allowed_users`, timeouts, and `.env` secrets
+- [Configuration](configuration.md) — `telegram_access_mode`, `telegram_allowed_users`, timeouts, and `.env` secrets
+- [Admin Mini App](admin.md#access-requests) — reviewing and approving access requests

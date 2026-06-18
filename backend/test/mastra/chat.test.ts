@@ -13,6 +13,7 @@ import type { FactExtractor } from "../../src/mastra/memory/fact-extractor.js";
 import { ProfileExtractor, type ExtractFn } from "../../src/mastra/memory/profile-extractor.js";
 import { RateLimitService } from "../../src/services/rate-limit.js";
 import { UsageService } from "../../src/services/usage.js";
+import { AccessRequestService } from "../../src/services/access-request-service.js";
 import { createConversationMemory, getRecentMessages, threadIdForSession, resourceIdForUser } from "../../src/mastra/memory/history.js";
 import { users, usageStats, subscriptionPlans, userSubscriptions } from "../../src/db/schema.js";
 import { tempContent, type ContentFixture, type SkillInput } from "../helpers/content.js";
@@ -125,6 +126,7 @@ function makeDeps(
     rateLimit: new RateLimitService(t.db),
     usage: new UsageService(t.db),
     confirmations: new ConfirmationService(t.db, new MemoryService(t.db, dedup)),
+    accessRequests: new AccessRequestService(t.db, settingsLocal),
   };
   return { deps, orch, summaryCalls, factCalls };
 }

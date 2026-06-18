@@ -6,8 +6,14 @@ import { SkillService } from "../../src/services/skill-service.js";
 import { UsageService } from "../../src/services/usage.js";
 import { MemoryService } from "../../src/mastra/memory/memory-service.js";
 import { createBot } from "../../src/telegram/bot.js";
+import { AccessRequestService } from "../../src/services/access-request-service.js";
 import type { ChatHandler, CommandDeps } from "../../src/telegram/commands.js";
-import { users, userChannels, settings as settingsTable } from "../../src/db/schema.js";
+import {
+  users,
+  userChannels,
+  accessRequests,
+  settings as settingsTable,
+} from "../../src/db/schema.js";
 
 // Minimal UserFromGetMe so bot.init() skips the getMe network call.
 const BOT_INFO = {
@@ -46,6 +52,7 @@ function buildBot(t: TestDb, chat: ChatHandler) {
     chat,
     speech: { transcribe: async () => "voice text" },
     commandDeps,
+    accessRequests: new AccessRequestService(t.db, settings),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     botConfig: { botInfo: BOT_INFO as any },
   });
@@ -148,5 +155,62 @@ describe("bot integration (fake update, no network)", () => {
     expect(called).toBe(false);
     expect(sent.filter((c) => c.method === "sendMessage" || c.method === "sendRichMessage")).toHaveLength(0);
     expect(await t.db.select().from(users)).toHaveLength(0);
+  });
+
+  it("approval mode: an unknown user gets a one-time 'request sent' reply + a pending request", async () => {
+    t = await createTestDb();
+    await t.db.insert(settingsTable).values({ key: "telegram_access_mode", value: "approval" });
+    let called = false;
+    const chat: ChatHandler = {
+      handleUserMessage: async () => {
+        called = true;
+        return { text: "x", skills: [], rejected: false };
+      },
+    };
+    const { bot, sent } = buildBot(t, chat);
+    await bot.init();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await bot.handleUpdate(textUpdate(555, "пустите меня") as any);
+
+    expect(called).toBe(false);
+    const reqs = await t.db.select().from(accessRequests).where(eq(accessRequests.tgUserId, 555));
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0]!.status).toBe("pending");
+    const sentRequestReply = () =>
+      sent.filter(
+        (c) =>
+          c.method === "sendRichMessage" &&
+          String(c.payload.rich_message?.markdown).includes("Заявка"),
+      );
+    expect(sentRequestReply()).toHaveLength(1);
+    expect(await t.db.select().from(users)).toHaveLength(0);
+
+    // A second message must NOT create a duplicate request or re-send the reply.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await bot.handleUpdate(textUpdate(555, "ну пожалуйста") as any);
+    expect(await t.db.select().from(accessRequests).where(eq(accessRequests.tgUserId, 555))).toHaveLength(1);
+    expect(sentRequestReply()).toHaveLength(1);
+  });
+
+  it("approval mode: an allowlisted user is handled normally", async () => {
+    t = await createTestDb();
+    await t.db.insert(settingsTable).values([
+      { key: "telegram_access_mode", value: "approval" },
+      { key: "telegram_allowed_users", value: [555] },
+    ]);
+    let received = "";
+    const chat: ChatHandler = {
+      handleUserMessage: async (_u, _c, text) => {
+        received = text;
+        return { text: "готово", skills: [], rejected: false };
+      },
+    };
+    const { bot } = buildBot(t, chat);
+    await bot.init();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await bot.handleUpdate(textUpdate(555, "привет") as any);
+    expect(received).toBe("привет");
   });
 });

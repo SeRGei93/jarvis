@@ -16,6 +16,7 @@ import { FactExtractor } from "../memory/fact-extractor.js";
 import { ProfileExtractor } from "../memory/profile-extractor.js";
 import { RateLimitService } from "../../services/rate-limit.js";
 import { UsageService } from "../../services/usage.js";
+import { AccessRequestService } from "../../services/access-request-service.js";
 import {
   ensureThread,
   saveUserMessage,
@@ -61,6 +62,14 @@ export interface ChatDeps {
   usage: UsageService;
   /** Confirm-before-execute for risky tools (C1). */
   confirmations: ConfirmationService;
+  /** Bot access-request inbox + allowlist gate (M17). Reused by the admin API. */
+  accessRequests: AccessRequestService;
+  /**
+   * Best-effort Telegram sender for out-of-band notifications (e.g. "access
+   * granted ✅" on approval). Wired by the server after the bot starts; undefined
+   * until then, so callers must use optional-chaining.
+   */
+  notify?: (tgUserId: number, text: string) => Promise<void>;
 }
 
 export interface ChatInput {

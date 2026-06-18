@@ -5,6 +5,7 @@ import type { SettingsService } from "../config/settings.js";
 import type { ChatResult } from "../mastra/workflows/chat.js";
 import type { ConfirmationRequest, ConfirmationResult } from "../mastra/confirmations/confirmation-service.js";
 import { resolveTelegramUser, type TelegramUserInfo } from "./identity.js";
+import type { AccessRequestService } from "../services/access-request-service.js";
 import { createStreamer, type TelegramSender } from "./stream.js";
 import { transcribeVoice, type VoiceApi, type VoiceTranscriber, type FetchLike } from "./voice.js";
 import { Messenger } from "./messenger.js";
@@ -33,6 +34,9 @@ export const GENERIC_ERROR = "Произошла ошибка при обраб�
 /** Shown for content types the bot can't process (photos, stickers, …). */
 export const UNSUPPORTED_REPLY =
   "Я пока не умею обрабатывать этот тип контента. Отправьте текстовое или голосовое сообщение.";
+/** Sent once to an unknown user in `approval` mode when their access request is created. */
+export const ACCESS_REQUESTED_REPLY =
+  "Заявка на доступ отправлена администратору. Дождитесь одобрения 🙌";
 
 /** Minimal settings surface the allowlist gate needs. */
 export interface AllowlistSettings {
@@ -68,6 +72,12 @@ export interface BotOptions {
   commandDeps: CommandDeps;
   /** Risky-tool confirmation resolver (C1); wired to ChatService.deps.confirmations. */
   confirmations?: ConfirmationResolver;
+  /**
+   * Access-request inbox (M17). Required for `approval` mode: an unknown user's
+   * message is recorded here instead of dropped. Absent → approval mode degrades to
+   * a silent drop (logged).
+   */
+  accessRequests?: AccessRequestService;
   /** Voice download fetch (tests). */
   fetchFn?: FetchLike;
   /** grammY Bot config passthrough (tests inject `botInfo` to run offline). */
@@ -221,13 +231,50 @@ export function createBot(opts: BotOptions): Bot {
     confirmations: opts.confirmations,
   };
 
-  // Allowlist gate: drop unauthorized updates silently (parity with Go authorize()).
+  // Access gate (M17). `open` mode keeps the legacy behavior (empty allowlist =
+  // everyone). `approval` mode admits only allowlisted ids; an unknown user's
+  // message is turned into an access request (instead of a silent drop) and they
+  // get a one-time "request sent" reply. refreshIfStale() picks up an admin
+  // approval made in this same process (shared SettingsService → invalidate()).
   bot.use(async (ctx, next) => {
-    if (!(await isAuthorized(opts.settings, ctx.from?.id))) {
-      log.warn({ tgUser: ctx.from?.id }, "unauthorized update dropped");
+    const userId = ctx.from?.id;
+    if (userId == null) return;
+    // One staleness check, then read both values from the (now-fresh) cache —
+    // avoids a second SELECT max(updated_at) that an isAuthorized() call would do.
+    await opts.settings.refreshIfStale();
+    const [mode, allowed] = await Promise.all([
+      opts.settings.getAccessMode(),
+      opts.settings.getAllowedUsers(),
+    ]);
+    // open: empty list = everyone. approval: only listed ids (no empty shortcut).
+    const authorized =
+      mode === "open" ? allowed.length === 0 || allowed.includes(userId) : allowed.includes(userId);
+    if (authorized) {
+      await next();
       return;
     }
-    await next();
+
+    if (mode === "open") {
+      log.warn({ tgUser: userId, mode }, "unauthorized update dropped");
+      return;
+    }
+
+    // approval mode: turn the unknown user into an access request + one-time reply.
+    if (!opts.accessRequests) {
+      log.warn({ tgUser: userId, mode }, "unauthorized update dropped (no access-request service)");
+      return;
+    }
+    const { created } = await opts.accessRequests.record({
+      id: userId,
+      name: [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" "),
+      username: ctx.from?.username,
+    });
+    if (created) {
+      log.info({ tgUser: userId }, "access request created; prompting user");
+      await messenger.sendMessage(ctx.chat?.id ?? userId, ACCESS_REQUESTED_REPLY).catch(() => {});
+    } else {
+      log.warn({ tgUser: userId, mode }, "unauthorized update dropped (request already pending/decided)");
+    }
   });
 
   const runCommand = async (

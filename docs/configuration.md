@@ -18,7 +18,7 @@
 | `GOOGLE_API_KEY` | no | — | Google provider |
 | `ADMIN_USER_IDS` | no | `""` | comma-separated Telegram ids for the Mini App (M8) |
 | `SEARXNG_URL` | no | `http://searxng:8080` | SearXNG instance the web-search client queries |
-| `SEARXNG_ENGINES` | no | `google,yandex` | comma-separated engine override passed to SearXNG |
+| `SEARXNG_ENGINES` | no | `google,bing` | comma-separated engine override passed to SearXNG (`yandex` parser currently broken) |
 | `WEB_CACHE_DIR` | no | `./data/web-cache` | root dir for the web fetch/search file cache (container: `/data/web-cache`) |
 | `SKILLS_DIR` | no | `./data/skills` | file-backed skill store dir (container: `/data/skills`) |
 | `PROMPTS_DIR` | no | `./data/prompts` | file-backed system-prompt store dir (container: `/data/prompts`) |
@@ -38,7 +38,8 @@ Seeded from a typed code module (`src/db/seed-data.ts`) into the `settings` tabl
 | `model_roles` | `{ default, router, error_correction, speech, synthesizer }` | each value is a `provider:model` ref |
 | `timeouts` | `{ llm_request, http_client, llm_activity }` | Go-style durations (`300s`, `30s`) |
 | `agent` | `{ max_history, default_temperature, auto_memory }` | defaults `50` / `0.4` / `true` |
-| `telegram_allowed_users` | `number[]` | empty = open to all |
+| `telegram_allowed_users` | `number[]` | bot chat allowlist; in `open` mode empty = everyone, in `approval` mode it is the gate |
+| `telegram_access_mode` | `"open" \| "approval"` | default `open` (absent key). `approval` = only allowlisted ids chat; unknown users create an access request. Bootstrapped to `approval` once on first run (existing users merged into the allowlist first) |
 
 The `timeouts.http_client` value is the per-request timeout for the `currency_rates` tool and the native [web bucket](web-search.md) (fetch + verticals). Web-search infrastructure (SearXNG endpoint, cache dir) is configured via `.env` runtime flags, not DB settings.
 
