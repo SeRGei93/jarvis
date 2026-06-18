@@ -1,7 +1,7 @@
 ---
 name: about
 description: Answers questions about what the assistant is and what it can do — "who are you", "what can you do", "how do you work".
-model: openrouter:x-ai/grok-4.1-fast
+model: ""
 temperature: 0.5
 routable: true
 ---

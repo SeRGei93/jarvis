@@ -2,7 +2,7 @@
 name: cars
 description: Cars and vehicles — search car listings, check auto prices, compare used and new cars (any make/model like BMW, Audi, VW, etc.), read auto news and reviews. Use for anything related to cars, автомобили, авто, машины.
 allowed-tools: avby_search avby_brands avby_models web_search fetch_url
-model: openrouter:deepseek/deepseek-v4-flash:nitro
+model: ""
 temperature: 0.3
 ---
 

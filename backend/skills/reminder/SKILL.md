@@ -1,7 +1,7 @@
 ---
 name: reminder
 description: Delivers scheduled reminders and notifications to the user
-model: openrouter:deepseek/deepseek-v4-flash:nitro
+model: ""
 temperature: 0.6
 routable: false
 ---

@@ -138,7 +138,7 @@ describe("modelsRoutes — roles", () => {
     const res = await app.request("/roles");
     expect(res.status).toBe(200);
     const roles = (await res.json()) as { default: string };
-    expect(roles.default).toBe("openrouter:google/gemini-3.1-flash-lite");
+    expect(roles.default).toBe("openrouter:deepseek/deepseek-v4-flash:nitro");
   });
 
   it("PUT /roles accepts valid enabled refs and reflects the change", async () => {

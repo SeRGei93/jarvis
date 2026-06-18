@@ -2,7 +2,7 @@
 name: jobs
 description: Jobs and employment — find vacancies, check salaries, research companies, review resume.
 allowed-tools: rabota_search web_search fetch_url
-model: openrouter:google/gemini-3-flash-preview
+model: ""
 routable: true
 reasoning: false
 temperature: 0.4

@@ -1,7 +1,7 @@
 ---
 name: coding
 description: Code writing, debugging, and technical problem solving. Use when user asks to write code, fix bugs, explain algorithms, or review implementations.
-model: openrouter:qwen/qwen3-coder-next
+model: ""
 temperature: 0.3
 routable: true
 ---

@@ -2,7 +2,7 @@
 name: currency
 description: Currency exchange rates from official and market sources in Belarus.
 allowed-tools: currency_rates web_search fetch_url
-model: openrouter:openai/gpt-oss-120b:nitro
+model: ""
 temperature: 0.3
 routable: true
 ---

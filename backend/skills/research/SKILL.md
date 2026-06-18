@@ -2,7 +2,7 @@
 name: research
 description: Research a topic with internet search and source analysis.
 allowed-tools: web_search fetch_url
-model: openrouter:google/gemini-3-flash-preview
+model: ""
 reasoning: false
 temperature: 0.4
 ---

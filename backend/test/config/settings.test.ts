@@ -29,7 +29,7 @@ describe("SettingsService", () => {
     await runSeed(t.db);
     const svc = new SettingsService(t.db);
 
-    expect((await svc.getModelRoles()).default).toBe("openrouter:google/gemini-3.1-flash-lite");
+    expect((await svc.getModelRoles()).default).toBe("openrouter:deepseek/deepseek-v4-flash:nitro");
     const agent = await svc.getAgent();
     expect(agent.max_history).toBe(50);
     expect(await svc.getAllowedUsers()).toEqual([]);
@@ -42,7 +42,7 @@ describe("SettingsService", () => {
     await runSeed(t.db);
     const svc = new SettingsService(t.db);
     const roles = await svc.getModelRoles();
-    expect(roles.default).toContain("gemini");
+    expect(roles.default).toContain("deepseek");
 
     await t.db
       .update(settings)

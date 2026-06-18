@@ -2,7 +2,7 @@
 name: weather
 description: Weather forecast. Use when user asks about weather, temperature, or forecast for a city.
 allowed-tools: weather web_search fetch_url
-model: openrouter:deepseek/deepseek-v4-flash:nitro
+model: ""
 routable: true
 temperature: 0.2
 max-turns: 3

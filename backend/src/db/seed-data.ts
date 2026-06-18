@@ -12,7 +12,7 @@
 
 /** Model role assignments (`provider:model` refs). */
 export const SEED_MODEL_ROLES = {
-  default: "openrouter:google/gemini-3.1-flash-lite",
+  default: "openrouter:deepseek/deepseek-v4-flash:nitro",
   router: "openrouter:openai/gpt-oss-120b:nitro",
   error_correction: "openrouter:google/gemini-3-flash-preview",
   speech: "openrouter:google/gemini-3.1-flash-lite",

@@ -1,7 +1,7 @@
 ---
 name: chat
 description: Polite social chat — greetings, thanks, farewells, small talk. Use when user engages in casual conversation without a specific task.
-model: openrouter:qwen/qwen3.5-plus-02-15
+model: ""
 temperature: 0.5
 routable: true
 ---

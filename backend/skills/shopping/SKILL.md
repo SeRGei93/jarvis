@@ -2,7 +2,7 @@
 name: shopping
 description: Search for products and compare prices across marketplaces. Use for goods like electronics, appliances, clothes, furniture — NOT for cars (use "cars" skill), NOT for apartments or real estate (use "realty" skill).
 allowed-tools: kufar_search kufar_categories kufar_regions web_search fetch_url
-model: openrouter:deepseek/deepseek-v4-flash:nitro
+model: ""
 reasoning: true
 temperature: 0.4
 ---

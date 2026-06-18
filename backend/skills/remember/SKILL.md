@@ -2,7 +2,7 @@
 name: remember
 description: Save or delete facts, preferences, and instructions in long-term memory. Update user city ("я живу в Минске", "переехал в Гомель"), bot name ("называй себя Ava"), communication style ("общайся кратко", "будь формальным"). Use when user explicitly asks to remember or forget something, sets a standing rule ("always...", "never...", "call me...", "reply in..."), changes city, renames the bot, or adjusts communication style.
 allowed-tools: remember forget list_memories update_city update_bot_name update_bot_vibe
-model: openrouter:google/gemini-3-flash-preview
+model: ""
 temperature: 0.2
 routable: true
 ---

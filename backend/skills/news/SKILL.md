@@ -2,7 +2,7 @@
 name: news
 description: Fresh news. Use when user asks for news, digest, or what's new on a topic.
 allowed-tools: search_news web_search fetch_url
-model: openrouter:deepseek/deepseek-v4-flash:nitro
+model: ""
 routable: true
 reasoning: false
 temperature: 0.3

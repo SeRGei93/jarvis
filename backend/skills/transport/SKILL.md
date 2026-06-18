@@ -2,7 +2,7 @@
 name: transport
 description: Questions about public transport — schedules, buses, trams, trolleybuses, metro. Can look up schedules via tools, but cannot build routes.
 allowed-tools: transport_search
-model: openrouter:deepseek/deepseek-v4-flash:nitro
+model: ""
 temperature: 0.2
 routable: true
 ---

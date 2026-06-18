@@ -2,7 +2,7 @@
 name: realty
 description: Real estate — rent apartments, buy/sell property, estimate prices. Use for housing, rentals, and residential property searches.
 allowed-tools: kufar_search kufar_categories kufar_regions web_search fetch_url
-model: openrouter:deepseek/deepseek-v4-flash:nitro
+model: ""
 reasoning: true
 routable: true
 temperature: 0.3

@@ -2,7 +2,7 @@
 name: leisure
 description: Leisure and tourism — events, concerts, excursions, restaurants, where to go.
 allowed-tools: relax_search relax_afisha relax_categories relax_afisha_categories web_search fetch_url
-model: openrouter:google/gemini-3.1-flash-lite-preview
+model: ""
 routable: true
 temperature: 0.2
 ---

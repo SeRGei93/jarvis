@@ -1,7 +1,7 @@
 ---
 name: translate
 description: Translates text between languages. Use only when user explicitly asks to translate (e.g., "переведи", "translate this", "как будет по-английски").
-model: openrouter:deepseek/deepseek-v4-flash:nitro
+model: ""
 temperature: 0.2
 routable: true
 ---

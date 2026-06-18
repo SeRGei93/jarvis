@@ -2,7 +2,7 @@
 name: health
 description: Health — find doctors, clinics, pharmacies, medical services and medicine prices.
 allowed-tools: med103_doctor_search med103_clinic_search med103_services med103_pharmacy web_search fetch_url
-model: openrouter:deepseek/deepseek-v4-flash:nitro
+model: ""
 routable: true
 temperature: 0.2
 ---
