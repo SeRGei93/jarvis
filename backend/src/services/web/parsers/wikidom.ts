@@ -1,5 +1,6 @@
 import { JSDOM } from "jsdom";
 import type { NewsItem, NewsParser } from "./types.js";
+import { toAbsoluteHttp } from "./image.js";
 
 const MONTHS: Record<string, number> = {
   января: 0, февраля: 1, марта: 2, апреля: 3,
@@ -32,6 +33,11 @@ interface WikidomItem {
   date?: string;
   views?: number;
   labels?: { text: string }[];
+  image?: string;
+  img?: string;
+  cover?: string;
+  picture?: string;
+  thumbnail?: string;
 }
 
 export const wikidomParser: NewsParser = {
@@ -65,6 +71,10 @@ export const wikidomParser: NewsParser = {
       const timestamp = date ? parseDate(date) : undefined;
       const label = item.labels?.[0]?.text ?? "";
       const titlePrefix = label ? `[${label}] ` : "";
+      const image = toAbsoluteHttp(
+        item.image ?? item.img ?? item.cover ?? item.picture ?? item.thumbnail,
+        baseUrl,
+      );
 
       result.push({
         title: `${titlePrefix}${item.title}`,
@@ -73,6 +83,7 @@ export const wikidomParser: NewsParser = {
         views: item.views ?? 0,
         description,
         timestamp,
+        image,
       });
     }
 

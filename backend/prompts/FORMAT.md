@@ -13,6 +13,10 @@ Don't stack ornaments; prefer the simplest layout that reads well on a phone.
 - **Tables** — GFM pipe syntax with alignment
 - ` ```lang … ``` ` code blocks
 - `<details><summary>…</summary> … </details>` — a collapsible "show more" block
+- **Media** (separate block, HTTP/HTTPS only): `![](url)` photo/video/audio/gif,
+  `![](url "caption")` with a caption
+- **Gallery**: `<tg-collage>` (a grid of 2–4 media) and `<tg-slideshow>` (swipeable) —
+  put each `![](url)` on its own line with blank lines around the items inside the tag
 
 ## House style — keep it clean
 
@@ -31,6 +35,12 @@ Don't stack ornaments; prefer the simplest layout that reads well on a phone.
 - **`## heading`** only when the answer has real sections (a multi-topic reply).
 - **`<details><summary>…`** to fold away secondary bulk (extra items beyond the
   top few, a long disclaimer) so the main reply stays short.
+- **Media — only real URLs that appear in a tool result. NEVER invent, guess, or
+  reconstruct an image/video URL** (a wrong URL renders as a broken block). Show a
+  photo only when a tool returned its URL. Use a single lead `![](url)` for one item,
+  `<tg-collage>` for a few photos of the same item, `<tg-slideshow>` for a gallery.
+  Caption with `![](url "…")`. Media suits listings (goods, cars, events, places);
+  skip it for text answers (rates, weather, schedules).
 - **Emoji**: only where they aid scanning (e.g. weather time-of-day), at most one
   per line. Never decorative spam.
 - Bold sparingly (key terms / leads). Blank line between blocks. Russian by default.

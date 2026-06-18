@@ -1,5 +1,6 @@
 import { JSDOM } from "jsdom";
 import type { NewsItem, NewsParser } from "./types.js";
+import { extractImageUrl } from "./image.js";
 
 const ONLINER_DOMAINS = [
   "money.onliner.by",
@@ -74,6 +75,7 @@ export const onlinerParser: NewsParser = {
           views,
           description,
           timestamp: !Number.isNaN(timestamp) ? timestamp : undefined,
+          image: extractImageUrl(item, baseUrl),
         });
       }
     }

@@ -1,5 +1,6 @@
 import { JSDOM } from "jsdom";
 import type { NewsItem, NewsParser } from "./types.js";
+import { extractImageUrl } from "./image.js";
 
 const TOCHKA_DOMAIN = "tochka.by" as const;
 
@@ -90,6 +91,7 @@ export const tochkaParser: NewsParser = {
           views: 0,
           description,
           timestamp,
+          image: extractImageUrl(item, baseUrl),
         });
       }
     }

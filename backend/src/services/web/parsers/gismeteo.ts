@@ -1,5 +1,6 @@
 import { JSDOM } from "jsdom";
 import type { NewsItem, NewsParser } from "./types.js";
+import { extractImageUrl } from "./image.js";
 
 export interface GismeteoResult {
   html: string; // Очищенный HTML
@@ -227,6 +228,7 @@ export const gismeteoNewsParser: NewsParser = {
         views: 0,
         description,
         timestamp,
+        image: extractImageUrl(card, baseUrl),
       });
     }
 
@@ -262,6 +264,7 @@ export const gismeteoNewsParser: NewsParser = {
         views: 0,
         description,
         timestamp,
+        image: extractImageUrl(article, baseUrl),
       });
     }
 

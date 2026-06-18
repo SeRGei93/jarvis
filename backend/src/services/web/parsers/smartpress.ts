@@ -1,5 +1,6 @@
 import { JSDOM } from "jsdom";
 import type { NewsItem, NewsParser } from "./types.js";
+import { extractImageUrl } from "./image.js";
 
 export interface SmartpressResult {
   html: string;
@@ -112,6 +113,7 @@ export const smartpressParser: NewsParser = {
         views: 0,
         description: "",
         timestamp,
+        image: extractImageUrl(li, baseUrl),
       });
     }
 

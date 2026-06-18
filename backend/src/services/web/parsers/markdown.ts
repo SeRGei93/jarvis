@@ -8,12 +8,12 @@ export function formatNewsToMarkdown(items: NewsItem[]): string {
   if (items.length === 0) return "";
 
   return items
-    .map(
-      (item) =>
-        `- **[${item.title}](${item.url})**  
-  ${item.description}  
-  Просмотров: ${item.views} | ${item.date}`
-    )
+    .map((item) => {
+      const lines = [`- **[${item.title}](${item.url})**  `, `  ${item.description}  `];
+      if (item.image) lines.push(`  Фото: ${item.image}  `);
+      lines.push(`  Просмотров: ${item.views} | ${item.date}`);
+      return lines.join("\n");
+    })
     .join("\n\n");
 }
 
@@ -35,10 +35,12 @@ export function formatNewsWithSourceToMarkdown(items: NewsItemWithSource[]): str
   if (items.length === 0) return "";
 
   const list = items
-    .map(
-      (item) =>
-        `- **[${item.title}](${item.url})** (${item.source})\n  ${item.description}\n  Просмотров: ${item.views} | ${item.date}`
-    )
+    .map((item) => {
+      const lines = [`- **[${item.title}](${item.url})** (${item.source})`, `  ${item.description}`];
+      if (item.image) lines.push(`  Фото: ${item.image}`);
+      lines.push(`  Просмотров: ${item.views} | ${item.date}`);
+      return lines.join("\n");
+    })
     .join("\n\n");
   return `## Новости (сортировка по дате, самые свежие первыми)\n\n${list}`;
 }

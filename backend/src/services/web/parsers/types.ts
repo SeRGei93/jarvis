@@ -6,6 +6,8 @@ export interface NewsItem {
   description: string;
   /** Unix timestamp для сортировки */
   timestamp?: number;
+  /** Абсолютный HTTP(S) URL заглавной картинки, если источник её отдаёт. */
+  image?: string;
 }
 
 export interface NewsFeedSection {
