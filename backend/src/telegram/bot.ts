@@ -165,10 +165,13 @@ async function streamReply(
   chatId: number,
   text: string,
   draftId: number,
+  tgUserId: number,
 ): Promise<ChatResult> {
   const stopTyping = rt.messenger.startTypingLoop(chatId);
   const streamer = createStreamer(rt.api, chatId, draftId, { onFirstChunk: stopTyping });
-  const isAdmin = rt.adminUserIds.includes(userId);
+  // Gate the debug overlay on the *Telegram* id (ADMIN_USER_IDS holds Telegram ids),
+  // NOT the internal users.id that resolveTelegramUser returns.
+  const isAdmin = rt.adminUserIds.includes(tgUserId);
   try {
     const result = await rt.chat.handleUserMessage(userId, chatId, text, streamer.onText, toolEvents(streamer, isAdmin));
     await streamer.finalize(result.text);
@@ -232,7 +235,7 @@ export async function processText(
   draftId: number,
 ): Promise<ChatResult> {
   const { userId } = await resolveTelegramUser(rt.db, tgUser);
-  return streamReply(rt, userId, chatId, text, draftId);
+  return streamReply(rt, userId, chatId, text, draftId, tgUser.id);
 }
 
 /** Handle an inbound voice message: transcribe, then stream the reply. */
@@ -256,7 +259,7 @@ export async function processVoice(
     throw err;
   }
   stopTyping(); // streamReply starts its own typing loop
-  return streamReply(rt, userId, chatId, text, draftId);
+  return streamReply(rt, userId, chatId, text, draftId, tgUser.id);
 }
 
 /** Register the slash-command menu so Telegram shows command hints. */

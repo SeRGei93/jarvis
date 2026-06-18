@@ -49,6 +49,7 @@ function makeRuntime(
   t: TestDb,
   chat: ChatHandler,
   speechText = "распознанный текст",
+  adminUserIds: number[] = [],
 ): { rt: BotRuntime; api: FakeApi } {
   const api = new FakeApi();
   const rt: BotRuntime = {
@@ -60,7 +61,7 @@ function makeRuntime(
     token: "TKN",
     fetchFn: okFetch,
     commandDeps: {} as unknown as CommandDeps, // unused by processText/processVoice
-    adminUserIds: [],
+    adminUserIds,
   };
   return { rt, api };
 }
@@ -123,6 +124,54 @@ describe("processText", () => {
     await processText(rt, { id: 7, name: "X" }, 9, "x".repeat(99), 2);
     const sends = api.calls.filter((c) => c.op === "send" && c.rich);
     expect(sends.some((c) => (c.text ?? "").includes("Слишком длинное"))).toBe(true);
+  });
+
+  it("shows the debug overlay to an admin — gated on the Telegram id, not the internal users.id", async () => {
+    t = await createTestDb();
+    const chat: ChatHandler = {
+      handleUserMessage: async (_u, _c, _text, onText, onTool) => {
+        onTool?.onStart?.("web_search", { query: "курс" }); // first set* → flushes immediately
+        await tick();
+        onTool?.onReasoning?.("прикидываю"); // throttled in the draft, but kept for finalize
+        onTool?.onFinish?.("web_search", false);
+        onText?.("готово");
+        await tick();
+        return { text: "готово", skills: [], rejected: false };
+      },
+    };
+    // Telegram id 555; the created user's internal id is 1 — the gate must use 555.
+    const { rt, api } = makeRuntime(t, chat, undefined, [555]);
+
+    await processText(rt, { id: 555, name: "Serg" }, 42, "новости", 1);
+
+    const drafts = api.calls.filter((c) => c.op === "draft").map((c) => c.text ?? "");
+    expect(drafts[0]).toContain("🔧 web_search(query=курс)"); // live tool trace
+    const finalSend = api.calls.find((c) => c.op === "send" && c.rich);
+    expect(finalSend?.text).toContain("<details><summary>🧠 Рассуждения</summary>"); // reasoning persists
+    expect(finalSend?.text).toContain("прикидываю");
+    expect(finalSend?.text).not.toContain("🔧"); // trace dropped on finalize
+  });
+
+  it("shows no debug overlay to a non-admin", async () => {
+    t = await createTestDb();
+    const chat: ChatHandler = {
+      handleUserMessage: async (_u, _c, _text, onText, onTool) => {
+        onTool?.onReasoning?.("прикидываю"); // onReasoning is undefined for non-admins → no-op
+        onTool?.onStart?.("web_search", { query: "курс" });
+        await tick();
+        onText?.("готово");
+        await tick();
+        return { text: "готово", skills: [], rejected: false };
+      },
+    };
+    const { rt, api } = makeRuntime(t, chat, undefined, []); // not an admin
+
+    await processText(rt, { id: 555, name: "Serg" }, 42, "новости", 1);
+
+    const blob = api.calls.map((c) => c.text ?? "").join("\n");
+    expect(blob).not.toContain("<tg-thinking>");
+    expect(blob).not.toContain("🔧");
+    expect(blob).not.toContain("<details>");
   });
 });
 
