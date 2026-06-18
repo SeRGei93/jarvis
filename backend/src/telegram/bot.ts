@@ -6,7 +6,8 @@ import type { ChatResult } from "../mastra/workflows/chat.js";
 import type { ConfirmationRequest, ConfirmationResult } from "../mastra/confirmations/confirmation-service.js";
 import { resolveTelegramUser, type TelegramUserInfo } from "./identity.js";
 import type { AccessRequestService } from "../services/access-request-service.js";
-import { createStreamer, type TelegramSender } from "./stream.js";
+import { createStreamer, type TelegramSender, type Streamer } from "./stream.js";
+import type { ToolEvents } from "../mastra/llm.js";
 import { transcribeVoice, type VoiceApi, type VoiceTranscriber, type FetchLike } from "./voice.js";
 import { Messenger } from "./messenger.js";
 import { TelegramReplyError } from "./errors.js";
@@ -61,6 +62,8 @@ export interface BotRuntime {
   commandDeps: CommandDeps;
   /** Risky-tool confirmations (C1); absent → confirmation buttons are not handled. */
   confirmations?: ConfirmationResolver;
+  /** Telegram ids that get the debug trace (tool/skill calls + reasoning). */
+  adminUserIds: number[];
 }
 
 export interface BotOptions {
@@ -82,6 +85,8 @@ export interface BotOptions {
   fetchFn?: FetchLike;
   /** grammY Bot config passthrough (tests inject `botInfo` to run offline). */
   botConfig?: BotConfig<Context>;
+  /** Admin Telegram ids (from ADMIN_USER_IDS) — they see the debug trace. */
+  adminUserIds?: number[];
 }
 
 /** True when the Telegram user passes the allowlist (empty list = allow everyone). */
@@ -117,6 +122,38 @@ function toolStatusLine(toolName: string): string {
   return TOOL_STATUS[toolName] ?? DEFAULT_TOOL_STATUS;
 }
 
+/** One running/finished tool call in the admin debug trace. */
+interface TraceEntry {
+  name: string;
+  argsSummary: string;
+  state: "run" | "ok" | "err";
+}
+
+/** Compact, single-line summary of a tool's args for the debug trace. */
+function summarizeArgs(toolName: string, args: unknown): string {
+  if (args == null || typeof args !== "object") return "";
+  const obj = args as Record<string, unknown>;
+  // load_skill's `name` is the most useful debug detail — show just the skill.
+  if (toolName === "load_skill" && typeof obj.name === "string") return obj.name;
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(obj)) {
+    if (v == null || typeof v === "object") continue; // skip nested/empty
+    let s = String(v).replace(/\s+/g, " ").trim();
+    if (s.length > 40) s = s.slice(0, 39) + "…";
+    parts.push(`${k}=${s}`);
+    if (parts.join(", ").length > 80) break;
+  }
+  return parts.join(", ");
+}
+
+/** Render the trace entries into the draft footer (e.g. "🔧 load_skill(currency) ✓"). */
+function renderTrace(entries: TraceEntry[]): string {
+  const icon = { run: "…", ok: "✓", err: "✗" } as const;
+  return entries
+    .map((e) => `🔧 ${e.name}(${e.argsSummary})`.replace("()", "") + ` ${icon[e.state]}`)
+    .join("\n");
+}
+
 /**
  * Stream a chat reply: typing indicator → handleUserMessage(onText, onTool) →
  * finalize. `draftId` is the inbound `update_id`, correlating the streaming rich
@@ -131,15 +168,43 @@ async function streamReply(
 ): Promise<ChatResult> {
   const stopTyping = rt.messenger.startTypingLoop(chatId);
   const streamer = createStreamer(rt.api, chatId, draftId, { onFirstChunk: stopTyping });
+  const isAdmin = rt.adminUserIds.includes(userId);
   try {
-    const result = await rt.chat.handleUserMessage(userId, chatId, text, streamer.onText, {
-      onStart: (toolName) => streamer.status(toolStatusLine(toolName)),
-    });
+    const result = await rt.chat.handleUserMessage(userId, chatId, text, streamer.onText, toolEvents(streamer, isAdmin));
     await streamer.finalize(result.text);
     return result;
   } finally {
     stopTyping();
   }
+}
+
+/**
+ * Tool-event wiring. Admins get a live debug trace (tool/skill calls with args +
+ * ✓/✗, dropped on finalize) plus the reasoning stream (kept in a spoiler). Everyone
+ * else gets the friendly pre-text status line (B2).
+ */
+function toolEvents(streamer: Streamer, isAdmin: boolean): ToolEvents {
+  if (!isAdmin) {
+    return { onStart: (toolName) => streamer.status(toolStatusLine(toolName)) };
+  }
+  const trace: TraceEntry[] = [];
+  return {
+    onStart: (toolName, args) => {
+      trace.push({ name: toolName, argsSummary: summarizeArgs(toolName, args), state: "run" });
+      streamer.setTrace(renderTrace(trace));
+    },
+    onFinish: (toolName, isError) => {
+      // Mark the most recent still-running call of this tool done.
+      for (let i = trace.length - 1; i >= 0; i--) {
+        if (trace[i].name === toolName && trace[i].state === "run") {
+          trace[i].state = isError ? "err" : "ok";
+          break;
+        }
+      }
+      streamer.setTrace(renderTrace(trace));
+    },
+    onReasoning: (accumulated) => streamer.setReasoning(accumulated),
+  };
 }
 
 /**
@@ -229,6 +294,7 @@ export function createBot(opts: BotOptions): Bot {
     fetchFn: opts.fetchFn ?? fetch,
     commandDeps: opts.commandDeps,
     confirmations: opts.confirmations,
+    adminUserIds: opts.adminUserIds ?? [],
   };
 
   // Access gate (M17). `open` mode keeps the legacy behavior (empty allowlist =

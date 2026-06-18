@@ -60,6 +60,7 @@ function makeRuntime(
     token: "TKN",
     fetchFn: okFetch,
     commandDeps: {} as unknown as CommandDeps, // unused by processText/processVoice
+    adminUserIds: [],
   };
   return { rt, api };
 }

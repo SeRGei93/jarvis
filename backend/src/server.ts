@@ -75,6 +75,7 @@ async function startBot(svc: ChatService): Promise<Bot | undefined> {
     commandDeps,
     confirmations: svc.deps.confirmations,
     accessRequests: svc.deps.accessRequests,
+    adminUserIds: env.adminUserIds,
   });
 
   // Out-of-band notifier (e.g. "access granted ✅" from the admin approval flow).

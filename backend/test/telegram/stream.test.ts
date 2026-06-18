@@ -196,3 +196,61 @@ describe("createStreamer — finalize", () => {
     expect(sends[0]!).toMatchObject({ rich: true, text: "just a reply" });
   });
 });
+
+describe("createStreamer — admin debug overlays (thinking block + trace)", () => {
+  it("composes a <tg-thinking> block and the trace footer into the streaming draft", async () => {
+    const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock, throttleMs: 1000 });
+
+    s.setReasoning("thinking hard");
+    await tick();
+    expect(api.calls[0]!.text).toBe("<tg-thinking>thinking hard</tg-thinking>");
+
+    clock = 1000;
+    s.setTrace("🔧 load_skill(currency) …");
+    await tick();
+    // Thinking block + trace; no answer text yet.
+    expect(api.calls.at(-1)!.text).toBe("<tg-thinking>thinking hard</tg-thinking>\n\n🔧 load_skill(currency) …");
+
+    clock = 2000;
+    s.onText("here is the answer");
+    await tick();
+    // Thinking on top, then the answer, then the trace footer.
+    expect(api.calls.at(-1)!.text).toBe(
+      "<tg-thinking>thinking hard</tg-thinking>\n\nhere is the answer\n\n🔧 load_skill(currency) …",
+    );
+  });
+
+  it("persists reasoning in a <details> block on finalize but drops the trace footer", async () => {
+    const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock, throttleMs: 1000 });
+    s.setReasoning("my reasoning");
+    s.setTrace("🔧 web_search(q=курс) ✓");
+    await tick();
+
+    await s.finalize("the answer");
+    const sends = api.calls.filter((c) => c.op === "send");
+    expect(sends).toHaveLength(1);
+    // Reasoning persists in a collapsed details block; trace footer is gone.
+    expect(sends[0]!.text).toBe(
+      "the answer\n\n<details><summary>🧠 Рассуждения</summary>\n\nmy reasoning\n\n</details>",
+    );
+    expect(sends[0]!.text).not.toContain("🔧");
+    expect(sends[0]!.text).not.toContain("<tg-thinking>"); // draft-only tag never in the final
+  });
+
+  it("escapes HTML-special chars in reasoning so the blocks don't break", async () => {
+    const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock });
+    s.setReasoning("compare a<b && c>d");
+    await tick();
+    expect(api.calls[0]!.text).toBe("<tg-thinking>compare a&lt;b &amp;&amp; c&gt;d</tg-thinking>");
+  });
+
+  it("finalizes a plain reply unchanged when there was no reasoning", async () => {
+    const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock });
+    s.setTrace("🔧 weather() …"); // trace only — must not leak into the reply
+    await tick();
+
+    await s.finalize("just the answer");
+    const sends = api.calls.filter((c) => c.op === "send");
+    expect(sends[0]!.text).toBe("just the answer");
+  });
+});

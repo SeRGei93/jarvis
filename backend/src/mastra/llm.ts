@@ -38,10 +38,16 @@ export type StreamCallback = (accumulatedText: string) => void;
  * Tool-activity callbacks for surfacing live "🔎 ищу… / 💱 конвертирую…" statuses
  * while the agent runs tools. Emitted from the orchestrator's `fullStream` loop;
  * the Telegram layer maps tool names to friendly status lines (B2).
+ *
+ * `args`/`isError` and `onReasoning` carry the extra detail the admin-only debug
+ * trace needs (tool arguments, success/failure, the model's reasoning stream);
+ * the friendly-status path ignores them.
  */
 export interface ToolEvents {
-  onStart?: (toolName: string) => void;
-  onFinish?: (toolName: string) => void;
+  onStart?: (toolName: string, args?: unknown) => void;
+  onFinish?: (toolName: string, isError?: boolean) => void;
+  /** Accumulated reasoning text (each call carries the full text so far). */
+  onReasoning?: (accumulated: string) => void;
 }
 
 function toModelMessages(messages: Message[]): ModelMessage[] {

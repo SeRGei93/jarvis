@@ -211,8 +211,11 @@ export class Orchestrator {
       });
 
       // Drive the loop off fullStream (B2): reset the watchdog on EVERY chunk (incl.
-      // tool steps), accumulate answer text, and surface tool activity as statuses.
+      // tool steps), accumulate answer text, and surface tool activity + reasoning
+      // as events. Reasoning is kept separate from `acc` (it is not part of the
+      // answer text); the Telegram debug layer renders it in a spoiler.
       let acc = "";
+      let reasoning = "";
       for await (const chunk of out.fullStream) {
         wd.reset();
         switch (chunk.type) {
@@ -220,15 +223,19 @@ export class Orchestrator {
             acc += chunk.payload.text;
             onText?.(acc);
             break;
+          case "reasoning-delta":
+            reasoning += chunk.payload.text;
+            onTool?.onReasoning?.(reasoning);
+            break;
           case "tool-call":
-            onTool?.onStart?.(chunk.payload.toolName);
+            onTool?.onStart?.(chunk.payload.toolName, chunk.payload.args);
             break;
           case "tool-result":
-            onTool?.onFinish?.(chunk.payload.toolName);
+            onTool?.onFinish?.(chunk.payload.toolName, chunk.payload.isError);
             break;
           case "tool-error":
             // A tool threw: clear its "running" status so the Telegram spinner doesn't hang.
-            onTool?.onFinish?.(chunk.payload.toolName);
+            onTool?.onFinish?.(chunk.payload.toolName, true);
             break;
           default:
             break;

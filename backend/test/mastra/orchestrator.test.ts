@@ -34,6 +34,18 @@ function toolCallChunks(toolName: string, args: unknown) {
     finish("tool-calls"),
   ];
 }
+function reasoningThenTextChunks(reasoning: string, text: string) {
+  return [
+    { type: "stream-start", warnings: [] },
+    { type: "reasoning-start", id: "r1" },
+    { type: "reasoning-delta", id: "r1", delta: reasoning },
+    { type: "reasoning-end", id: "r1" },
+    { type: "text-start", id: "t1" },
+    { type: "text-delta", id: "t1", delta: text },
+    { type: "text-end", id: "t1" },
+    finish("stop"),
+  ];
+}
 function mockModel(perCall: unknown[][]) {
   let call = 0;
   return new MockLanguageModelV3({
@@ -162,6 +174,25 @@ describe("Orchestrator", () => {
     expect(r.text).toBe("converted");
     expect(started).toContain("load_skill"); // tool-call chunk surfaced
     expect(finished).toContain("load_skill"); // tool-result chunk surfaced
+  });
+
+  it("surfaces reasoning via onReasoning and tool args via onStart (debug trace)", async () => {
+    const model = mockModel([
+      toolCallChunks("load_skill", { name: "currency" }),
+      reasoningThenTextChunks("let me think", "the answer"),
+    ]);
+    const { orch } = orchestrator(model);
+    const startedArgs: unknown[] = [];
+    const reasoning: string[] = [];
+
+    const r = await orch.run(makeCtx({ primarySkill: "research" }), undefined, {
+      onStart: (_n, args) => startedArgs.push(args),
+      onReasoning: (acc) => reasoning.push(acc),
+    });
+
+    expect(r.text).toBe("the answer"); // reasoning is NOT mixed into the answer
+    expect(startedArgs[0]).toMatchObject({ name: "currency" }); // tool args surfaced
+    expect(reasoning.at(-1)).toContain("let me think"); // reasoning accumulated
   });
 
   it("strips tool-call syntax leaked into the answer text", async () => {

@@ -43,11 +43,56 @@ export interface Streamer {
   /**
    * Show a transient tool-activity status (e.g. "🔎 ищу…") as a draft. Ignored once
    * answer text has begun streaming or the reply is finalized, so it never clobbers
-   * the real answer (B2).
+   * the real answer (B2). Used for the friendly (non-admin) status path.
    */
   status(label: string): void;
+  /**
+   * Admin-only debug: set the accumulated reasoning text. While streaming it is
+   * shown in a native `<tg-thinking>` block (RichBlockThinking, draft-only); in the
+   * finalized reply it persists inside a collapsed `<details>` block.
+   */
+  setReasoning(accumulated: string): void;
+  /**
+   * Admin-only debug: set the live tool/skill trace footer. Composed into the
+   * streaming draft (below the answer) but dropped on finalize, so the trace shows
+   * while streaming and vanishes once the real reply lands.
+   */
+  setTrace(footer: string): void;
   /** Persist the finalized reply as rich message(s) (split if huge). */
   finalize(fullText: string): Promise<void>;
+}
+
+/** Cap reasoning shown in a draft/reply so it never blows the rich-message limit. */
+const REASONING_MAX_CHARS = 3500;
+
+/** Escape the chars that would break the rich-message HTML blocks we wrap reasoning in. */
+function escapeRichHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Trim + tail-truncate reasoning to the display cap. */
+function capReasoning(text: string): string {
+  const t = text.trim();
+  return [...t].length > REASONING_MAX_CHARS ? "…" + [...t].slice(-REASONING_MAX_CHARS).join("") : t;
+}
+
+/**
+ * Native streaming "thinking" block (RichBlockThinking). Per the Telegram docs the
+ * `<tg-thinking>` tag is valid only in `sendRichMessageDraft`, so this is used for
+ * the live draft — the finalized reply uses reasoningDetails() instead.
+ */
+function thinkingBlock(text: string): string {
+  const body = capReasoning(text);
+  return body ? `<tg-thinking>${escapeRichHtml(body)}</tg-thinking>` : "";
+}
+
+/**
+ * Collapsible `<details>` block that persists the reasoning in the finalized reply
+ * (collapsed by default — tap to expand). Valid in `sendRichMessage`.
+ */
+function reasoningDetails(text: string): string {
+  const body = capReasoning(text);
+  return body ? `<details><summary>🧠 Рассуждения</summary>\n\n${escapeRichHtml(body)}\n\n</details>` : "";
 }
 
 /** True if the accumulated text ends inside an unterminated markdown link. */
@@ -87,6 +132,10 @@ export function createStreamer(
   let textStarted = false; // has answer text begun streaming?
   let firstChunkFired = false;
   let finalized = false;
+  // Admin-only debug overlays composed into the draft (see composeDraft).
+  let answerAcc = ""; // accumulated answer text (the `onText` value)
+  let reasoningText = ""; // accumulated reasoning — persists into finalize
+  let traceFooter = ""; // live tool/skill trace — dropped on finalize
   // Tracks the in-flight draft so finalize can wait for it — a late draft must
   // not land after the persisted message and briefly re-show a stale preview.
   let pending: Promise<void> = Promise.resolve();
@@ -119,23 +168,58 @@ export function createStreamer(
     }
   }
 
-  const onText: StreamCallback = (acc: string): void => {
+  // Compose the draft: the reasoning "thinking" block (on top, like the bot is
+  // thinking), then the answer, then the tool/skill trace footer (ephemeral). The
+  // thinking block and trace are admin-only debug overlays.
+  function composeDraft(): string {
+    const parts: string[] = [];
+    const thinking = reasoningText ? thinkingBlock(reasoningText) : "";
+    if (thinking) parts.push(thinking);
+    if (answerAcc) parts.push(answerAcc);
+    if (traceFooter) parts.push(traceFooter);
+    return parts.join("\n\n");
+  }
+
+  // Throttled draft tick — recompose and send unless unchanged / over the limit /
+  // ending mid-link. Drives onText + the debug overlay setters through one throttle.
+  const tick = (): void => {
     if (finalized || sending) return;
-    if (acc === "" || acc === lastSentText) return;
-    textStarted = true; // answer text is now flowing — status drafts stop here
-    if ([...acc].length > STREAM_MAX_DRAFT_LEN) return; // near the limit: wait for finalize
-    if (endsWithIncompleteLink(acc)) return;
+    const draft = composeDraft();
+    if (draft === "" || draft === lastSentText) return;
+    if ([...draft].length > STREAM_MAX_DRAFT_LEN) return; // near the limit: wait for finalize
+    if (endsWithIncompleteLink(answerAcc)) return; // only the answer part must be link-complete
     // Throttle ticks after the first — the first draft is sent immediately.
     if (started && now() - lastSentAt < throttleMs) return;
-    pending = flush(acc);
+    pending = flush(draft);
+  };
+
+  const onText: StreamCallback = (acc: string): void => {
+    if (finalized || sending) return;
+    if (acc === "" || acc === answerAcc) return;
+    answerAcc = acc;
+    textStarted = true; // answer text is now flowing — friendly status drafts stop here
+    tick();
   };
 
   // Transient tool-activity status — shown only before answer text begins, so it
   // never overwrites the real answer. Sent immediately (status changes are rare).
+  // Friendly (non-admin) path; the admin debug path uses setReasoning/setTrace.
   const status = (label: string): void => {
     if (finalized || textStarted || sending) return;
     if (label === "" || label === lastSentText) return;
     pending = flush(label);
+  };
+
+  const setReasoning = (acc: string): void => {
+    if (acc === reasoningText) return;
+    reasoningText = acc;
+    tick();
+  };
+
+  const setTrace = (footer: string): void => {
+    if (footer === traceFooter) return;
+    traceFooter = footer;
+    tick();
   };
 
   /** Persist one finalize part as a rich message; fall back to plain text. */
@@ -152,13 +236,18 @@ export function createStreamer(
     finalized = true;
     await pending.catch(() => {}); // let the last in-flight draft settle first
     fireFirstChunk(); // ensure typing stops even when nothing streamed
-    const parts = splitMessage(fullText, RICH_MAX_MESSAGE_LEN);
+    // Persist the reasoning in a collapsed <details> block (the draft-only
+    // <tg-thinking> can't be used here); the trace footer is intentionally dropped,
+    // so it vanishes once the draft is replaced by the real reply.
+    const details = reasoningText ? reasoningDetails(reasoningText) : "";
+    const finalText = details ? `${fullText}\n\n${details}` : fullText;
+    const parts = splitMessage(finalText, RICH_MAX_MESSAGE_LEN);
     if (parts.length === 0) parts.push(""); // always send something to replace the draft
-    log.debug({ chatId, parts: parts.length, streamed: started }, "finalize");
+    log.debug({ chatId, parts: parts.length, streamed: started, reasoning: details !== "" }, "finalize");
     for (const part of parts) {
       await sendWithFallback(part);
     }
   }
 
-  return { onText, status, finalize };
+  return { onText, status, setReasoning, setTrace, finalize };
 }
