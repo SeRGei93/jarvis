@@ -220,7 +220,7 @@ describe("createStreamer — admin debug overlays (thinking block + trace)", () 
     );
   });
 
-  it("persists reasoning in a <details> block on finalize but drops the trace footer", async () => {
+  it("persists BOTH the trace footer and reasoning (<details>) on finalize", async () => {
     const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock, throttleMs: 1000 });
     s.setReasoning("my reasoning");
     s.setTrace("🔧 web_search(q=курс) ✓");
@@ -229,11 +229,10 @@ describe("createStreamer — admin debug overlays (thinking block + trace)", () 
     await s.finalize("the answer");
     const sends = api.calls.filter((c) => c.op === "send");
     expect(sends).toHaveLength(1);
-    // Reasoning persists in a collapsed details block; trace footer is gone.
+    // Trace footer kept, reasoning kept in a collapsed details block, no draft-only tag.
     expect(sends[0]!.text).toBe(
-      "the answer\n\n<details><summary>🧠 Рассуждения</summary>\n\nmy reasoning\n\n</details>",
+      "the answer\n\n🔧 web_search(q=курс) ✓\n\n<details><summary>🧠 Рассуждения</summary>\n\nmy reasoning\n\n</details>",
     );
-    expect(sends[0]!.text).not.toContain("🔧");
     expect(sends[0]!.text).not.toContain("<tg-thinking>"); // draft-only tag never in the final
   });
 
@@ -244,13 +243,39 @@ describe("createStreamer — admin debug overlays (thinking block + trace)", () 
     expect(api.calls[0]!.text).toBe("<tg-thinking>compare a&lt;b &amp;&amp; c&gt;d</tg-thinking>");
   });
 
-  it("finalizes a plain reply unchanged when there was no reasoning", async () => {
+  it("finalizes a plain reply unchanged when there was no reasoning or trace", async () => {
     const s = createStreamer(api, 42, DRAFT_ID, { now: () => clock });
-    s.setTrace("🔧 weather() …"); // trace only — must not leak into the reply
-    await tick();
-
     await s.finalize("just the answer");
     const sends = api.calls.filter((c) => c.op === "send");
     expect(sends[0]!.text).toBe("just the answer");
+  });
+});
+
+describe("createStreamer — finalize resilience to bad media", () => {
+  it("retries rich without media blocks when the first rich send fails, keeping formatting", async () => {
+    let richCalls = 0;
+    const seen: string[] = [];
+    const flaky: TelegramSender = {
+      async sendRichMessageDraft() {
+        return {};
+      },
+      async sendRichMessage(_chatId: number, rich: { markdown: string }) {
+        richCalls++;
+        seen.push(rich.markdown);
+        if (richCalls === 1) throw new Error("BAD_REQUEST: can't fetch media");
+        return {};
+      },
+      async sendMessage() {
+        seen.push("PLAIN");
+        return {};
+      },
+    };
+    const s = createStreamer(flaky, 42, DRAFT_ID, { now: () => clock });
+
+    await s.finalize("**Авто**\n\n![](https://bad/x.jpg)\n\n==73 420 BYN==");
+
+    expect(richCalls).toBe(2); // first failed, retried without media
+    expect(seen[1]).toBe("**Авто**\n\n==73 420 BYN=="); // media stripped, bold/marked kept
+    expect(seen).not.toContain("PLAIN"); // never fell back to plain text
   });
 });

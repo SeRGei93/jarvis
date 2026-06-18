@@ -54,8 +54,8 @@ export interface Streamer {
   setReasoning(accumulated: string): void;
   /**
    * Admin-only debug: set the live tool/skill trace footer. Composed into the
-   * streaming draft (below the answer) but dropped on finalize, so the trace shows
-   * while streaming and vanishes once the real reply lands.
+   * streaming draft (below the answer) and kept in the finalized reply too, so the
+   * record of which tools/skills ran persists after streaming.
    */
   setTrace(footer: string): void;
   /** Persist the finalized reply as rich message(s) (split if huge). */
@@ -93,6 +93,22 @@ function thinkingBlock(text: string): string {
 function reasoningDetails(text: string): string {
   const body = capReasoning(text);
   return body ? `<details><summary>🧠 Рассуждения</summary>\n\n${escapeRichHtml(body)}\n\n</details>` : "";
+}
+
+/**
+ * Strip media blocks from rich markdown. A single bad media URL (e.g. an
+ * unreachable / fabricated image) makes Telegram reject the WHOLE rich message,
+ * so on a failed send we retry without media to keep the rest formatted.
+ */
+export function stripMediaBlocks(md: string): string {
+  return md
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "") // ![alt](url)
+    .replace(/<img\b[^>]*>/gi, "")
+    .replace(/<tg-(collage|slideshow)\b[\s\S]*?<\/tg-\1>/gi, "")
+    .replace(/<figure\b[\s\S]*?<\/figure>/gi, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 /** True if the accumulated text ends inside an unterminated markdown link. */
@@ -222,28 +238,44 @@ export function createStreamer(
     tick();
   };
 
-  /** Persist one finalize part as a rich message; fall back to plain text. */
+  /**
+   * Persist one finalize part as a rich message. On failure (often a bad media
+   * URL rejecting the whole message) retry rich WITHOUT media blocks, then fall
+   * back to plain text as a last resort.
+   */
   async function sendWithFallback(text: string): Promise<void> {
+    const reason = (err: unknown) => (err instanceof Error ? err.message : String(err));
     try {
       await api.sendRichMessage(chatId, { markdown: text });
+      return;
     } catch (err) {
-      log.warn({ reason: err instanceof Error ? err.message : String(err) }, "finalize rich send failed -> plain");
-      await api.sendMessage(chatId, text).catch(() => {});
+      log.warn({ reason: reason(err) }, "finalize rich send failed");
     }
+    const noMedia = stripMediaBlocks(text);
+    if (noMedia !== text && noMedia !== "") {
+      try {
+        await api.sendRichMessage(chatId, { markdown: noMedia });
+        return;
+      } catch (err) {
+        log.warn({ reason: reason(err) }, "finalize rich send (no media) failed -> plain");
+      }
+    }
+    await api.sendMessage(chatId, noMedia || text).catch(() => {});
   }
 
   async function finalize(fullText: string): Promise<void> {
     finalized = true;
     await pending.catch(() => {}); // let the last in-flight draft settle first
     fireFirstChunk(); // ensure typing stops even when nothing streamed
-    // Persist the reasoning in a collapsed <details> block (the draft-only
-    // <tg-thinking> can't be used here); the trace footer is intentionally dropped,
-    // so it vanishes once the draft is replaced by the real reply.
+    // Keep both debug overlays in the persisted reply: the tool/skill trace
+    // footer AND the reasoning, the latter in a collapsed <details> block (the
+    // draft-only <tg-thinking> can't be used here).
     const details = reasoningText ? reasoningDetails(reasoningText) : "";
-    const finalText = details ? `${fullText}\n\n${details}` : fullText;
+    const extras = [traceFooter, details].filter(Boolean).join("\n\n");
+    const finalText = extras ? `${fullText}\n\n${extras}` : fullText;
     const parts = splitMessage(finalText, RICH_MAX_MESSAGE_LEN);
     if (parts.length === 0) parts.push(""); // always send something to replace the draft
-    log.debug({ chatId, parts: parts.length, streamed: started, reasoning: details !== "" }, "finalize");
+    log.debug({ chatId, parts: parts.length, streamed: started, reasoning: details !== "", trace: traceFooter !== "" }, "finalize");
     for (const part of parts) {
       await sendWithFallback(part);
     }

@@ -149,7 +149,7 @@ describe("processText", () => {
     const finalSend = api.calls.find((c) => c.op === "send" && c.rich);
     expect(finalSend?.text).toContain("<details><summary>🧠 Рассуждения</summary>"); // reasoning persists
     expect(finalSend?.text).toContain("прикидываю");
-    expect(finalSend?.text).not.toContain("🔧"); // trace dropped on finalize
+    expect(finalSend?.text).toContain("🔧 web_search(query=курс)"); // tool trace persists too
   });
 
   it("shows no debug overlay to a non-admin", async () => {

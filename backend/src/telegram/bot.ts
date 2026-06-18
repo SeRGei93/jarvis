@@ -182,9 +182,10 @@ async function streamReply(
 }
 
 /**
- * Tool-event wiring. Admins get a live debug trace (tool/skill calls with args +
- * ✓/✗, dropped on finalize) plus the reasoning stream (kept in a spoiler). Everyone
- * else gets the friendly pre-text status line (B2).
+ * Tool-event wiring. Admins get a debug trace (tool/skill calls with args + ✓/✗,
+ * kept in the final reply) plus the reasoning stream (a <tg-thinking> block while
+ * streaming, a collapsed <details> in the final reply). Everyone else gets the
+ * friendly pre-text status line (B2).
  */
 function toolEvents(streamer: Streamer, isAdmin: boolean): ToolEvents {
   if (!isAdmin) {
