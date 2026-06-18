@@ -12,6 +12,13 @@ const INLINE_RE = /^[ \t]*[a-z][a-z0-9_]*(?:\([^)]*\)|\{[^}]*\})[ \t]*$/gm;
 const XML_RE =
   /<function_calls[\s>][\s\S]*?(?:<\/function_calls>|$)|<tool_call[\s>][\s\S]*?(?:<\/tool_call>|$)/g;
 
+// Bracketed pseudo-call a model copies from prompt examples, e.g.
+//   [CALL task_create({ name: "x", ... })]   (often multi-line).
+// Matches from `[CALL` up to the closing `)]` / `}]`. Non-greedy so it stops at the
+// first call close. The model still must invoke the real tool — this only hides the
+// leaked text (see automation skill: the fix is in the prompt, this is a safety net).
+const CALL_RE = /\[CALL\b[\s\S]*?[)}]\s*\]/g;
+
 export interface StripResult {
   text: string;
   stripped: number;
@@ -25,6 +32,7 @@ export function stripLeakedToolCalls(input: string): StripResult {
     return "";
   };
   let out = input.replace(XML_RE, count);
+  out = out.replace(CALL_RE, count);
   out = out.replace(INLINE_RE, count);
   out = out.trim();
   if (stripped > 0) log.debug({ stripped }, "stripped leaked tool-calls");

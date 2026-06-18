@@ -23,6 +23,24 @@ describe("stripLeakedToolCalls", () => {
     expect(r.text).toContain("after");
   });
 
+  it("strips bracketed [CALL ...] pseudo-calls (single and multi-line)", () => {
+    const single = stripLeakedToolCalls(
+      'Done. [CALL task_create({ name: "x", schedule: "0 6 * * *", skill_name: "news" })] kept',
+    );
+    expect(single.stripped).toBe(1);
+    expect(single.text).not.toContain("[CALL");
+    expect(single.text).not.toContain("task_create");
+    expect(single.text).toContain("Done.");
+    expect(single.text).toContain("kept");
+
+    const multi = stripLeakedToolCalls(
+      ['[CALL task_create({', '  name: "Morning news",', '  skill_name: "news"', '})]', '✅ Task created!'].join("\n"),
+    );
+    expect(multi.stripped).toBe(1);
+    expect(multi.text).not.toContain("task_create");
+    expect(multi.text).toBe("✅ Task created!");
+  });
+
   it("returns empty text when only a tool-call is present", () => {
     const r = stripLeakedToolCalls('web_search(query="x")');
     expect(r.text).toBe("");
