@@ -19,6 +19,7 @@ export function formatNewsToMarkdown(items: NewsItem[]): string {
 
 export function formatArticleToMarkdown(article: NewsArticle): string {
   const parts: string[] = [`# ${article.title}`, "", `Источник: [${article.source}](${article.url})`, ""];
+  if (article.image) parts.push(`Фото: ${article.image}`);
   if (article.author) parts.push(`Автор: ${article.author}`);
   if (article.date) parts.push(`Дата: ${article.date}`);
   if (article.views > 0) parts.push(`Просмотров: ${article.views}`);

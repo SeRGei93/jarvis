@@ -1,6 +1,7 @@
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
 import type { NewsArticle } from "./types.js";
+import { toAbsoluteHttp } from "./image.js";
 
 const turndown = new TurndownService({
   headingStyle: "atx",
@@ -94,6 +95,8 @@ export function parseSmartpressArticle(html: string, url: string): NewsArticle |
     body = turndown.turndown(clone.innerHTML).trim();
   }
 
+  const image = toAbsoluteHttp(doc.querySelector('meta[property="og:image"]')?.getAttribute("content"), url);
+
   dom.window.close();
 
   if (!title && !body) return null;
@@ -108,5 +111,6 @@ export function parseSmartpressArticle(html: string, url: string): NewsArticle |
     author,
     body,
     source,
+    image,
   };
 }

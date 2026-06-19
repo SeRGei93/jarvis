@@ -6,6 +6,7 @@ import {
 } from "../../../src/services/web/parsers/markdown.js";
 import { tochkaParser } from "../../../src/services/web/parsers/tochka.js";
 import { onlinerParser } from "../../../src/services/web/parsers/onliner.js";
+import { parseOnlinerArticle } from "../../../src/services/web/parsers/onliner-article.js";
 import { extractImageUrl, toAbsoluteHttp, collectImageUrls } from "../../../src/services/web/parsers/image.js";
 import type { NewsArticle, NewsItem } from "../../../src/services/web/parsers/types.js";
 
@@ -65,6 +66,12 @@ describe("extractImageUrl", () => {
   it("reads an inline background-image url", () => {
     const el = elementFrom(`<div style="background-image:url('https://img.test/bg.jpg')"></div>`);
     expect(extractImageUrl(el, "https://news.test/")).toBe("https://img.test/bg.jpg");
+  });
+
+  it("reads a background-image set on the element ITSELF (onliner news-header__image)", () => {
+    const root = elementFrom(`<div class="hdr" style="background-image:url('https://content.test/h.jpg')"></div>`);
+    const el = root.querySelector<HTMLElement>(".hdr")!;
+    expect(extractImageUrl(el, "https://news.test/")).toBe("https://content.test/h.jpg");
   });
 
   it("rejects svg icons, data URIs and non-http schemes", () => {
@@ -144,17 +151,48 @@ describe("formatArticleToMarkdown", () => {
       body: "Full article body.",
       tags: ["tag1", "tag2"],
       source: "news.test",
+      image: "https://news.test/photo.jpg",
     };
     const md = formatArticleToMarkdown(article);
 
     expect(md.startsWith("# Article Title")).toBe(true);
     expect(md).toContain("Источник: [news.test](https://news.test/a)");
+    expect(md).toContain("Фото: https://news.test/photo.jpg");
     expect(md).toContain("Автор: Иван");
     expect(md).toContain("Дата: 15 февраля 2026");
     expect(md).toContain("Просмотров: 42");
     expect(md).toContain("Теги: tag1, tag2");
     expect(md).toContain("Lead paragraph");
     expect(md).toContain("Full article body.");
+  });
+
+  it("omits the Фото line when the article has no image", () => {
+    const article: NewsArticle = {
+      title: "T", url: "https://n/a", date: "", views: 0, description: "", body: "b", source: "n",
+    };
+    expect(formatArticleToMarkdown(article)).not.toContain("Фото:");
+  });
+});
+
+describe("parseOnlinerArticle (image extraction)", () => {
+  it("extracts the lead photo from the news-header__image background", () => {
+    const html = `<html><body>
+      <div class="news-container" data-post-date="1718700000">
+        <div class="news-header">
+          <div class="news-header__image" style="background-image: url('https://content.onliner.by/news/970x485/abc.jpg');"></div>
+          <h1 class="news-header__title">Заголовок</h1>
+          <div class="news-header__time">19 июня 2026</div>
+        </div>
+        <div class="news-entry"><div class="news-entry__speech">Лид.</div></div>
+        <div class="news-text"><p>Тело статьи.</p></div>
+      </div>
+    </body></html>`;
+
+    const article = parseOnlinerArticle(html, "https://people.onliner.by/2026/06/19/test");
+    expect(article).not.toBeNull();
+    expect(article!.title).toBe("Заголовок");
+    expect(article!.image).toBe("https://content.onliner.by/news/970x485/abc.jpg");
+    expect(article!.body).toContain("Тело статьи");
   });
 });
 

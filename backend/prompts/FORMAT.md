@@ -13,10 +13,6 @@ Don't stack ornaments; prefer the simplest layout that reads well on a phone.
 - **Tables** — GFM pipe syntax with alignment
 - ` ```lang … ``` ` code blocks
 - `<details><summary>…</summary> … </details>` — a collapsible "show more" block
-- **Media** (separate block, HTTP/HTTPS only): `![](url)` photo/video/audio/gif,
-  `![](url "caption")` with a caption
-- **Gallery**: `<tg-collage>` (a grid of 2–4 media) and `<tg-slideshow>` (swipeable) —
-  put each `![](url)` on its own line with blank lines around the items inside the tag
 
 ## House style — keep it clean
 
@@ -35,15 +31,6 @@ Don't stack ornaments; prefer the simplest layout that reads well on a phone.
 - **`## heading`** only when the answer has real sections (a multi-topic reply).
 - **`<details><summary>…`** to fold away secondary bulk (extra items beyond the
   top few, a long disclaimer) so the main reply stays short.
-- **Media — only when the user focuses on ONE specific item.** Show a photo only when
-  the user wants to look at a single thing in detail (e.g. «покажи это авто», «расскажи
-  подробнее про эту новость», «фото этого товара»). **Never attach photos in lists,
-  search results, or overviews** — those stay link + text, no images. Use ONLY a photo
-  URL copied **verbatim** from a tool result (e.g. a `Фото:` line); NEVER invent, guess,
-  or reconstruct one from the page/listing URL (a wrong URL makes Telegram drop the whole
-  message's formatting). No tool photo URL → no image. When you do show photos of that
-  one item: a single lead `![](url)`, or `<tg-collage>` / `<tg-slideshow>` for several;
-  each on its own line. Skip media entirely for text answers (rates, weather, schedules).
 - **Emoji**: only where they aid scanning (e.g. weather time-of-day), at most one
   per line. Never decorative spam.
 - Bold sparingly (key terms / leads). Blank line between blocks. Russian by default.

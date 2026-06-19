@@ -68,9 +68,11 @@ export function extractImageUrl(el: Element, baseUrl: string): string | undefine
   const fromImg = toAbsoluteHttp(direct, baseUrl);
   if (fromImg) return fromImg;
 
-  // 3. Инлайновый background-image.
-  const styled = el.querySelector<HTMLElement>("[style*='background-image']")?.getAttribute("style") ?? undefined;
-  return toAbsoluteHttp(extractBgUrl(styled), baseUrl);
+  // 3. Инлайновый background-image — на самом элементе ИЛИ у потомка.
+  const styledEl = el.matches("[style*='background-image']")
+    ? el
+    : el.querySelector<HTMLElement>("[style*='background-image']");
+  return toAbsoluteHttp(extractBgUrl(styledEl?.getAttribute("style") ?? undefined), baseUrl);
 }
 
 /**

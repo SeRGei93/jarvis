@@ -1,6 +1,7 @@
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
 import type { NewsArticle } from "./types.js";
+import { toAbsoluteHttp } from "./image.js";
 
 const turndown = new TurndownService({
   headingStyle: "atx",
@@ -78,6 +79,8 @@ export function parseTochkaArticle(html: string, url: string): NewsArticle | nul
     if (t && t !== "Теги") tags.push(t);
   }
 
+  const image = toAbsoluteHttp(doc.querySelector('meta[property="og:image"]')?.getAttribute("content"), url);
+
   dom.window.close();
 
   if (!title && !body) return null;
@@ -92,5 +95,6 @@ export function parseTochkaArticle(html: string, url: string): NewsArticle | nul
     body,
     tags: tags.length > 0 ? tags : undefined,
     source,
+    image,
   };
 }

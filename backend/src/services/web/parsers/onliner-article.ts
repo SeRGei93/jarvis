@@ -1,6 +1,7 @@
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
 import type { NewsArticle } from "./types.js";
+import { extractImageUrl, toAbsoluteHttp } from "./image.js";
 
 const turndown = new TurndownService({
   headingStyle: "atx",
@@ -116,6 +117,13 @@ export function parseOnlinerArticle(html: string, url: string): NewsArticle | nu
     if (t) tags.push(t);
   }
 
+  // Заглавное фото: <div class="news-header__image" style="background-image:url(…)">,
+  // иначе og:image. Прямой content.onliner.by/...jpg (не imgproxy webp из ленты).
+  const headerImg = container.querySelector<HTMLElement>(".news-header__image");
+  const image =
+    (headerImg ? extractImageUrl(headerImg, url) : undefined) ??
+    toAbsoluteHttp(doc.querySelector('meta[property="og:image"]')?.getAttribute("content"), url);
+
   dom.window.close();
 
   if (!title && !body) return null;
@@ -131,5 +139,6 @@ export function parseOnlinerArticle(html: string, url: string): NewsArticle | nu
     body,
     tags: tags.length > 0 ? tags : undefined,
     source,
+    image,
   };
 }

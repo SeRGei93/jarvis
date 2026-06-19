@@ -1,6 +1,7 @@
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
 import type { NewsArticle } from "./types.js";
+import { toAbsoluteHttp } from "./image.js";
 
 export interface RealtResult {
   html: string;
@@ -233,6 +234,8 @@ export function parseRealtArticle(html: string, url: string): NewsArticle | null
     body = turndown.turndown(clone.innerHTML).trim();
   }
 
+  const image = toAbsoluteHttp(doc.querySelector('meta[property="og:image"]')?.getAttribute("content"), url);
+
   dom.window.close();
 
   if (!title && !body) return null;
@@ -246,6 +249,7 @@ export function parseRealtArticle(html: string, url: string): NewsArticle | null
     description: "",
     body,
     source,
+    image,
   };
 }
 

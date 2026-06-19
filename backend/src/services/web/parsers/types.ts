@@ -38,4 +38,6 @@ export interface NewsArticle {
   body: string;
   tags?: string[];
   source: string;
+  /** Абсолютный HTTP(S) URL заглавного фото статьи (og:image / header image). */
+  image?: string;
 }
