@@ -55,6 +55,7 @@ const result = await chat.handleUserMessage(userId, chatId, "what's the weather 
 | [Architecture](docs/architecture.md) | Layering, structure, dependency rules |
 | [Chat Pipeline](docs/chat-pipeline.md) | pre-pass → orchestrator agent, load_skill, guardrails, tool approval, evals |
 | [Tools](docs/tools.md) | built-in tools, `load_skill`, tool approval for risky tools |
+| [Eval & Skill Test-Run](docs/eval.md) | deterministic eval gate, `skill:run` CLI, Mini App test-run, nightly judge |
 | [Web Search](docs/web-search.md) | native web bucket — SearXNG search, fetch, marketplaces, weather |
 | [Telegram Bot](docs/telegram.md) | grammY transport, streaming, voice, commands, allowlist |
 | [Cron Scheduler](docs/scheduler.md) | node-cron polls, due tasks → chat pipeline → notify |
