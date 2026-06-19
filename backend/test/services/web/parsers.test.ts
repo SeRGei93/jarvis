@@ -73,6 +73,20 @@ describe("extractImageUrl", () => {
     expect(toAbsoluteHttp("ftp://img.test/x.jpg", "https://news.test/")).toBeUndefined();
     expect(extractImageUrl(elementFrom(`<span>no image</span>`), "https://news.test/")).toBeUndefined();
   });
+
+  it("prefers lazy data-src over a placeholder src and rejects placeholder URLs", () => {
+    // lazy image: real URL in data-src, placeholder in src (the tochka empty_*.png case)
+    expect(
+      extractImageUrl(
+        elementFrom(`<img src="https://img.test/empty_1600_1200.png" data-src="https://img.test/real.jpg">`),
+        "https://news.test/",
+      ),
+    ).toBe("https://img.test/real.jpg");
+    // pure placeholder → nothing
+    expect(extractImageUrl(elementFrom(`<img src="https://img.test/placeholder.png">`), "https://news.test/")).toBeUndefined();
+    expect(toAbsoluteHttp("https://img.test/assets/spacer.gif", "https://news.test/")).toBeUndefined();
+    expect(toAbsoluteHttp("https://img.test/empty_1600_1200.png", "https://news.test/")).toBeUndefined();
+  });
 });
 
 describe("collectImageUrls", () => {

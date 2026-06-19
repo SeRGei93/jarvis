@@ -5,7 +5,10 @@
  * HTTP(S) URL; data:-URI, не-HTTP схемы и `.svg`-иконки отбрасываются.
  */
 
-/** Резолвит относительный URL в абсолютный и пропускает только http(s), не svg/data. */
+/** Признаки заглушек/плейсхолдеров lazy-загрузки (не настоящее фото). */
+const PLACEHOLDER_RE = /(empty|placeholder|no-?photo|no-?image|blank|spacer|transparent|1x1|pixel|stub|lazyload|loading)/i;
+
+/** Резолвит относительный URL в абсолютный и пропускает только http(s), не svg/data/заглушки. */
 export function toAbsoluteHttp(raw: string | undefined | null, baseUrl: string): string | undefined {
   if (!raw) return undefined;
   const trimmed = raw.trim();
@@ -14,6 +17,7 @@ export function toAbsoluteHttp(raw: string | undefined | null, baseUrl: string):
     const u = new URL(trimmed, baseUrl);
     if (u.protocol !== "http:" && u.protocol !== "https:") return undefined;
     if (/\.svg(\?|$)/i.test(u.pathname)) return undefined; // иконки, не фото
+    if (PLACEHOLDER_RE.test(u.pathname)) return undefined; // lazy-плейсхолдер (напр. empty_1600_1200.png)
     return u.href;
   } catch {
     return undefined;
@@ -53,12 +57,13 @@ export function extractImageUrl(el: Element, baseUrl: string): string | undefine
   const fromSet = toAbsoluteHttp(pickFromSrcset(srcset), baseUrl);
   if (fromSet) return fromSet;
 
-  // 2. Прямой src / ленивые атрибуты.
+  // 2. Ленивые атрибуты ПЕРЕД `src` — у lazy-картинок реальный URL в data-*,
+  //    а в `src` лежит заглушка.
   const direct =
-    img?.getAttribute("src") ??
     img?.getAttribute("data-src") ??
     img?.getAttribute("data-original") ??
     img?.getAttribute("data-lazy-src") ??
+    img?.getAttribute("src") ??
     undefined;
   const fromImg = toAbsoluteHttp(direct, baseUrl);
   if (fromImg) return fromImg;
@@ -87,10 +92,10 @@ export function collectImageUrls(root: ParentNode, baseUrl: string, max = 8): st
     if (out.length >= max) return out;
     add(
       pickFromSrcset(img.getAttribute("srcset") ?? undefined) ??
-        img.getAttribute("src") ??
         img.getAttribute("data-src") ??
         img.getAttribute("data-original") ??
         img.getAttribute("data-lazy-src") ??
+        img.getAttribute("src") ??
         undefined,
     );
   }

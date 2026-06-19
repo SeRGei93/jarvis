@@ -35,13 +35,15 @@ Don't stack ornaments; prefer the simplest layout that reads well on a phone.
 - **`## heading`** only when the answer has real sections (a multi-topic reply).
 - **`<details><summary>…`** to fold away secondary bulk (extra items beyond the
   top few, a long disclaimer) so the main reply stays short.
-- **Media — ONLY a URL copied verbatim from a tool result** (e.g. a `Фото:` line).
-  NEVER invent, guess, modify, or reconstruct an image URL from the page/listing URL
-  — a wrong URL makes Telegram drop the whole message's formatting. If the tool gave
-  no image URL, show **no image** (most tools don't return photos). When you do have
-  a real URL: a single lead `![](url)` per item, `<tg-collage>` for several photos of
-  one item, `<tg-slideshow>` for a gallery; put each on its own line. Media suits
-  listings (goods, events, places); skip it for text answers (rates, weather).
+- **Media — only when the user focuses on ONE specific item.** Show a photo only when
+  the user wants to look at a single thing in detail (e.g. «покажи это авто», «расскажи
+  подробнее про эту новость», «фото этого товара»). **Never attach photos in lists,
+  search results, or overviews** — those stay link + text, no images. Use ONLY a photo
+  URL copied **verbatim** from a tool result (e.g. a `Фото:` line); NEVER invent, guess,
+  or reconstruct one from the page/listing URL (a wrong URL makes Telegram drop the whole
+  message's formatting). No tool photo URL → no image. When you do show photos of that
+  one item: a single lead `![](url)`, or `<tg-collage>` / `<tg-slideshow>` for several;
+  each on its own line. Skip media entirely for text answers (rates, weather, schedules).
 - **Emoji**: only where they aid scanning (e.g. weather time-of-day), at most one
   per line. Never decorative spam.
 - Bold sparingly (key terms / leads). Blank line between blocks. Russian by default.
