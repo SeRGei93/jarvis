@@ -6,7 +6,7 @@ import {
 } from "../../../src/services/web/parsers/markdown.js";
 import { tochkaParser } from "../../../src/services/web/parsers/tochka.js";
 import { onlinerParser } from "../../../src/services/web/parsers/onliner.js";
-import { extractImageUrl, toAbsoluteHttp } from "../../../src/services/web/parsers/image.js";
+import { extractImageUrl, toAbsoluteHttp, collectImageUrls } from "../../../src/services/web/parsers/image.js";
 import type { NewsArticle, NewsItem } from "../../../src/services/web/parsers/types.js";
 
 /** Build a detached element wrapping `html` so image extraction can be tested. */
@@ -72,6 +72,27 @@ describe("extractImageUrl", () => {
     expect(extractImageUrl(elementFrom(`<img src="data:image/png;base64,AAAA">`), "https://news.test/")).toBeUndefined();
     expect(toAbsoluteHttp("ftp://img.test/x.jpg", "https://news.test/")).toBeUndefined();
     expect(extractImageUrl(elementFrom(`<span>no image</span>`), "https://news.test/")).toBeUndefined();
+  });
+});
+
+describe("collectImageUrls", () => {
+  it("collects distinct image URLs (img then srcset), deduped and in order", () => {
+    const el = elementFrom(
+      `<img src="https://i/1.jpg">` +
+        `<picture><source srcset="https://i/2-s.jpg 200w, https://i/2-l.jpg 800w"></picture>` +
+        `<img src="https://i/1.jpg">` + // duplicate, skipped
+        `<img src="https://i/3.jpg">`,
+    );
+    expect(collectImageUrls(el, "https://news.test/", 10)).toEqual([
+      "https://i/1.jpg",
+      "https://i/3.jpg",
+      "https://i/2-l.jpg", // largest srcset variant
+    ]);
+  });
+
+  it("honours the max cap", () => {
+    const el = elementFrom(`<img src="https://i/1.jpg"><img src="https://i/2.jpg"><img src="https://i/3.jpg">`);
+    expect(collectImageUrls(el, "https://news.test/", 2)).toHaveLength(2);
   });
 });
 

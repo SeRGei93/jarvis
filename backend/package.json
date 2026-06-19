@@ -18,7 +18,8 @@
     "db:seed": "tsx src/db/seed.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "eval": "vitest run test/evals"
+    "eval": "vitest run test/evals",
+    "skill:run": "tsx src/cli/skill-run.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.82",

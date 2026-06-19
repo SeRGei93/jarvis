@@ -1,8 +1,42 @@
 import { JSDOM } from "jsdom";
+import { collectImageUrls, toAbsoluteHttp } from "../parsers/image.js";
 
 export interface AvByResult {
   html: string;
   title: string;
+}
+
+const AVBY_BASE = "https://cars.av.by/";
+
+/**
+ * Реальные фото ИМЕННО этого объявления: og:image (главное фото, есть всегда) плюс
+ * картинки галереи с того же хоста. Сбор ограничен контейнерами `[class*='gallery']`,
+ * чтобы не зацепить фото «других объявлений»/дилера; фильтр по хосту og:image
+ * отсекает логотипы и иконки на других доменах. Вызывается ДО вырезания картинок.
+ */
+function extractAvByListingPhotos(doc: Document): string[] {
+  const og = toAbsoluteHttp(
+    doc.querySelector('meta[property="og:image"]')?.getAttribute("content"),
+    AVBY_BASE,
+  );
+  const photos: string[] = [];
+  const seen = new Set<string>();
+  const add = (u?: string): void => {
+    if (u && !seen.has(u)) {
+      seen.add(u);
+      photos.push(u);
+    }
+  };
+  add(og);
+  const host = og ? new URL(og).host : null;
+  for (const gallery of doc.querySelectorAll("[class*='gallery']")) {
+    for (const u of collectImageUrls(gallery, AVBY_BASE, 12)) {
+      if (!host || new URL(u).host === host) add(u);
+      if (photos.length >= 6) break;
+    }
+    if (photos.length >= 6) break;
+  }
+  return photos;
 }
 
 /**
@@ -184,6 +218,9 @@ export function extractAvByListingContent(html: string): AvByResult | null {
   const card = doc.querySelector(".card");
   if (!card) return null;
 
+  // Собираем фото ДО вырезания медиа в removeListingJunk.
+  const photos = extractAvByListingPhotos(doc);
+
   const container = card.cloneNode(true) as Element;
 
   removeListingJunk(container);
@@ -196,7 +233,11 @@ export function extractAvByListingContent(html: string): AvByResult | null {
 
   if (!cleanHtmlStr) return null;
 
-  return { html: cleanHtmlStr, title };
+  // Отдаём реальные URL фото отдельными строками — модель сама решит, показать
+  // одно лид-фото или коллаж/слайдшоу (по правилам FORMAT.md).
+  const photosBlock = photos.length > 0 ? "\n\n" + photos.map((u) => `Фото: ${u}`).join("\n") : "";
+
+  return { html: cleanHtmlStr + photosBlock, title };
 }
 
 /**

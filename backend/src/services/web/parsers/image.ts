@@ -67,3 +67,40 @@ export function extractImageUrl(el: Element, baseUrl: string): string | undefine
   const styled = el.querySelector<HTMLElement>("[style*='background-image']")?.getAttribute("style") ?? undefined;
   return toAbsoluteHttp(extractBgUrl(styled), baseUrl);
 }
+
+/**
+ * Собирает до `max` различных абсолютных URL картинок внутри `root`
+ * (<img>, <picture><source srcset>, inline background-image). Порядок сохраняется,
+ * дубли убираются. Используется для сбора галереи объявления под коллаж/слайдшоу.
+ */
+export function collectImageUrls(root: ParentNode, baseUrl: string, max = 8): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (raw?: string): void => {
+    const abs = toAbsoluteHttp(raw, baseUrl);
+    if (abs && !seen.has(abs)) {
+      seen.add(abs);
+      out.push(abs);
+    }
+  };
+  for (const img of root.querySelectorAll("img")) {
+    if (out.length >= max) return out;
+    add(
+      pickFromSrcset(img.getAttribute("srcset") ?? undefined) ??
+        img.getAttribute("src") ??
+        img.getAttribute("data-src") ??
+        img.getAttribute("data-original") ??
+        img.getAttribute("data-lazy-src") ??
+        undefined,
+    );
+  }
+  for (const source of root.querySelectorAll("source[srcset]")) {
+    if (out.length >= max) return out;
+    add(pickFromSrcset(source.getAttribute("srcset") ?? undefined));
+  }
+  for (const styled of root.querySelectorAll("[style*='background-image']")) {
+    if (out.length >= max) return out;
+    add(extractBgUrl(styled.getAttribute("style") ?? undefined));
+  }
+  return out;
+}
