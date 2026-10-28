@@ -3,10 +3,10 @@
 > Project map for AI agents. Keep this file up-to-date as the project evolves.
 
 ## Overview
-Telegram AI assistant — a TypeScript + Mastra rewrite of avocado-ai (Go). Monorepo: `backend/` (Node service) + `frontend/` (admin Mini App — React + Vite + Mantine). Migration **milestones 0–8 done**.
+Telegram AI assistant — a TypeScript + Mastra rewrite of avocado-ai (Go). Monorepo: `backend/` (Node service) + `frontend/` (admin Mini App — React + Vite + Mantine). Migration **milestones 0–8, 11–15, 17, 19 done**; next — M18 (structured news with media).
 
 ## Tech Stack
-Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + LibSQLVector) · `drizzle-orm` 0.45 · Vercel AI SDK v6 · zod v4 · grammY 1.44 (polling + opt. webhook; Bot API 10.1 rich messages) · node-cron (M7) · Hono (M8) · pino · vitest.
+Node 22 · TS5 ESM · `@mastra/core` 1.79 · `@mastra/libsql` (LibSQLStore, no vector) · `drizzle-orm` 0.45 · Vercel AI SDK v6 (+ `@ai-sdk/typesafe-ai` for decision models) · zod v4 · grammY 1.44 (polling + opt. webhook; Bot API 10.1 rich messages) · node-cron (M7) · Hono (M8) · pino · vitest.
 
 ## Structure (`backend/src/`)
 | Dir | Contents |
@@ -14,7 +14,7 @@ Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + Lib
 | `config/` | `env` (zod secrets, + `SKILLS_DIR`/`PROMPTS_DIR`), `settings` (DB cache + hot-reload), `settings-keys` |
 | `content/` | file-backed skill/prompt store: `paths`, `store` (populate + atomic write + frontmatter), `skill-repository`, `prompt-repository` |
 | `services/models-catalog.ts` | live OpenRouter catalog (6 h cache) + curated decision-model list — feeds the admin model picker and role validation |
-| `db/` | `schema` (12 tables — incl. `pending_confirmations`, no `skills`/`prompts`/`models`), `migrations/`, `client`, `migrate`, `seed` (code seed), `seed-data` |
+| `db/` | `schema` (13 tables — incl. `pending_confirmations`/`access_requests`, no `skills`/`prompts`/`models`), `migrations/`, `client`, `migrate`, `seed` (code seed), `seed-data` |
 | `domain/` | `entities` (+ constants), `memory-classifier`, `sensitivity-filter` |
 | `mastra/` | `models`, `llm`, `strip-leaked-tools`, `speech`, `agents/{primary-skill,orchestrator,prompt-builder,skill-agent,loop-guard}`, `decisions/{service,types}` (Classifier→OpenRouter System One), `confirmations/confirmation-service`, `memory/{memory-service,dedup,profile-extractor,history,…}`, `tools/{load-skill,memory-tools,registry,…}`, `workflows/chat`, `index` |
 | `services/` | `skill-service` (file-backed via content repos), `conversation-context`, `rate-limit`, `usage` |

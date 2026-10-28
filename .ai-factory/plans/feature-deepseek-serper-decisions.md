@@ -117,3 +117,8 @@ docs/*, AGENTS.md, .ai-factory/ARCHITECTURE.md, .env.example  # чистка Sea
 ## Вне объёма (на потом)
 - Учёт стоимости Serper-поисков в `services/usage` (счётчик запросов + $ в usage-логе) — полезно для видимости расходов, но не входит в этот объём; заводить отдельной задачей при необходимости.
 - Serper `/news` endpoint вместо `search_news` — не берём: белорусские фиды с парсерами статей (оги:image, markdown) остаются основным путём для РБ-дайджеста.
+
+## Smoke-верификация (зафиксировано при aif-verify, 2026-10-28)
+Прогон на чистой временной БД (`LIBSQL_URL=file:/tmp/jarvis-smoke.db`, `db:migrate` + `db:seed` — миграции 0000–0005 и сид ролей применяются без ошибок):
+- `npm run skill:run -- research "погода в Минске на выходных и главные новости Беларуси сегодня"` — ✅ Serper → Google + DeepSeek V4.1 Flash: живая выдача от 28.10.2026 (gismeteo.by, nuipogoda, belta.by, belarus24.by), cost $0.0097.
+- `npm run skill:run -- news "главные новости Беларуси сегодня, краткий дайджест"` — ✅ BY-фиды (onliner/smartpress/gismeteo), все материалы от 28.10.2026, cost $0.0113.
