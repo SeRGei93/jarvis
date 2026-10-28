@@ -22,12 +22,12 @@ const ctx = {
   },
 } as unknown as ToolContext;
 
-/** Build a fetchFn returning searxng JSON for web_search. */
-function searxFetch(
-  results: Array<{ title?: string; content?: string; url?: string }>,
+/** Build a fetchFn returning Serper JSON (`{ organic }`) for web_search. */
+function serperFetch(
+  organic: Array<{ title?: string; link?: string; snippet?: string }>,
 ): typeof globalThis.fetch {
   return vi.fn(async () =>
-    new Response(JSON.stringify({ results }), {
+    new Response(JSON.stringify({ organic }), {
       status: 200,
       headers: { "content-type": "application/json" },
     }),
@@ -37,15 +37,15 @@ function searxFetch(
 describe("buildWebTools registry", () => {
   it("exposes exactly 21 tools matching WEB_TOOL_NAMES", () => {
     expect(WEB_TOOL_NAMES.size).toBe(21);
-    const tools = buildWebTools(ctx, searxFetch([]));
+    const tools = buildWebTools(ctx, serperFetch([]));
     expect(new Set(Object.keys(tools))).toEqual(WEB_TOOL_NAMES);
   });
 });
 
 describe("web_search tool (fetchFn-only, no DNS)", () => {
   it("returns markdown containing a result title", async () => {
-    const fetchFn = searxFetch([
-      { title: "Hit Title", content: "snippet", url: "https://hit.test" },
+    const fetchFn = serperFetch([
+      { title: "Hit Title", snippet: "snippet", link: "https://hit.test" },
     ]);
     const tools = buildWebTools(ctx, fetchFn);
     const out = (await tools.web_search!.execute!({ query: "hello" }, opts)) as string;

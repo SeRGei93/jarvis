@@ -28,9 +28,9 @@ const EnvSchema = z.object({
   XAI_API_KEY: z.string().optional(),
   GOOGLE_API_KEY: z.string().optional(),
 
-  // Web search (searxng)
-  SEARXNG_URL: z.string().min(1).default("http://searxng:8080"),
-  SEARXNG_ENGINES: z.string().optional(), // comma-separated engine list; optional override
+  // Web search (Serper — Google SERP). Optional: without the key web_search
+  // returns a clear error while fetch_url / news / verticals keep working.
+  SERPER_API_KEY: z.string().optional(),
   // Web fetch/search file cache dir; container overrides to /data/web-cache via compose.
   WEB_CACHE_DIR: z.string().min(1).default("./data/web-cache"),
 

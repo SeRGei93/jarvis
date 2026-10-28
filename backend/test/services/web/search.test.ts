@@ -4,17 +4,47 @@ import {
   performWebSearchBatch,
   resolveSearchRegion,
 } from "../../../src/services/web/search.js";
+import { googleLocale } from "../../../src/services/web/config.js";
 
-/** Build a JSON Response with the searxng `{ results: [...] }` shape. */
-function searxResp(
-  results: Array<{ title?: string; content?: string; url?: string }>,
+/** Captured Serper request (body + headers) from the last call. */
+interface Captured {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body: { q?: string; num?: number; gl?: string; hl?: string };
+}
+
+/** Build a JSON Response with the Serper `{ organic: [...] }` shape. */
+function serperResp(
+  organic: Array<{ title?: string; link?: string; snippet?: string }>,
   status = 200,
 ): Response {
-  return new Response(JSON.stringify({ results }), {
+  return new Response(JSON.stringify({ organic }), {
     status,
     headers: { "content-type": "application/json" },
   });
 }
+
+/** fetchFn stub that records every request it serves. */
+function recordingFetch(make: (n: number, req: Captured) => Response): {
+  fetchFn: typeof globalThis.fetch;
+  calls: Captured[];
+} {
+  const calls: Captured[] = [];
+  const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const req: Captured = {
+      url: String(input),
+      method: init?.method ?? "GET",
+      headers: (init?.headers ?? {}) as Record<string, string>,
+      body: JSON.parse(String(init?.body ?? "{}")),
+    };
+    calls.push(req);
+    return make(calls.length, req);
+  }) as unknown as typeof globalThis.fetch;
+  return { fetchFn, calls };
+}
+
+const DEPS = { timeoutMs: 5000, apiKey: "k-test" };
 
 describe("resolveSearchRegion", () => {
   it("returns the default region for undefined", () => {
@@ -49,62 +79,127 @@ describe("resolveSearchRegion", () => {
   });
 });
 
-describe("performWebSearch", () => {
-  it("formats results as markdown with a Query/Results header", async () => {
-    const fetchFn = vi.fn(async () =>
-      searxResp([
-        { title: "T1", content: "C1", url: "https://a.test" },
-        { title: "T2", content: "C2", url: "https://b.test" },
-      ]),
-    ) as unknown as typeof globalThis.fetch;
+describe("googleLocale", () => {
+  it("maps canonical regions to Google gl/hl", () => {
+    expect(googleLocale("ru-by")).toEqual({ gl: "by", hl: "ru" });
+    expect(googleLocale("ua-uk")).toEqual({ gl: "ua", hl: "uk" });
+    expect(googleLocale("us-en")).toEqual({ gl: "us", hl: "en" });
+    expect(googleLocale("uk-en")).toEqual({ gl: "gb", hl: "en" });
+  });
 
-    const md = await performWebSearch("test", { fetchFn, timeoutMs: 5000 });
+  it("sends no locale for worldwide", () => {
+    expect(googleLocale("wt-wt")).toEqual({});
+  });
+
+  it("derives country/language for an unlisted xx-yy region", () => {
+    expect(googleLocale("it-it")).toEqual({ gl: "it", hl: "it" });
+  });
+});
+
+describe("performWebSearch (Serper)", () => {
+  it("posts the query + gl/hl and formats results as markdown", async () => {
+    const { fetchFn, calls } = recordingFetch(() =>
+      serperResp([
+        { title: "T1", snippet: "C1", link: "https://a.test" },
+        { title: "T2", snippet: "C2", link: "https://b.test" },
+      ]),
+    );
+
+    const md = await performWebSearch("test", { ...DEPS, fetchFn, region: "belarus" });
 
     expect(md).toContain("# Web Search Results");
     expect(md).toContain("Query: test");
+    expect(md).toContain("Region: ru-by");
     expect(md).toContain("Results: 2");
     expect(md).toContain("T1");
-    expect(md).toContain("C1");
-    expect(md).toContain("https://a.test");
-    expect(md).toContain("T2");
     expect(md).toContain("https://b.test");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.url).toBe("https://google.serper.dev/search");
+    expect(calls[0]!.headers["X-API-KEY"]).toBe("k-test");
+    expect(calls[0]!.body).toMatchObject({ q: "test", num: 10, gl: "by", hl: "ru" });
   });
 
-  it("returns a 'No results found' message for empty results", async () => {
-    const fetchFn = vi.fn(async () => searxResp([])) as unknown as typeof globalThis.fetch;
+  it("omits gl/hl for the worldwide region", async () => {
+    const { fetchFn, calls } = recordingFetch(() => serperResp([]));
+    await performWebSearch("x", { ...DEPS, fetchFn, region: "global" });
+    expect(calls[0]!.body.gl).toBeUndefined();
+    expect(calls[0]!.body.hl).toBeUndefined();
+  });
 
-    const md = await performWebSearch("nothing", { fetchFn, timeoutMs: 5000 });
+  it("caps num at 10 (one Google page) even when more are requested", async () => {
+    const { fetchFn, calls } = recordingFetch(() => serperResp([]));
+    await performWebSearch("x", { ...DEPS, fetchFn, count: 20 });
+    expect(calls[0]!.body.num).toBe(10);
+  });
 
+  it("returns a 'No results found' message for an empty organic list", async () => {
+    const { fetchFn } = recordingFetch(() => serperResp([]));
+    const md = await performWebSearch("nothing", { ...DEPS, fetchFn });
     expect(md).toContain("No results found.");
     expect(md).toContain("Query: nothing");
   });
 
-  it("retries on HTTP 500 then succeeds on the second call", async () => {
-    let calls = 0;
+  it("skips rows without a link", async () => {
+    const { fetchFn } = recordingFetch(() =>
+      serperResp([{ title: "no link" }, { title: "ok", link: "https://ok.test" }]),
+    );
+    const md = await performWebSearch("x", { ...DEPS, fetchFn });
+    expect(md).toContain("Results: 1");
+    expect(md).not.toContain("no link");
+  });
+
+  it("retries on HTTP 500 then succeeds", async () => {
+    const { fetchFn, calls } = recordingFetch((n) =>
+      n === 1 ? serperResp([], 500) : serperResp([{ title: "Recovered", link: "https://r.test" }]),
+    );
+    const md = await performWebSearch("retry", { ...DEPS, fetchFn });
+    expect(calls).toHaveLength(2);
+    expect(md).toContain("Recovered");
+  });
+
+  it("retries on network errors then succeeds", async () => {
+    let n = 0;
     const fetchFn = vi.fn(async () => {
-      calls += 1;
-      if (calls === 1) return searxResp([], 500);
-      return searxResp([{ title: "Recovered", content: "after retry", url: "https://r.test" }]);
+      n += 1;
+      if (n === 1) throw new Error("ECONNRESET");
+      return serperResp([{ title: "After flap", link: "https://f.test" }]);
     }) as unknown as typeof globalThis.fetch;
 
-    const md = await performWebSearch("retry", { fetchFn, timeoutMs: 5000 });
+    const md = await performWebSearch("flap", { ...DEPS, fetchFn });
+    expect(n).toBe(2);
+    expect(md).toContain("After flap");
+  });
 
-    expect(calls).toBe(2);
-    expect(md).toContain("Recovered");
-    expect(md).toContain("https://r.test");
+  it("does not retry a 401 and reports the key/credits problem", async () => {
+    const { fetchFn, calls } = recordingFetch(() => serperResp([], 401));
+    await expect(performWebSearch("x", { ...DEPS, fetchFn })).rejects.toThrow(/SERPER_API_KEY/);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("reports 403 as a key/credits problem", async () => {
+    const { fetchFn } = recordingFetch(() => serperResp([], 403));
+    await expect(performWebSearch("x", { ...DEPS, fetchFn })).rejects.toThrow(/credits/);
+  });
+
+  it("fails fast with a clear message when no API key is configured", async () => {
+    const fetchFn = vi.fn(async () => serperResp([])) as unknown as typeof globalThis.fetch;
+    await expect(performWebSearch("x", { fetchFn, apiKey: "" })).rejects.toThrow(
+      /SERPER_API_KEY is missing/,
+    );
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 });
 
 describe("performWebSearchBatch", () => {
-  it("returns a grouped batch report mentioning every query", async () => {
-    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      // The query is in the `q` param — echo it back so each query's section is distinct.
-      const q = new URL(url).searchParams.get("q") ?? "";
-      return searxResp([{ title: `title-${q}`, content: `c-${q}`, url: `https://${q}.test` }]);
-    }) as unknown as typeof globalThis.fetch;
+  it("returns a grouped batch report mentioning every query (POST body echo)", async () => {
+    const { fetchFn, calls } = recordingFetch((_n, req) => {
+      const q = req.body.q ?? "";
+      return serperResp([{ title: `title-${q}`, snippet: `c-${q}`, link: `https://${q}.test` }]);
+    });
 
-    const md = await performWebSearchBatch(["q1", "q2"], { fetchFn, timeoutMs: 5000 });
+    const md = await performWebSearchBatch(["q1", "q2"], { ...DEPS, fetchFn });
 
     expect(md).toContain("# Batch Web Search Results");
     expect(md).toContain("Total queries: 2");
@@ -112,5 +207,13 @@ describe("performWebSearchBatch", () => {
     expect(md).toContain("## Query: q2");
     expect(md).toContain("title-q1");
     expect(md).toContain("title-q2");
+    expect(calls.map((c) => c.body.q).sort()).toEqual(["q1", "q2"]);
+  });
+
+  it("reports a failed query inside the batch instead of throwing", async () => {
+    const { fetchFn } = recordingFetch(() => serperResp([], 400));
+    const md = await performWebSearchBatch(["bad"], { ...DEPS, fetchFn });
+    expect(md).toContain("Failed: 1");
+    expect(md).toContain("Error:");
   });
 });

@@ -239,7 +239,7 @@ export function buildWebTools(
     // -- 1. web_search --------------------------------------------------------
     web_search: tool({
       description:
-        "Search the web via SearXNG and return a markdown report of results " +
+        "Search the web via Google (Serper) and return a markdown report of results " +
         "(title, snippet, URL). Use for general, up-to-date information.",
       inputSchema: z.object({
         query: z
@@ -253,11 +253,11 @@ export function buildWebTools(
           .min(1)
           .max(20)
           .optional()
-          .describe("Number of results, from 1 to 20, default 10"),
+          .describe("Number of results, 1–20, default 10 (Google returns up to 10 per page)"),
         safeSearch: z
           .enum(["strict", "moderate", "off"])
           .optional()
-          .describe("Safe search mode: strict, moderate, off"),
+          .describe("Safe search mode: strict, moderate, off (accepted, not forwarded — Serper has no such switch)"),
         region: z
           .string()
           .min(2)
@@ -287,7 +287,7 @@ export function buildWebTools(
     // -- 2. web_search_batch --------------------------------------------------
     web_search_batch: tool({
       description:
-        "Run multiple web searches in parallel via SearXNG and return a grouped " +
+        "Run multiple web searches in parallel via Google (Serper) and return a grouped " +
         "markdown report. Use to research several questions at once.",
       inputSchema: z.object({
         queries: z
@@ -301,7 +301,7 @@ export function buildWebTools(
           .min(1)
           .max(20)
           .optional()
-          .describe("Number of results per query, from 1 to 20, default 10"),
+          .describe("Number of results per query, 1–20, default 10 (Google returns up to 10 per page)"),
         safeSearch: z
           .enum(["strict", "moderate", "off"])
           .optional()

@@ -3,7 +3,7 @@
  *
  * Ported from the external MCP server, adapted to jarvis conventions:
  *  - browser/nesty/rate-limit config removed;
- *  - SearXNG endpoint + engines come from the validated `env` (NOT process.env);
+ *  - web search is Serper (Google SERP) — the key lives in `.env`, endpoints here;
  *  - cache dirs are rooted under `env.WEB_CACHE_DIR`;
  *  - request timeouts/retries are plain fallback constants — the real request
  *    timeout is supplied by SettingsService at call time.
@@ -13,7 +13,6 @@ import { join } from "node:path";
 import { env } from "../../config/env.js";
 
 export const DEFAULT_REGION = "ru-by";
-export const DEFAULT_SEARCH_LANGUAGE = "all";
 
 /** Search-result bounds and defaults (shared by search tools). */
 export const CONFIG = {
@@ -96,20 +95,17 @@ export const FETCH_LIMITS = {
   timeoutMs: 30000,
 } as const;
 
-/** SearXNG endpoint and engines come from the validated env. */
-export const SEARCH_API_URL = env.SEARXNG_URL;
-// Default engines: google + bing. (yandex's SearXNG parser is currently broken —
-// it returns a parse error — so the old "google,yandex" effectively queried a
-// single engine; bing answers reliably alongside google.) Override via SEARXNG_ENGINES.
-export const SEARCH_ENGINES = env.SEARXNG_ENGINES ?? "google,bing";
+/** Serper (Google SERP) endpoint. The key comes from `env.SERPER_API_KEY`. */
+export const SERPER_SEARCH_URL = "https://google.serper.dev/search";
 
 /** Search request shape constants. The real per-request timeout comes from
  * SettingsService at call time; these are fallbacks/limits. */
-export const SEARCH_CATEGORIES = "general";
 export const SEARCH_API_TIMEOUT_MS = 12000;
 export const SEARCH_API_RETRIES = 2;
 export const SEARCH_API_BACKOFF_MS = 350;
 export const MAX_BATCH_QUERIES = 8;
+/** Google returns ~10 organic results per page; extra pages cost another credit. */
+export const SERPER_MAX_RESULTS = 10;
 
 export const REGION_ALIASES: Record<string, string> = {
   // "global"/"world"/"all"/"wt" → worldwide (wt-wt). These previously mapped to
@@ -137,13 +133,29 @@ export const REGION_ALIASES: Record<string, string> = {
   fr: "fr-fr",
 };
 
-export const REGION_TO_LANGUAGE: Record<string, string> = {
-  "wt-wt": "all",
-  "ru-ru": "ru-RU",
-  "ru-by": "ru-BY",
-  "ua-uk": "uk-UA",
-  "us-en": "en-US",
-  "uk-en": "en-GB",
-  "de-de": "de-DE",
-  "fr-fr": "fr-FR",
-};
+/**
+ * Google `gl`/`hl` per canonical region.
+ *
+ * Canonical regions are `ll-cc`-ish but not consistently ordered (`ru-by` is
+ * language `ru` / country `by`; `us-en` is country `us` / language `en`), so the
+ * mapping is explicit for every alias target and falls back to the same order
+ * for regions the caller typed directly ("it-it").
+ * Worldwide (`wt-wt`) sends neither parameter — Serper then uses the IP.
+ */
+export function googleLocale(resolvedRegion: string): { gl?: string; hl?: string } {
+  if (resolvedRegion === "wt-wt") return {};
+  const explicit: Record<string, { gl: string; hl: string }> = {
+    "ru-ru": { gl: "ru", hl: "ru" },
+    "ru-by": { gl: "by", hl: "ru" },
+    "ua-uk": { gl: "ua", hl: "uk" },
+    "us-en": { gl: "us", hl: "en" },
+    "uk-en": { gl: "gb", hl: "en" },
+    "de-de": { gl: "de", hl: "de" },
+    "fr-fr": { gl: "fr", hl: "fr" },
+  };
+  const hit = explicit[resolvedRegion];
+  if (hit) return hit;
+  const [first, second] = resolvedRegion.split("-");
+  if (!first || !second) return {};
+  return { gl: second, hl: first };
+}
