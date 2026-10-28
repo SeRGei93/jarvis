@@ -24,17 +24,18 @@ describe("parseGoDuration", () => {
 });
 
 describe("SettingsService", () => {
-  it("reads typed settings + models from the DB", async () => {
+  it("reads typed settings from the DB", async () => {
     t = await createTestDb();
     await runSeed(t.db);
     const svc = new SettingsService(t.db);
 
-    expect((await svc.getModelRoles()).default).toBe("openrouter:deepseek/deepseek-v4-flash:nitro");
+    const roles = await svc.getModelRoles();
+    expect(roles.default).toBe("openrouter:deepseek/deepseek-v4.1-flash");
+    expect(roles.decision).toBe("openrouter:~perplexity/pplx-decider-latest");
     const agent = await svc.getAgent();
     expect(agent.max_history).toBe(50);
     expect(await svc.getAllowedUsers()).toEqual([]);
     expect((await svc.getTimeouts()).llm_request).toBe("300s");
-    expect(await svc.getModels()).toHaveLength(11);
   });
 
   it("caches and hot-reloads on version bump", async () => {

@@ -36,6 +36,13 @@
       "when": 1781776518226,
       "tag": "0004_slippery_starfox",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793188124095,
+      "tag": "0005_magical_magdalene",
+      "breakpoints": true
     }
   ]
 }

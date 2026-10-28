@@ -24,6 +24,11 @@ export interface ModelRoles {
   error_correction: string;
   speech: string;
   synthesizer: string;
+  /**
+   * Fast typed-decision model (System One via OpenRouter). Empty/absent = the
+   * decision layer is off and every consumer falls back to its LLM path.
+   */
+  decision?: string;
 }
 
 /** Go duration strings (e.g. "300s", "30s") — parsed where consumed. */

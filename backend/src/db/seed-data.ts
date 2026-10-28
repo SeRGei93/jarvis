@@ -3,8 +3,12 @@
  *
  * Replaces `backend/seed/config.yaml`. Skills and prompts are now a file store
  * (see `src/content/`), so the only data seeded into the DB is configuration
- * that genuinely belongs there: model roles, the available-models list, LLM
- * timeouts, agent params, and subscription plans. `.env` still holds secrets only.
+ * that genuinely belongs there: model roles, LLM timeouts, agent params, and
+ * subscription plans. `.env` still holds secrets only.
+ *
+ * The model *registry* is gone: roles are free-form `provider:model` refs picked
+ * from the live OpenRouter catalog in the admin Mini App, so there is nothing to
+ * seed besides the role assignments themselves.
  *
  * NOTE: dead Go config (`agent.rag.enabled`, `agent.memory_extraction.*`) is NOT
  * carried over — only values the app actually reads (parity with the Go review).
@@ -12,29 +16,17 @@
 
 /** Model role assignments (`provider:model` refs). */
 export const SEED_MODEL_ROLES = {
-  default: "openrouter:deepseek/deepseek-v4-flash:nitro",
+  default: "openrouter:deepseek/deepseek-v4.1-flash",
   router: "openrouter:openai/gpt-oss-120b:nitro",
   error_correction: "openrouter:google/gemini-3-flash-preview",
   speech: "openrouter:google/gemini-3.1-flash-lite",
   synthesizer: "openrouter:google/gemini-3-flash-preview",
+  // Fast typed decisions before the agent (System One models via OpenRouter).
+  // Jev (`~typesafe/jev-latest`) answers 451 in some regions (incl. BY) — pplx
+  // is the portable default; the alias tracks the current decision release.
+  decision: "openrouter:~perplexity/pplx-decider-latest",
 } as const;
 
-/** Available `provider:model` refs (UI list + role validation). */
-export const SEED_MODELS: string[] = [
-  // OpenRouter
-  "openrouter:openai/gpt-oss-120b:nitro",
-  "openrouter:openai/gpt-5-nano",
-  "openrouter:google/gemini-3-flash-preview",
-  "openrouter:google/gemini-3.1-flash-lite",
-  "openrouter:deepseek/deepseek-v3.2",
-  "openrouter:deepseek/deepseek-v4-flash:nitro",
-  "openrouter:google/gemma-3-27b-it",
-  "openrouter:qwen/qwen3.5-flash-02-23",
-  "openrouter:minimax/minimax-m2.7",
-  // Z.AI
-  "zai:glm-5",
-  "zai:glm-4.7-Flash",
-];
 
 /**
  * LLM-call timeouts (Go duration strings: "300s", "5m", "1h30m").

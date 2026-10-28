@@ -1,11 +1,10 @@
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "./schema.js";
-import { settings, models as modelsTable, subscriptionPlans } from "./schema.js";
+import { settings, subscriptionPlans } from "./schema.js";
 import { SettingKey } from "../config/settings-keys.js";
 import {
   SEED_AGENT,
   SEED_MODEL_ROLES,
-  SEED_MODELS,
   SEED_PLANS,
   SEED_TELEGRAM_ALLOWED_USERS,
   SEED_TIMEOUTS,
@@ -33,14 +32,6 @@ async function seedSettings(db: Db): Promise<void> {
   log.info({ count: rows.length }, "seeded settings");
 }
 
-async function seedModels(db: Db): Promise<void> {
-  for (const ref of SEED_MODELS) {
-    const provider = ref.split(":")[0] ?? "openrouter";
-    await db.insert(modelsTable).values({ ref, provider, enabled: true }).onConflictDoNothing();
-  }
-  log.info({ count: SEED_MODELS.length }, "seeded models");
-}
-
 async function seedPlans(db: Db): Promise<void> {
   for (const p of SEED_PLANS) {
     await db.insert(subscriptionPlans).values(p).onConflictDoNothing();
@@ -56,7 +47,6 @@ export async function runSeed(db: Db): Promise<void> {
     return;
   }
   await seedSettings(db);
-  await seedModels(db);
   await seedPlans(db);
   log.info("seed complete");
 }

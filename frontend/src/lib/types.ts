@@ -20,17 +20,31 @@ export interface Skill {
   updatedAt: Timestamp;
 }
 
-// ── models (models table) ───────────────────────────────────────────────────
-export interface ModelRow {
-  id: number;
+// ── model catalog (backend /models/catalog) ─────────────────────────────────
+/** One selectable model from the OpenRouter catalog or the curated decision list. */
+export interface CatalogRow {
+  /** `provider:model` ref written into a role. */
   ref: string;
-  provider: string;
-  enabled: boolean;
-  label: string;
+  /** Provider-side id (what the provider expects on the wire). */
+  id: string;
+  /** Human title — the client-side search matches this. */
+  name: string;
+  contextLength: number | null;
+  /** USD per 1M tokens. */
+  pricingIn: number | null;
+  pricingOut: number | null;
   supportsTools: boolean;
   supportsReasoning: boolean;
-  notes: string;
-  updatedAt: Timestamp;
+  /** Decision list only: the id is an alias tracking the current release. */
+  aliased?: boolean;
+  /** Decision list only: UI hint. */
+  note?: string;
+}
+
+/** `stale` = the backend served its last known list after a failed refresh. */
+export interface CatalogResponse {
+  items: CatalogRow[];
+  stale: boolean;
 }
 
 // ── model roles (settings: model_roles) ─────────────────────────────────────
@@ -40,6 +54,8 @@ export interface ModelRoles {
   error_correction: string;
   speech: string;
   synthesizer: string;
+  /** Fast typed decisions (System One). Empty/absent = decision layer off. */
+  decision?: string;
 }
 
 // ── timeouts (settings: timeouts) — Go-duration strings ─────────────────────

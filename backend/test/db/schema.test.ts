@@ -20,11 +20,10 @@ const EXPECTED_TABLES = [
   "user_subscriptions",
   "message_rate_limits",
   "settings",
-  "models",
 ];
 
 describe("schema migrations", () => {
-  it("creates all 12 tables", async () => {
+  it("creates all 11 tables", async () => {
     t = await createTestDb();
     const res = await t.client.execute("SELECT name FROM sqlite_master WHERE type='table'");
     const names = res.rows.map((r) => String(r.name));

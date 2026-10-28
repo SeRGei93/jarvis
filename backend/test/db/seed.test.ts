@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createTestDb, type TestDb } from "../helpers/libsql.js";
 import { runSeed } from "../../src/db/seed.js";
-import { settings, models, subscriptionPlans } from "../../src/db/schema.js";
+import { settings, subscriptionPlans } from "../../src/db/schema.js";
 import { SettingKey } from "../../src/config/settings-keys.js";
 
 let t: TestDb | undefined;
@@ -10,8 +10,8 @@ afterEach(() => {
   t = undefined;
 });
 
-describe("runSeed (code seed -> settings/models/plans)", () => {
-  it("seeds settings, models and plans", async () => {
+describe("runSeed (code seed -> settings/plans)", () => {
+  it("seeds settings and plans", async () => {
     t = await createTestDb();
     await runSeed(t.db);
 
@@ -22,14 +22,12 @@ describe("runSeed (code seed -> settings/models/plans)", () => {
     expect(keys).toContain(SettingKey.Agent);
 
     const roles = s.find((r) => r.key === SettingKey.ModelRoles)?.value as Record<string, string>;
-    expect(roles.default).toBe("openrouter:deepseek/deepseek-v4-flash:nitro");
+    expect(roles.default).toBe("openrouter:deepseek/deepseek-v4.1-flash");
     expect(roles.router).toContain("gpt-oss-120b");
+    expect(roles.decision).toBe("openrouter:~perplexity/pplx-decider-latest");
 
     const agent = s.find((r) => r.key === SettingKey.Agent)?.value as Record<string, number>;
     expect(agent.max_history).toBe(50);
-
-    const m = await t.db.select().from(models);
-    expect(m).toHaveLength(11);
 
     const plans = await t.db.select().from(subscriptionPlans);
     expect(plans).toHaveLength(3);
@@ -41,8 +39,10 @@ describe("runSeed (code seed -> settings/models/plans)", () => {
     t = await createTestDb();
     await runSeed(t.db);
     await runSeed(t.db);
-    const m = await t.db.select().from(models);
-    expect(m).toHaveLength(11);
+    const s = await t.db.select().from(settings);
+    const plans = await t.db.select().from(subscriptionPlans);
+    expect(s.filter((r) => r.key === SettingKey.ModelRoles)).toHaveLength(1);
+    expect(plans).toHaveLength(3);
   });
 
   // NOTE: skills & prompts are no longer DB-seeded — they live in the file-backed

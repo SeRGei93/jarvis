@@ -17,6 +17,7 @@ import { createConversationMemory } from "./mastra/memory/history.js";
 import { RateLimitService } from "./services/rate-limit.js";
 import { UsageService } from "./services/usage.js";
 import { AccessRequestService } from "./services/access-request-service.js";
+import { ModelsCatalog } from "./services/models-catalog.js";
 import { runChat, type ChatDeps, type ChatResult } from "./mastra/workflows/chat.js";
 import { logger } from "./pkg/logger.js";
 
@@ -78,6 +79,7 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
   const rateLimit = new RateLimitService(opts.db);
   const usage = new UsageService(opts.db);
   const accessRequests = new AccessRequestService(opts.db, settings);
+  const modelsCatalog = new ModelsCatalog();
 
   const deps: ChatDeps = {
     db: opts.db,
@@ -95,6 +97,7 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
     usage,
     confirmations,
     accessRequests,
+    modelsCatalog,
   };
 
   const routableCount = (await skills.getRoutableSkills()).length;

@@ -1,7 +1,7 @@
 import { max } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "../db/schema.js";
-import { settings, models as modelsTable } from "../db/schema.js";
+import { settings } from "../db/schema.js";
 import {
   SettingKey,
   type ModelRoles,
@@ -14,7 +14,6 @@ import { logger } from "../pkg/logger.js";
 const log = logger.child({ mod: "settings" });
 
 type Db = LibSQLDatabase<typeof schema>;
-type ModelRow = typeof modelsTable.$inferSelect;
 
 /** Parse a Go-style duration string ("300s", "1h30m", "500ms") into milliseconds. */
 export function parseGoDuration(s: string): number {
@@ -51,13 +50,12 @@ function epochSeconds(d: Date | number | null | undefined): number {
 }
 
 /**
- * Reads global config (settings + models) from the DB and caches it in memory.
+ * Reads global config (settings) from the DB and caches it in memory.
  * Hot-reload: `refreshIfStale()` reloads when the DB has newer rows (max updated_at),
  * `invalidate()` forces a reload on next access (call after an admin save).
  */
 export class SettingsService {
   private cache: Map<string, unknown> | null = null;
-  private modelRows: ModelRow[] = [];
   private version = 0; // max(updated_at), epoch seconds
 
   constructor(private readonly db: Db) {}
@@ -66,11 +64,7 @@ export class SettingsService {
     const rows = await this.db.select().from(settings);
     this.cache = new Map(rows.map((r) => [r.key, r.value]));
     this.version = rows.reduce((mx, r) => Math.max(mx, epochSeconds(r.updatedAt)), 0);
-    this.modelRows = await this.db.select().from(modelsTable);
-    log.info(
-      { version: this.version, settings: rows.length, models: this.modelRows.length },
-      "settings reloaded",
-    );
+    log.info({ version: this.version, settings: rows.length }, "settings reloaded");
     this.validate();
   }
 
@@ -123,10 +117,6 @@ export class SettingsService {
    */
   async getAccessMode(): Promise<AccessMode> {
     return ((await this.ensure()).get(SettingKey.TelegramAccessMode) ?? "open") as AccessMode;
-  }
-  async getModels(): Promise<ModelRow[]> {
-    await this.ensure();
-    return this.modelRows;
   }
 
   /** Warn (parity with Go) if http_client < llm_request — HTTP would abort first. */

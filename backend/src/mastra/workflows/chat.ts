@@ -17,6 +17,7 @@ import { ProfileExtractor } from "../memory/profile-extractor.js";
 import { RateLimitService } from "../../services/rate-limit.js";
 import { UsageService } from "../../services/usage.js";
 import { AccessRequestService } from "../../services/access-request-service.js";
+import type { ModelsCatalog } from "../../services/models-catalog.js";
 import {
   ensureThread,
   saveUserMessage,
@@ -64,6 +65,8 @@ export interface ChatDeps {
   confirmations: ConfirmationService;
   /** Bot access-request inbox + allowlist gate (M17). Reused by the admin API. */
   accessRequests: AccessRequestService;
+  /** OpenRouter + decision model catalogs (admin model picker, role validation). */
+  modelsCatalog: ModelsCatalog;
   /**
    * Best-effort Telegram sender for out-of-band notifications (e.g. "access
    * granted ✅" on approval). Wired by the server after the bot starts; undefined

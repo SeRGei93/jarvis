@@ -27,10 +27,11 @@ import {
   IconRefresh,
   IconTrash,
 } from "@tabler/icons-react";
-import type { ModelRow, Skill } from "../lib/types.js";
+import type { CatalogRow, Skill } from "../lib/types.js";
 import { apiDelete, apiGet, apiPost, apiPut } from "../lib/api.js";
 import { useAuthGate } from "../components/AuthGate.js";
-import { ModelRefSelect } from "../components/ModelRefSelect.js";
+import { ModelRefPicker } from "../components/ModelRefPicker.js";
+import { loadCatalog } from "../lib/catalog.js";
 import { fmtCost, handleApiError, notifyOk } from "./_adminHelpers.js";
 
 /** API shape of a skill (the wire allows a null model, unlike the strict type). */
@@ -89,7 +90,7 @@ function formFromSkill(s: SkillApi): SkillFormValues {
 export function SkillsScreen() {
   const { reportError } = useAuthGate();
   const [skills, setSkills] = useState<SkillApi[]>([]);
-  const [models, setModels] = useState<ModelRow[]>([]);
+  const [models, setModels] = useState<CatalogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -116,13 +117,13 @@ export function SkillsScreen() {
     setLoading(true);
     setError(null);
     try {
-      // Models feed the "Модель" Select in the editor — load them alongside skills.
-      const [skillRows, modelRows] = await Promise.all([
+      // The OpenRouter catalog feeds the "Модель" picker (session-cached).
+      const [skillRows, catalog] = await Promise.all([
         apiGet<SkillApi[]>("/skills"),
-        apiGet<ModelRow[]>("/models"),
+        loadCatalog("openrouter"),
       ]);
       setSkills(skillRows);
-      setModels(modelRows);
+      setModels(catalog.items);
     } catch (err) {
       setError(handleApiError(err, reportError));
     } finally {
@@ -259,9 +260,9 @@ export function SkillsScreen() {
                     </Text>
                   </Table.Td>
                   <Table.Td style={{ minWidth: 220 }}>
-                    <ModelRefSelect
+                    <ModelRefPicker
                       value={s.model ?? ""}
-                      models={models}
+                      items={models}
                       onChange={(ref) => void changeModel(s, ref)}
                       size="xs"
                       placeholder="по умолчанию"
@@ -341,12 +342,12 @@ export function SkillsScreen() {
               {...form.getInputProps("description")}
             />
             <Group grow align="flex-start">
-              <ModelRefSelect
+              <ModelRefPicker
                 label="Модель"
                 description="Пусто = модель по умолчанию"
                 placeholder="по умолчанию"
                 value={form.values.model}
-                models={models}
+                items={models}
                 onChange={(ref) => form.setFieldValue("model", ref)}
               />
               <NumberInput

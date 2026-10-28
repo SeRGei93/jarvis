@@ -264,19 +264,8 @@ export const accessRequests = sqliteTable(
   (t) => [index("idx_access_requests_status").on(t.status)],
 );
 
-// ── models ──────────────────────────────────────────────────────────────────
-// Available `provider:model` refs for UI + role validation.
-export const models = sqliteTable("models", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  ref: text("ref").notNull().unique(),
-  provider: text("provider").notNull(),
-  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-  label: text("label").notNull().default(""),
-  supportsTools: integer("supports_tools", { mode: "boolean" }).notNull().default(true),
-  supportsReasoning: integer("supports_reasoning", { mode: "boolean" }).notNull().default(false),
-  notes: text("notes").notNull().default(""),
-  updatedAt: updatedAt(),
-});
+// NOTE: `models` was dropped — a role is a free-form `provider:model` ref picked
+// from the live OpenRouter catalog (src/services/models-catalog.ts), not a row.
 
 // NOTE: skills and prompts are NO LONGER DB tables — they live in the file-backed
 // content store (src/content/, SKILLS_DIR/PROMPTS_DIR): repo-bundled defaults
