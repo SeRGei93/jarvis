@@ -204,6 +204,17 @@ changes shipped in the new image are also reconciled into the store on boot —
 delivered to files the admin never edited, preserving admin edits (see
 [Configuration](configuration.md#skills-and-prompts-file-backed-store-m12)).
 
+> **Upgrading to the M19 stack (Serper + model catalog + decisions):**
+> 1. `make rebuild` applies migration `0005` (`DROP TABLE models`) automatically.
+> 2. Add `SERPER_API_KEY` to `.env` (web search); without it `web_search` reports
+>    "not configured" and everything else keeps working.
+> 3. Roles are **not re-seeded** on an existing DB. Open the Mini App → Модели and
+>    set `default` to `openrouter:deepseek/deepseek-v4.1-flash` and `decision` to
+>    `openrouter:~perplexity/pplx-decider-latest` (the models registry is gone —
+>    pick them from the live OpenRouter catalog, the search box filters by name).
+> 4. Leave `decision` empty to keep the decision layer off; every consumer falls
+>    back to its LLM/keyword path.
+
 ## Data & backups
 
 The libSQL database is a single host file at **`./data/db/avocado.db`** — back it
