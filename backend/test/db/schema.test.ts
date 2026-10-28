@@ -20,14 +20,17 @@ const EXPECTED_TABLES = [
   "user_subscriptions",
   "message_rate_limits",
   "settings",
+  "pending_confirmations",
+  "access_requests",
 ];
 
 describe("schema migrations", () => {
-  it("creates all 11 tables", async () => {
+  it("creates all 13 tables (the models registry was dropped in 0005)", async () => {
     t = await createTestDb();
     const res = await t.client.execute("SELECT name FROM sqlite_master WHERE type='table'");
     const names = res.rows.map((r) => String(r.name));
     for (const tbl of EXPECTED_TABLES) expect(names).toContain(tbl);
+    expect(names).not.toContain("models");
   });
 
   it("inserts and reads a row (defaults applied)", async () => {
