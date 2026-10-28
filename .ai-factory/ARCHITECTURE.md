@@ -15,19 +15,20 @@ jarvis/
       mastra/    models (provider:model factory), llm (stream/watchdog/cost/retries/fallback),
                  strip-leaked-tools, speech,
                  agents/ (orchestrator, primary-skill, prompt-builder, skill-agent, loop-guard),
-                 memory/ (memory-service, rolling-summary, fact-extractor, dedup, profile-extractor, history+message I/O),
+                 memory/ (memory-service, rolling-summary, fact-extractor, dedup (decision→LLM composite), profile-extractor, history+message I/O),
+                 decisions/ (types, service — DecisionService over Mastra Classifier → OpenRouter System One),
                  tools/ (web bucket, load-skill, memory-tools, currency, tasks, profile-tools, skill-ref, registry),
                  workflows/ (chat),
                  index.ts (Mastra instance: storage)
-      pkg/       logger (pino + redact), promptguard, bootstrap-env
-      services/  skill-service (file-backed via content repos), conversation-context, rate-limit, usage
+      pkg/       logger (pino + redact), promptguard, bootstrap-env, timeout-fetch (shared HTTP timeout wrapper)
+      services/  skill-service (file-backed via content repos), models-catalog (live OpenRouter catalog + decision list), conversation-context, rate-limit, usage
       app.ts     composition root — createChatService() wires handleUserMessage()
       telegram/  bot (grammY wiring), stream (throttled editMessageText), format (md→MarkdownV2 + split),
                  voice (→speech), messenger (notify), identity (user/channel), commands, errors
       scheduler/ schedule (pure due/notify rules), executor (poll due cron_tasks → chat pipeline → notify),
                  scheduler (node-cron driver: 60s/5s polls), wiring (ChatService+Notifier → Scheduler)
       admin/     app (Hono: /health + webhook + /admin/api + static Mini App), auth (initData HMAC + ADMIN_USER_IDS),
-                 api/ (settings, models, mcp, skills, prompts, users, plans, usage — CRUD + cache invalidation)
+                 api/ (settings, models (catalog + roles), skills, prompts, users, plans, usage, tasks)
       server.ts  single-process entry (Hono via @hono/node-server: health + webhook + admin API + static)
                  + best-effort ChatService init + grammY bot + cron scheduler
     skills/      repo-bundled skill defaults (<name>/SKILL.md) — populated into SKILLS_DIR on first run

@@ -11,6 +11,7 @@
  * Returns markdown strings ready to hand to the model.
  */
 import { env } from "../../config/env.js";
+import { timeoutFetch } from "../../pkg/timeout-fetch.js";
 import { webChild } from "./logger.js";
 import type { ResolvedRegion, SearchResult } from "./types.js";
 import {
@@ -196,16 +197,13 @@ async function performSerperSearch(
     ...(locale.hl ? { hl: locale.hl } : {}),
   });
 
+  const request = timeoutFetch(timeoutMs, fetchFn);
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= SEARCH_API_RETRIES; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
     try {
-      const response = await fetchFn(searchUrl, {
+      const response = await request(searchUrl, {
         method: "POST",
-        signal: controller.signal,
         headers: {
           "content-type": "application/json",
           accept: "application/json",
@@ -259,8 +257,6 @@ async function performSerperSearch(
         await sleep(SEARCH_API_BACKOFF_MS * (attempt + 1));
         continue;
       }
-    } finally {
-      clearTimeout(timeout);
     }
   }
 

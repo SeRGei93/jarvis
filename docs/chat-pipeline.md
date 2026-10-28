@@ -35,7 +35,7 @@ text ─▶ promptguard ─▶ loadContext ─▶ rate-limit ─▶ history + me
 3. **rate-limit** — `RateLimitService.checkAndConsume(userId)` enforces the hourly plan window. Un-onboarded users are bypassed; over the limit the turn is rejected. See [Configuration](configuration.md#plans-rate-limit-and-usage).
 4. **history + previousSkills** — `getRecentMessages(...)` reads the last `agent.max_history` messages; `derivePreviousSkills(...)` collects skill tags from prior assistant turns (newest-first). The current user message is then persisted.
 5. **memories + prompts** — `MemoryService.loadRelevant(userId)` returns the user's long-term facts (capped at 50, loaded whole — no vector/RAG, M13); the SOUL/FORMAT/INTEGRITY bodies load from the file-backed prompt store via `SkillService`.
-6. **pre-pass** — `PrimarySkillSelector.selectPrimary(...)` picks ONE primary skill via a cheap `roles.router` classification. If the user is not onboarded, `onboarding` is forced (no model call); an empty/unknown/failed pick falls back to `research`. `resolveTurnConfig(...)` then resolves the turn's model (session override → primary skill's model → `roles.default`), temperature, and reasoning.
+6. **pre-pass** — `PrimarySkillSelector.selectPrimary(...)` picks ONE primary skill. With a `model_roles.decision` model configured it first asks the **decision layer** (`DecisionService.choose`) — one typed System One call over the routable catalog, argmax over probabilities, ~$0.000003 and no generation. Anything unusable (role empty, non-OpenRouter ref, refusal, error, unknown skill id) falls through to the cheap `roles.router` `generateObject` classification. If the user is not onboarded, `onboarding` is forced (no model call). `resolveTurnConfig(...)` then resolves the turn's model (session override → primary skill's model → `roles.default`), temperature, and reasoning.
 7. **orchestrator** — `Orchestrator.run(...)` streams one agent turn (see [The orchestrator](#the-orchestrator)). Any failure degrades to a user-facing fallback instead of throwing.
 8. **record usage** — `UsageService.recordUsage(userId, cost)` accumulates the turn's cost + request count.
 9. **persist** — the assistant reply is saved to Mastra Memory, tagged with the primary skill.
@@ -91,7 +91,8 @@ Destructive tools (`forget`, `task_delete`) don't act directly — they record a
 
 | Module | Responsibility |
 |--------|----------------|
-| `agents/primary-skill` | cheap `roles.router` classification → ONE primary skill; forces `onboarding`, falls back to `research`; resolves the turn's model/temperature/reasoning |
+| `agents/primary-skill` | decision fast path (optional) → else cheap `roles.router` classification → ONE primary skill; forces `onboarding`, falls back to `research`; resolves the turn's model/temperature/reasoning |
+| `decisions/` | `DecisionService` over Mastra `Classifier` → OpenRouter System One: `choose` / `judge` helpers, null-on-any-failure, 10 s timeout, 20 k state cap |
 | `agents/orchestrator` | the single dynamic `Agent`; assembles the per-request prompt/model/tools, gates tools via `prepareStep`, streams `fullStream`, keeps the AbortSignal watchdog + post-stream strip |
 | `tools/load-skill` | `load_skill(name)` tool + `activeToolNames`/`buildSkillToolMap` for the per-step gate |
 | `confirmations/confirmation-service` | confirm-before-execute for risky tools (create / listPending / resolve) |

@@ -17,6 +17,7 @@
  * back to typing a ref by hand.
  */
 import { logger } from "../pkg/logger.js";
+import { timeoutFetch } from "../pkg/timeout-fetch.js";
 
 const log = logger.child({ mod: "models-catalog" });
 
@@ -254,10 +255,9 @@ export class ModelsCatalog {
   private async refresh(): Promise<CatalogResponse> {
     const started = this.now();
     try {
-      const res = await this.fetchFn(this.url, {
+      const res = await timeoutFetch(this.timeoutMs, this.fetchFn)(this.url, {
         method: "GET",
         headers: { accept: "application/json" },
-        signal: AbortSignal.timeout(this.timeoutMs),
       });
       if (!res.ok) {
         log.warn({ status: res.status }, "OpenRouter catalog request failed");

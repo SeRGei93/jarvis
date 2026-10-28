@@ -15,7 +15,7 @@ domain (pure) ← config / services ← mastra adapters ← app.ts / server.ts (
 - `content/` is the file-backed skill/prompt store (`SKILLS_DIR`/`PROMPTS_DIR`); `SkillService` wraps `SkillRepository`/`PromptRepository`, both taking a dir so tests point them at temp dirs.
 - `mastra/*` are adapters over the AI SDK / Mastra Memory; depend on `domain` + `config`.
 - `app.ts` is the composition root (wires the factory, settings, services into `handleUserMessage`).
-- External calls are injectable (`ModelFactory`, `SettingsService`, `RouteModelFn`, `ExtractFn`, `DedupChecker`, `Summarizer`, `LoopGuard`'s clock) → tests run with zero network.
+- External calls are injectable (`ModelFactory`, `SettingsService`, `RouteModelFn`, `ExtractFn`, `DedupChecker`, `Summarizer`, `LoopGuard`'s clock, `DecisionClient`) → tests run with zero network.
 
 ## Structure (`backend/src/`)
 
@@ -28,7 +28,8 @@ domain (pure) ← config / services ← mastra adapters ← app.ts / server.ts (
 | `mastra/` | `models`, `llm`, `strip-leaked-tools`, `speech`, `index` (Mastra instance) |
 | `mastra/agents/` | `primary-skill` (pre-pass), `orchestrator` (the agent), `prompt-builder`, `skill-agent` + `loop-guard` (admin test-run only) |
 | `mastra/confirmations/` | `confirmation-service` (confirm-before-execute for risky tools) |
-| `mastra/memory/` | `memory-service` (load-all + cap), `rolling-summary`, `fact-extractor`, `dedup` (LLM), `profile-extractor`, `history` (+ message I/O) |
+| `mastra/memory/` | `memory-service` (load-all + cap, optional decision scope), `rolling-summary`, `fact-extractor`, `dedup` (decision → LLM composite), `profile-extractor`, `history` (+ message I/O) |
+| `mastra/decisions/` | `service` (DecisionService over Mastra `Classifier` → OpenRouter System One; null-on-failure), `types` |
 | `mastra/tools/` | `registry` (`resolveTools`/`resolveAllTools`), `load-skill`, `memory-tools`, `currency`, `web` (native web bucket), `tasks`, `profile-tools`, `skill-ref` |
 | `mastra/workflows/` | `chat` (pre-pass → orchestrator agent) |
 | `services/` | `skill-service`, `conversation-context`, `web/` (Serper/Google search, browser-free fetch + SSRF guard, parsers + Belarus verticals) |

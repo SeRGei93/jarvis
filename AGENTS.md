@@ -16,12 +16,12 @@ Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + Lib
 | `services/models-catalog.ts` | live OpenRouter catalog (6 h cache) + curated decision-model list — feeds the admin model picker and role validation |
 | `db/` | `schema` (12 tables — incl. `pending_confirmations`, no `skills`/`prompts`/`models`), `migrations/`, `client`, `migrate`, `seed` (code seed), `seed-data` |
 | `domain/` | `entities` (+ constants), `memory-classifier`, `sensitivity-filter` |
-| `mastra/` | `models`, `llm`, `strip-leaked-tools`, `speech`, `agents/{primary-skill,orchestrator,prompt-builder,skill-agent,loop-guard}`, `confirmations/confirmation-service`, `memory/{memory-service,profile-extractor,history,…}`, `tools/{load-skill,memory-tools,registry,…}`, `workflows/chat`, `index` |
+| `mastra/` | `models`, `llm`, `strip-leaked-tools`, `speech`, `agents/{primary-skill,orchestrator,prompt-builder,skill-agent,loop-guard}`, `decisions/{service,types}` (Classifier→OpenRouter System One), `confirmations/confirmation-service`, `memory/{memory-service,dedup,profile-extractor,history,…}`, `tools/{load-skill,memory-tools,registry,…}`, `workflows/chat`, `index` |
 | `services/` | `skill-service` (file-backed via content repos), `conversation-context`, `rate-limit`, `usage` |
 | `telegram/` | `bot`, `stream`, `format`, `voice`, `messenger`, `identity`, `commands`, `errors` (grammY transport, M6) |
 | `scheduler/` | `schedule`, `executor`, `scheduler` (node-cron), `wiring` — due cron tasks → chat pipeline → notify (M7) |
 | `admin/` | `app` (Hono), `auth` (Telegram `initData` HMAC + `ADMIN_USER_IDS`), `api/{settings,models,skills,prompts,users,plans,usage,tasks}` (M8) |
-| `pkg/` | `logger`, `promptguard`, `bootstrap-env` |
+| `pkg/` | `logger`, `promptguard`, `bootstrap-env`, `timeout-fetch` |
 | `app.ts` | composition root — `createChatService()` → `handleUserMessage()` |
 | `server.ts` | single-process entry (Hono via `@hono/node-server`: `/health` + webhook + `/admin/api` + static Mini App; + ChatService + grammY bot + cron scheduler) |
 | `backend/skills/`, `backend/prompts/` | repo-bundled content-store defaults (populated into `SKILLS_DIR`/`PROMPTS_DIR` on first run) |
@@ -64,4 +64,4 @@ Vite + React 18 + Mantine 7 + `@twa-dev/sdk`, HashRouter. `lib/api` (typed clien
 | Deployment | `docs/deployment.md` | Docker + external Caddy (TLS) on shared `edge` net, deploy.sh, Makefile (M9) |
 
 ## Next
-**M9** — deploy & data migration: multi-stage Dockerfile (build frontend → serve from the single backend container), npm-scripts, Postgres → libSQL data migration script.
+**M18** — structured news output with media (typed items; the Telegram adapter decides how to render), and **M16** (watch: native Mastra working/observational memory once GA).

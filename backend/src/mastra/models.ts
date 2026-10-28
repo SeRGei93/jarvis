@@ -6,6 +6,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
 import { env } from "../config/env.js";
 import { logger } from "../pkg/logger.js";
+import { timeoutFetch } from "../pkg/timeout-fetch.js";
 
 const log = logger.child({ mod: "models" });
 
@@ -26,15 +27,6 @@ export interface ModelFactoryOptions {
   httpTimeoutMs?: number;
   /** Override API keys (defaults read from env). */
   apiKeys?: Partial<Record<Provider, string | undefined>>;
-}
-
-/** fetch wrapped with an HTTP timeout, composed with any caller-supplied abort signal. */
-function timeoutFetch(ms: number): typeof fetch {
-  return (input, init) => {
-    const timeout = AbortSignal.timeout(ms);
-    const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
-    return fetch(input, { ...init, signal });
-  };
 }
 
 /**
