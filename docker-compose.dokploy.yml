@@ -1,0 +1,86 @@
+# Прод-стек для Dokploy. Traefik (панель Dokploy) раздаёт домен, который вы
+# добавляете в разделе Domains: один хост, весь трафик → app:8080 (Strip Path
+# OFF). Один origin — initData Mini App не утекает через referrer.
+#
+# jarvis — ОДИН процесс на файловой libSQL (Telegram-бот polling + cron +
+# admin API + статика Mini App). Сервис нельзя масштабировать: replicas > 1
+# уронит Telegram polling и порвёт sqlite-файл.
+#
+# Состояние живёт в volume jarvis-data (sqlite + web-cache + skills/prompts).
+# Бэкап тома — часть деплоя: пересоздание volume сотрёт память бота. Миграции
+# и сид применяются entrypoint'ом при каждом старте (идемпотентно).
+#
+# Dokploy деплоит через `compose up`, а не `pull`: без pull_policy: always
+# переехавший :latest остался бы старым локальным образом.
+name: jarvis
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+x-app-hardening: &app-hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+x-app-healthcheck: &app-healthcheck
+  test:
+    [
+      "CMD",
+      "node",
+      "-e",
+      "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+    ]
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 15s
+
+services:
+  app:
+    image: ghcr.io/sergei93/jarvis-app:${IMAGE_TAG:-latest}
+    pull_policy: always
+    environment:
+      NODE_ENV: production
+      # Обязательны в production — fail-fast на старте (backend config/env.ts).
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY}
+      # Опциональные провайдеры/поиск — пустые, если не заданы в Environment.
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
+      ZAI_API_KEY: ${ZAI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      # Admin Mini App: comma-separated Telegram user ids (пусто = только /health).
+      ADMIN_USER_IDS: ${ADMIN_USER_IDS:-}
+      # Бот в long polling по умолчанию — публичный URL не нужен. Webhook
+      # опционально: USE_WEBHOOK=true + WEBHOOK_URL=https://<домен>/telegram.
+      TELEGRAM_USE_WEBHOOK: ${TELEGRAM_USE_WEBHOOK:-}
+      TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # libSQL-файл и кэши на персистентном volume.
+      LIBSQL_URL: file:/data/avocado.db
+      WEB_CACHE_DIR: /data/web-cache
+      # Файловый стор скиллов/промптов: при первом старте заселится дефолтами
+      # из образа, правки из админки переживают редеплой.
+      SKILLS_DIR: /data/skills
+      PROMPTS_DIR: /data/prompts
+    volumes:
+      - jarvis-data:/data
+    networks: [default, dokploy-network] # dokploy-network → Traefik (порт 8080)
+    restart: unless-stopped
+    healthcheck: *app-healthcheck
+    <<: *app-hardening
+    logging: *logging
+
+networks:
+  default:
+  dokploy-network:
+    external: true
+
+volumes:
+  # sqlite (avocado.db) + web-cache + skills/prompts. Бэкап — часть деплоя.
+  jarvis-data:

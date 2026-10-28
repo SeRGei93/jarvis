@@ -126,6 +126,48 @@ If port 8080 is already taken on your host, override it: `LOCAL_PORT=8081 make l
 > configured" error while fetch/news/verticals keep working. See
 > [Web Search](web-search.md).
 
+## Deploy via Dokploy (alternative edge)
+
+`docker-compose.dokploy.yml` is an alternative to the self-managed Caddy setup:
+Dokploy's Traefik terminates TLS and routes your domain to the app. The app is
+**not built on the server** — GitHub Actions (`.github/workflows/deploy.yml`)
+builds the image on push to `main` and pushes it to GHCR as
+`ghcr.io/sergei93/jarvis-app` (`:latest` + `:<sha>`); the compose file pulls it
+with `pull_policy: always`.
+
+First-time setup in the Dokploy panel:
+
+1. **Settings → Registry**: add GHCR with a GitHub PAT that has `read:packages`.
+2. **Create → Compose → GitHub**: pick this repository, Compose Path
+   `docker-compose.dokploy.yml` (disable auto-deploy on push — the workflow
+   triggers the deploy webhook itself after the image is pushed).
+3. **Environment**: set at minimum
+   `TELEGRAM_BOT_TOKEN`, `OPENROUTER_API_KEY` (required in production, the app
+   fails fast without them), plus `ADMIN_USER_IDS` (comma-separated Telegram
+   user ids for the Mini App) and `SERPER_API_KEY` (web search). Optional:
+   other provider keys, `LOG_LEVEL`.
+4. **Deploy**, then **Domains**: one host, all traffic → service `app`, port
+   `8080`, Strip Path OFF. One origin keeps the Mini App `initData` from
+   leaking via referrer. Set `https://<domain>/miniapp` as the Mini App URL in
+   @BotFather.
+5. For automatic deploys, add the Dokploy webhook URL to the GitHub secret
+   `DOKPLOY_DEPLOY_WEBHOOK`.
+
+Notes:
+
+- The bot runs in **long polling** by default, so no public callback URL is
+  needed; the webhook mode (`TELEGRAM_USE_WEBHOOK=true` +
+  `TELEGRAM_WEBHOOK_URL=https://<domain>/telegram`) stays optional.
+- The service must stay at **one replica** (single polling process + a
+  file-based libSQL database).
+- All state lives in the named volume `jarvis-data` (sqlite, web cache,
+  skills/prompts); migrating from the Caddy setup means copying `./data/db`
+  contents into that volume. Back it up — recreating the volume wipes the
+  bot's memory.
+- Migrations + seed run on every start (idempotent); after the first deploy,
+  set model roles (and the `decision` role) in the admin Mini App — see the
+  M19 upgrade notes in [Updating](#updating).
+
 ## Make targets
 
 | Target | Action |
