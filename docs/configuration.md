@@ -17,12 +17,10 @@
 | `XAI_API_KEY` | no | — | xAI provider |
 | `GOOGLE_API_KEY` | no | — | Google provider |
 | `ADMIN_USER_IDS` | no | `""` | comma-separated Telegram ids for the Mini App (M8) |
-| `SEARXNG_URL` | no | `http://searxng:8080` | SearXNG instance the web-search client queries |
-| `SEARXNG_ENGINES` | no | `google,bing` | comma-separated engine override passed to SearXNG (`yandex` parser currently broken) |
+| `SERPER_API_KEY` | for search | — | serper.dev key for `web_search` (Google SERP). Empty = search reports "not configured"; fetch/news/verticals still work |
 | `WEB_CACHE_DIR` | no | `./data/web-cache` | root dir for the web fetch/search file cache (container: `/data/web-cache`) |
 | `SKILLS_DIR` | no | `./data/skills` | file-backed skill store dir (container: `/data/skills`) |
 | `PROMPTS_DIR` | no | `./data/prompts` | file-backed system-prompt store dir (container: `/data/prompts`) |
-| `SEARXNG_SECRET` | prod | — | secret key the SearXNG **container** requires (prod compose fails fast; local compose defaults it) |
 | `NODE_ENV` | no | `development` | `development` \| `production` \| `test` |
 | `LOG_LEVEL` | no | pino default | `debug` for verbose logs; secrets are always redacted |
 | `PORT` | no | `8080` | health/HTTP server port |
@@ -35,13 +33,13 @@ Seeded from a typed code module (`src/db/seed-data.ts`) into the `settings` tabl
 
 | Key | Shape | Notes |
 |-----|-------|-------|
-| `model_roles` | `{ default, router, error_correction, speech, synthesizer }` | each value is a `provider:model` ref |
+| `model_roles` | `{ default, router, error_correction, speech, synthesizer, decision? }` | each value is a free-form `provider:model` ref (picked from the live OpenRouter catalog, not a registry). Empty `decision` = decision layer off. A ref may carry a routing suffix (`:nitro`) that is not a catalog id — accepted with a warning |
 | `timeouts` | `{ llm_request, http_client, llm_activity }` | Go-style durations (`300s`, `30s`) |
 | `agent` | `{ max_history, default_temperature, auto_memory }` | defaults `50` / `0.4` / `true` |
 | `telegram_allowed_users` | `number[]` | bot chat allowlist; in `open` mode empty = everyone, in `approval` mode it is the gate |
 | `telegram_access_mode` | `"open" \| "approval"` | default `open` (absent key). `approval` = only allowlisted ids chat; unknown users create an access request. Bootstrapped to `approval` once on first run (existing users merged into the allowlist first) |
 
-The `timeouts.http_client` value is the per-request timeout for the `currency_rates` tool and the native [web bucket](web-search.md) (fetch + verticals). Web-search infrastructure (SearXNG endpoint, cache dir) is configured via `.env` runtime flags, not DB settings.
+The `timeouts.http_client` value is the per-request timeout for the `currency_rates` tool and the native [web bucket](web-search.md) (search + fetch + verticals). Web-search infrastructure (the Serper key, cache dir) is configured via `.env` runtime flags, not DB settings.
 
 ### How settings drive the chat pipeline
 
@@ -62,7 +60,7 @@ Skills and system prompts are **files, not DB rows**. Repo-bundled defaults ship
 |------|---------------|---------------|---------|
 | skills | `backend/skills/<name>/SKILL.md` | `SKILLS_DIR` (`/data/skills`) | pre-pass classifier + orchestrator catalog/`load_skill` + `read_skill_reference` |
 | prompts | `backend/prompts/<KEY>.md` | `PROMPTS_DIR` (`/data/prompts`) | prompt-builder (`SOUL`, `FORMAT`, `INTEGRITY`, `WELCOME`, `MONITORING`; `SYNTHESIZER` no longer read by chat) |
-| models | code seed (`src/db/seed-data.ts`) | `models` table | admin UI + role validation |
+| model catalog | — (live) | OpenRouter `GET /api/v1/models` cached 6 h in the backend (`src/services/models-catalog.ts`) | admin model picker + role validation; no table, no seed |
 
 A `SKILL.md` carries YAML frontmatter — `name`, `description`, `allowed-tools` (space-delimited), `model`, `temperature`, `reasoning` (tri-state), `routable`, plus any extra keys (e.g. `max-turns`) preserved as metadata — followed by the prompt body. Editing a skill/prompt (via the admin Mini App or directly on disk) takes effect without a redeploy: writes are **atomic** (`*.tmp` + rename) and the repositories **hot-reload** on file-mtime change; `SkillService.invalidate()` also drops the cache after an admin save.
 
@@ -88,6 +86,6 @@ Schedule validation for cron tasks uses the `cron-parser` dependency (recurring 
 ## See Also
 
 - [Tools](tools.md) — how `timeouts` and plan limits drive the agent's tools
-- [Web Search](web-search.md) — `SEARXNG_*` / `WEB_CACHE_DIR` flags and the native web bucket
+- [Web Search](web-search.md) — `SERPER_API_KEY` / `WEB_CACHE_DIR` flags and the native web bucket
 - [Getting Started](getting-started.md) — creating and seeding the database
 - [Chat Pipeline](chat-pipeline.md) — how roles and agent params are consumed at runtime

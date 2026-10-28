@@ -17,7 +17,7 @@ Migration **milestones 0–8 + 11–13 complete**; **M14** (память/кон�
 - **Storage:** `@mastra/libsql` (LibSQLStore) — local file or Turso. No vector store: long-term memory is relational, capped (50), loaded whole (M13)
 - **ORM / migrations:** `drizzle-orm` 0.45 + `drizzle-kit` (dialect `turso`)
 - **LLM:** Vercel AI SDK **v6** — `@openrouter/ai-sdk-provider`, `@ai-sdk/openai|google|xai`, `@ai-sdk/openai-compatible` (Z.AI)
-- **Web search:** native `web` tool bucket over SearXNG + `fetch_url` (M11; external MCP `search` removed)
+- **Web search:** native `web` tool bucket over Serper (Google SERP) + `fetch_url` (M11/M19; SearXNG + redis removed, external MCP `search` removed)
 - **Cron:** `cron-parser` (schedule validation, M5) + `node-cron` (execution — single-process 60s/5s polls, M7) · **Telegram:** grammY (polling + опц. webhook, throttled streaming), markdown→MarkdownV2 via `marked` · **HTTP/Admin:** Hono + `@hono/node-server` (health + webhook + `/admin/api` + static Mini App, M8)
 - **Admin frontend:** React 18 + Vite + Mantine 7 + `@twa-dev/sdk` (`frontend/`, M8)
 - **Validation:** zod v4 · **Logging:** pino (structured JSON) · **Tests:** vitest

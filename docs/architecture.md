@@ -31,7 +31,7 @@ domain (pure) ← config / services ← mastra adapters ← app.ts / server.ts (
 | `mastra/memory/` | `memory-service` (load-all + cap), `rolling-summary`, `fact-extractor`, `dedup` (LLM), `profile-extractor`, `history` (+ message I/O) |
 | `mastra/tools/` | `registry` (`resolveTools`/`resolveAllTools`), `load-skill`, `memory-tools`, `currency`, `web` (native web bucket), `tasks`, `profile-tools`, `skill-ref` |
 | `mastra/workflows/` | `chat` (pre-pass → orchestrator agent) |
-| `services/` | `skill-service`, `conversation-context`, `web/` (SearXNG search, browser-free fetch + SSRF guard, parsers + Belarus verticals) |
+| `services/` | `skill-service`, `conversation-context`, `web/` (Serper/Google search, browser-free fetch + SSRF guard, parsers + Belarus verticals) |
 | `pkg/` | `logger` (pino + redact), `promptguard`, `bootstrap-env` |
 | `app.ts` | composition root — `createChatService()` → `handleUserMessage()` |
 | `server.ts` | single-process entry point (health server + best-effort ChatService init) |

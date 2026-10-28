@@ -6,7 +6,7 @@
 
 The `web` tool bucket gives skills live access to the internet — general web search, page fetch, Belarus news, and a set of Belarus marketplace / weather / health verticals — **entirely in-process**. It replaces the external MCP `search` server that the Go project shelled out to: all of that plumbing (`@mastra/mcp`, the `mcp_servers` setting, the admin `/mcp` page, the per-request rate limiter and per-user web-usage accounting) is gone.
 
-- Web search goes to a self-hosted **SearXNG** instance reached over the internal Docker network, queried for `format=json` results.
+- Web search goes to **Serper.dev** (`POST https://google.serper.dev/search`) — real Google SERP results, one API key, no self-hosted engine. The `region` parameter maps to Google's `gl`/`hl`, so regionality is by construction.
 - Page fetch is **browser-free**: a bare `fetch` with realistic headers plus `jsdom` + `turndown` to produce markdown. There is **no headless browser / Chromium**.
 - Service code lives under `backend/src/services/web/`; the AI-SDK tool definitions live in `backend/src/mastra/tools/web.ts` and are registered in `backend/src/mastra/tools/registry.ts` as the `web` bucket.
 
@@ -18,7 +18,7 @@ The `web` tool bucket gives skills live access to the internet — general web s
 
 | Tool | Purpose |
 |------|---------|
-| `web_search` | general web search via SearXNG (region/language aware) |
+| `web_search` | general web search via Google (Serper), region-aware |
 | `web_search_batch` | run several search queries in parallel, grouped results |
 | `fetch_url` | fetch a page and return cleaned markdown (browser-free; SSRF-guarded) |
 | `search_news` | Belarus news feed (onliner.by, tochka.by, smartpress.by, gismeteo.by, wikidom.by) |
@@ -55,38 +55,42 @@ Web-search settings are **`.env` runtime flags** (validated by the zod schema in
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `SEARXNG_URL` | no | `http://searxng:8080` | base URL of the SearXNG instance the search client queries |
-| `SEARXNG_ENGINES` | no | (falls back to `google,bing`) | comma-separated engine override passed to SearXNG (`yandex`'s SearXNG parser is currently broken, so it is not in the default set) |
+| `SERPER_API_KEY` | for search | — | serper.dev key (`X-API-KEY`). Empty = `web_search` returns a clear "not configured" error; `fetch_url`, `search_news` and the site tools keep working |
 | `WEB_CACHE_DIR` | no | `./data/web-cache` | root dir for the file cache; the container overrides it to `/data/web-cache` |
-| `SEARXNG_SECRET` | prod | — | secret key the SearXNG **container** requires; the prod compose fails fast if unset, the local compose defaults it |
-| `SEARXNG_PORT` | no | `8888` (local only) | host port that publishes the SearXNG UI for debugging (local compose only) |
 
-The per-request HTTP timeout for fetch and the verticals is **not** an env var — it comes from `SettingsService` (`timeouts.http_client`, Go parity) at call time.
+Serper pricing is per 1k queries (2 500 free credits on signup, then a paid plan); each `web_search` call spends one credit and returns up to **10** organic results — Google's first page. There is no pagination: extra pages would cost another credit per page.
+
+The per-request HTTP timeout for search, fetch and the verticals is **not** an env var — it comes from `SettingsService` (`timeouts.http_client`, Go parity) at call time. Search retries twice on network errors / 429 / 5xx; `401`/`403` fail immediately with a key/credits message.
+
+### Region → Google locale
+
+`web_search` takes `region` (a locale like `ru-by`/`us-en`/`wt-wt`, or an alias like `belarus`/`world`). The client resolves the alias, then sends `gl` (country) and `hl` (interface language):
+
+| Region | `gl` | `hl` |
+|--------|------|------|
+| `ru-by` (default) | `by` | `ru` |
+| `ru-ru` | `ru` | `ru` |
+| `ua-uk` | `ua` | `uk` |
+| `us-en` | `us` | `en` |
+| `uk-en` | `gb` | `en` |
+| `wt-wt` (worldwide) | — | — |
+
+`safeSearch` is accepted by the tool schema for compatibility but is **not forwarded**: Serper's Google endpoint has no safe-search parameter.
 
 ## Infrastructure
 
-Two services back the web bucket, added to **both** `docker-compose.yaml` (prod) and `docker-compose.local.yml` (local):
+**None beyond the app container.** Web search is an outbound HTTPS call, so the old `searxng` + `redis` services, their `deploy/searxng/` read-only config mount and every `SEARXNG_*` variable are gone. `docker-compose.yaml` and `docker-compose.local.yml` run the `app` service only.
 
-| Service | Role |
-|---------|------|
-| **searxng** (`searxng/searxng:latest`) | metasearch engine the app queries for JSON results; internal-only in prod, optionally published locally on `SEARXNG_PORT` |
-| **redis** (`redis:7-alpine`) | cache / coordination backend for SearXNG (internal only; persisted under `./data/redis`) |
-
-SearXNG configuration is mounted read-only from `deploy/searxng/`:
-
-- `settings.yml` — pins the enabled engines, enables the `json` output format (**required** — the search client requests `format=json`), disables the built-in limiter and image proxy, and points SearXNG at `redis://redis:6379/0`. The `secret_key` placeholder is overridden at runtime by the `SEARXNG_SECRET` env var.
-- `limiter.toml` — empty; the limiter is disabled in `settings.yml`.
-
-The app talks to SearXNG over the internal network (`SEARXNG_URL=http://searxng:8080`) and writes its file cache to the bind-mounted `WEB_CACHE_DIR=/data/web-cache`. The app `depends_on` searxng as a plain list (not a health condition) so it still boots if searxng is slow to come up. See [Deployment](deployment.md).
+The app writes its file cache to the bind-mounted `WEB_CACHE_DIR=/data/web-cache`. See [Deployment](deployment.md).
 
 ## Architecture
 
 ```
 backend/src/services/web/
-  config.ts        static config, SearXNG endpoint/engines (from env), cache dirs & TTLs
+  config.ts        static config, Serper endpoint, region→gl/hl map, cache dirs & TTLs
   cache.ts         generic file-backed cache (lazy expiry)
   fetch-cache.ts   fetch-specific cache helpers
-  search.ts        SearXNG client (format=json)
+  search.ts        Serper client (POST google.serper.dev, X-API-KEY, gl/hl, retries)
   fetch.ts         browser-free fetch → cleaned markdown; injectable fetchFn / lookupFn / PageParser[]
   ssrf-guard.ts    SSRF guard (resolves + validates every hop)
   parsers/         generic per-site content extractors (onliner, smartpress, realt, gismeteo, …)
@@ -119,13 +123,14 @@ In the container the cache lives on the bind-mounted `/data/web-cache`, so it su
 ## Troubleshooting
 
 - **403 / anti-bot on `cars.av.by` or `kufar.by`.** Some sites reject a bare `fetch`. The fetch layer already sends realistic browser headers (Chrome UA + accept/language headers); if a single site still blocks, that vertical degrades for that request (returns an error string) without taking down the others. Treat per-site breakage as expected and degrade gracefully.
-- **`web_search` returns nothing / errors.** Check that SearXNG is reachable at `SEARXNG_URL` and that `deploy/searxng/settings.yml` still lists `json` under `search.formats` — the client requests `format=json` and SearXNG returns `403 Forbidden` for a disabled format.
-- **Results look thin / from a single engine.** `yandex`'s SearXNG parser is currently broken (returns a parse error) and `brave` is often rate-limited, so the default engine set is `google,bing`. Override with `SEARXNG_ENGINES` if your instance has other working engines.
-- **SearXNG container won't start in prod.** It requires `SEARXNG_SECRET`; the prod compose fails fast (`set SEARXNG_SECRET in .env`). The local compose defaults the secret.
+- **`web_search` returns `Error: … SERPER_API_KEY is missing`.** The key is not set: add it to `.env` (and to the prod `.env`) and restart. Everything except `web_search*` keeps working without it.
+- **`web_search` returns `Serper rejected the request (HTTP 401/403)`.** The key is wrong or the credits are exhausted. Check serper.dev → dashboard; the tool does not retry these.
+- **Fewer results than requested.** Google serves ~10 organic results per page, so `num` is capped at 10 (or 20 in the schema, still capped). There is no pagination by design — each page is another credit.
+- **Russian/Belarusian results look odd.** Confirm the region: with no `region` the default is `ru-by` (`gl=by`, `hl=ru`). Pass `region: "world"` for worldwide results.
 - **Cache looks stale.** The cache is lazily expired by TTL; to force a refetch, clear the relevant subdirectory under `WEB_CACHE_DIR` (`./data/web-cache/…`).
 
 ## See Also
 
-- [Configuration](configuration.md) — `.env` runtime flags (`SEARXNG_*`, `WEB_CACHE_DIR`) and DB-backed settings
+- [Configuration](configuration.md) — `.env` runtime flags (`SERPER_API_KEY`, `WEB_CACHE_DIR`) and DB-backed settings
 - [Tools](tools.md) — how a skill resolves the `web` bucket via `allowed-tools`
-- [Deployment](deployment.md) — the `searxng` + `redis` compose services and `SEARXNG_SECRET`
+- [Deployment](deployment.md) — the single `app` container and the `SERPER_API_KEY` note

@@ -13,13 +13,14 @@ Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + Lib
 |-----|----------|
 | `config/` | `env` (zod secrets, + `SKILLS_DIR`/`PROMPTS_DIR`), `settings` (DB cache + hot-reload), `settings-keys` |
 | `content/` | file-backed skill/prompt store: `paths`, `store` (populate + atomic write + frontmatter), `skill-repository`, `prompt-repository` |
-| `db/` | `schema` (13 tables — incl. `pending_confirmations`, no `skills`/`prompts`), `migrations/`, `client`, `migrate`, `seed` (code seed), `seed-data` |
+| `services/models-catalog.ts` | live OpenRouter catalog (6 h cache) + curated decision-model list — feeds the admin model picker and role validation |
+| `db/` | `schema` (12 tables — incl. `pending_confirmations`, no `skills`/`prompts`/`models`), `migrations/`, `client`, `migrate`, `seed` (code seed), `seed-data` |
 | `domain/` | `entities` (+ constants), `memory-classifier`, `sensitivity-filter` |
 | `mastra/` | `models`, `llm`, `strip-leaked-tools`, `speech`, `agents/{primary-skill,orchestrator,prompt-builder,skill-agent,loop-guard}`, `confirmations/confirmation-service`, `memory/{memory-service,profile-extractor,history,…}`, `tools/{load-skill,memory-tools,registry,…}`, `workflows/chat`, `index` |
 | `services/` | `skill-service` (file-backed via content repos), `conversation-context`, `rate-limit`, `usage` |
 | `telegram/` | `bot`, `stream`, `format`, `voice`, `messenger`, `identity`, `commands`, `errors` (grammY transport, M6) |
 | `scheduler/` | `schedule`, `executor`, `scheduler` (node-cron), `wiring` — due cron tasks → chat pipeline → notify (M7) |
-| `admin/` | `app` (Hono), `auth` (Telegram `initData` HMAC + `ADMIN_USER_IDS`), `api/{settings,models,mcp,skills,prompts,users,plans,usage}` (M8) |
+| `admin/` | `app` (Hono), `auth` (Telegram `initData` HMAC + `ADMIN_USER_IDS`), `api/{settings,models,skills,prompts,users,plans,usage,tasks}` (M8) |
 | `pkg/` | `logger`, `promptguard`, `bootstrap-env` |
 | `app.ts` | composition root — `createChatService()` → `handleUserMessage()` |
 | `server.ts` | single-process entry (Hono via `@hono/node-server`: `/health` + webhook + `/admin/api` + static Mini App; + ChatService + grammY bot + cron scheduler) |
@@ -27,7 +28,7 @@ Node 22 · TS5 ESM · `@mastra/core` 1.42 · `@mastra/libsql` (LibSQLStore + Lib
 | `test/` | vitest (unit + libSQL integration); `helpers/libsql.ts` harness |
 
 ## Structure (`frontend/src/`)
-Vite + React 18 + Mantine 7 + `@twa-dev/sdk`, HashRouter. `lib/api` (typed client, sends `Authorization: tma <initData>`), `lib/types`, `lib/theme` (Telegram themeParams), `nav` (section registry — single source of truth), `components/{Layout,AuthGate,AccessDenied}`, `screens/` (Skills/Models/Settings/Prompts/Plans/Users/Usage/Mcp). Dev proxies `/admin/api`→:8080; `npm run build` → `dist/`, served by the backend (single origin).
+Vite + React 18 + Mantine 7 + `@twa-dev/sdk`, HashRouter. `lib/api` (typed client, sends `Authorization: tma <initData>`), `lib/types`, `lib/theme` (Telegram themeParams), `nav` (section registry — single source of truth), `components/{Layout,AuthGate,AccessDenied}`, `screens/` (Skills/Models/Settings/Prompts/Plans/Users/Usage/Tasks). Dev proxies `/admin/api`→:8080; `npm run build` → `dist/`, served by the backend (single origin).
 
 ## Commands (run in `backend/`)
 | Command | Purpose |
@@ -55,7 +56,7 @@ Vite + React 18 + Mantine 7 + `@twa-dev/sdk`, HashRouter. `lib/api` (typed clien
 | Getting Started | `docs/getting-started.md` | Install, migrate, seed, run, test |
 | Architecture | `docs/architecture.md` | Layering, structure, dependency rules |
 | Chat Pipeline | `docs/chat-pipeline.md` | pre-pass → orchestrator agent, load_skill, guardrails, tool approval, evals |
-| Tools & MCP | `docs/tools.md` | built-in tools, MCP `search`, rate limit & usage |
+| Tools | `docs/tools.md` | built-in tool buckets (web/currency/memory/tasks), rate limit & usage |
 | Telegram Bot | `docs/telegram.md` | grammY transport, streaming, voice, commands, allowlist |
 | Cron Scheduler | `docs/scheduler.md` | node-cron polls, due tasks → chat pipeline → notify |
 | Configuration | `docs/configuration.md` | `.env` secrets and DB-backed settings |

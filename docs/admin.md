@@ -53,20 +53,22 @@ All routers live in `backend/src/admin/api/` and are mounted under `/admin/api` 
 |-------|-----------|
 | `GET /me` | the authenticated admin's id (liveness) |
 | **settings** | `GET/PUT /settings/timeouts`, `GET/PUT /settings/agent` |
-| **models** | `GET/POST /models`, `PATCH/DELETE /models/:id`, `GET/PUT /models/roles` |
+| **models** | `GET /models/catalog?provider=openrouter\|decision`, `GET /models` (legacy alias), `GET/PUT /models/roles` |
 | **skills** | `GET /skills`, `GET/PUT/DELETE /skills/:name`, `POST /skills`, `POST /skills/:name/test` |
 | **prompts** | `GET /prompts`, `GET/PUT /prompts/:key` (SOUL/FORMAT/INTEGRITY/SYNTHESIZER/WELCOME/MONITORING) |
 | **users** | `GET /users`, `GET/PATCH /users/:id`, `GET/PUT /users/allowlist`, `PUT /users/access-mode`, `GET /users/requests`, `POST /users/requests/:id/approve\|reject` |
 | **plans** | `GET/POST /plans`, `PATCH/DELETE /plans/:id`, `PUT /plans/assign` |
 | **usage** | `GET /usage`, `GET /usage/user/:id`, `DELETE /usage/ratelimit/:userId` |
 
-**Where writes go.** `settings`/`models`/`plans`/`users`/`usage` write libSQL rows and call `SettingsService.invalidate()`. `skills`/`prompts` write **files** in the content store (`SKILLS_DIR`/`PROMPTS_DIR`) — atomically (`*.tmp` + rename) via the repositories, which invalidate their own cache; the name/key is validated against path traversal. The HTTP contract is name/key-addressed (`PUT /skills/:name`, `PUT /prompts/:key`), so the front end is unchanged. The live chat re-reads the new value on its next turn (hot-reload) — see [Configuration](configuration.md).
+**Models have no registry.** There is no `models` table and no CRUD: `GET /models/catalog` proxies OpenRouter's public catalog (trimmed, cached 6 h, `stale` flag when the last refresh failed) and the curated System One list; the Mini App searches by model name on the client. `PUT /models/roles` accepts free-form `provider:model` refs — `openrouter:` refs are checked against the catalog (unknown → warning, not a 400; unreachable catalog → accepted), `decision` against the curated list, other providers by shape only.
+
+**Where writes go.** `settings`/`plans`/`users`/`usage` write libSQL rows and call `SettingsService.invalidate()`. `skills`/`prompts` write **files** in the content store (`SKILLS_DIR`/`PROMPTS_DIR`) — atomically (`*.tmp` + rename) via the repositories, which invalidate their own cache; the name/key is validated against path traversal. The HTTP contract is name/key-addressed (`PUT /skills/:name`, `PUT /prompts/:key`), so the front end is unchanged. The live chat re-reads the new value on its next turn (hot-reload) — see [Configuration](configuration.md).
 
 **Skill test-run.** `POST /admin/api/skills/:name/test { message }` builds the skill's agent and runs one non-streaming generation (watchdog = `timeouts.llm_request`), returning `{ text, usage }`. Useful for editing a prompt and trying it before saving.
 
 ## Frontend
 
-`frontend/` is a self-contained Vite + React 18 + [Mantine](https://mantine.dev) package using `@twa-dev/sdk` (HashRouter). `src/lib/api.ts` attaches `Authorization: tma <WebApp.initData>` to every call; `src/nav.tsx` is the single source of truth for the section list. Screens: Skills (with test-run), Models (+ role assignment), Settings, Prompts, Plans, Users (+ allowlist, access mode, access requests), Usage.
+`frontend/` is a self-contained Vite + React 18 + [Mantine](https://mantine.dev) package using `@twa-dev/sdk` (HashRouter). `src/lib/api.ts` attaches `Authorization: tma <WebApp.initData>` to every call; `src/nav.tsx` is the single source of truth for the section list. Screens: Skills (with test-run), Models (6 role slots + catalog browser with client-side name search), Settings, Prompts, Plans, Users (+ allowlist, access mode, access requests), Usage, Tasks.
 
 ## Access requests
 

@@ -90,7 +90,7 @@ It prints the raw answer to **stdout** and `[cost: $…]` plus progress to **std
 
   > A locally seeded DB carries **default** settings (e.g. the seed's default model role), not your production config.
 
-Tool reachability still applies: `web_search` needs SearXNG (the container's `SEARXNG_URL`), while the av.by/kufar/etc. tools fetch their sites directly. The `cars` skill (av.by) therefore works locally without SearXNG.
+Tool reachability still applies: `web_search` needs `SERPER_API_KEY` in `.env`, while the av.by/kufar/etc. tools fetch their sites directly and need no key. The `cars` skill (av.by) therefore works locally without a search key.
 
 ---
 

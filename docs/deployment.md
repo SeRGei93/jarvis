@@ -16,12 +16,10 @@ common commands.
   & browsers     │ Caddy       │ ───────▶ │ jarvis-app (one process) │
                  │ (external,  │  :8080   │  bot + cron + admin API  │──▶ ./data/db
                  │  auto-TLS)  │          │  + Mini App (/miniapp)   │   (libSQL file)
-                 └─────────────┘          └──────────────────────────┘
-                                                      │ default network
-                                                ┌───────────┐
-                                                │ searxng + │
-                                                │  redis    │
-                                                └───────────┘
+                 └─────────────┘          └────────────┬─────────────┘
+                                                       │ HTTPS
+                                                       ▼
+                                              serper.dev (Google SERP)
 ```
 
 The external Caddy is **not** part of this compose project — it runs separately
@@ -40,11 +38,14 @@ separately with hot reload (`cd frontend && npm run dev`, open
 | Service | Role | Touches the DB? |
 |---------|------|-----------------|
 | **app** (`jarvis-app`) | the whole jarvis process — bot, cron, admin API, Mini App static | **yes — the only one** |
-| **searxng** | metasearch engine the app queries for web search (internal network only) | no |
-| **redis** | cache / coordination backend for searxng (internal network only) | no |
 | _Caddy_ | TLS + reverse-proxy to `jarvis-app:8080` — **external**, not in this compose | no |
 
-`app` reaches searxng over the private `default` network (`SEARXNG_URL=http://searxng:8080`); searxng is **not** exposed publicly. searxng requires `SEARXNG_SECRET` (the compose fails fast if it is unset) and mounts its config read-only from `deploy/searxng/{settings.yml,limiter.toml}`. See [Web Search](web-search.md). Only the app joins the `edge` network; searxng and redis stay on `default`.
+The stack is **one container**. Web search is an outbound HTTPS call to Serper, so the old `searxng` + `redis` services (and the `deploy/searxng/` config mount) are gone — see [Web Search](web-search.md).
+
+> **Upgrading an existing stand:** `docker compose up -d` removes the old
+> `searxng`/`redis` containers (they are no longer in the compose file), and any
+> leftover `SEARXNG_*` lines in `.env` are harmless (zod drops unknown keys).
+> Add `SERPER_API_KEY` to `.env` to enable `web_search`.
 
 > **Only `app` opens the database.** Bot, cron and the admin API run in a *single*
 > Node process sharing *one* libSQL connection — this is the deliberate
@@ -58,7 +59,6 @@ All persistent state is bind-mounted under the host-visible **`./data/`** direct
 ```
 ./data/db/avocado.db        libSQL database (only the app writes it)
 ./data/db/web-cache/        web fetch/search file cache (app mounts ./data/db → /data, WEB_CACHE_DIR=/data/web-cache)
-./data/redis/               redis persistence (searxng cache/coordination)
 ```
 
 (TLS certificates are owned by the external Caddy, not stored under `./data`.)
@@ -86,8 +86,7 @@ make deploy        # provisions .env, builds, starts everything (TLS via Caddy)
    OpenRouter key, admin ids, optional extra provider keys.
 2. **Builds** the app image (multi-stage: build the Mini App → compile the backend
    → runtime that serves both).
-3. **Ensures** the shared `edge` network exists, then **starts** `app`, `searxng`,
-   `redis`.
+3. **Ensures** the shared `edge` network exists, then **starts** `app`.
 
 Then point your external **Caddy** at the app (see [Reverse proxy](#reverse-proxy-external-caddy))
 and set the Mini App URL in **@BotFather** (Bot → Menu Button → `https://<domain>/miniapp`).
@@ -122,11 +121,10 @@ App in @BotFather.
 
 If port 8080 is already taken on your host, override it: `LOCAL_PORT=8081 make local`.
 
-> `docker-compose.local.yml` brings up `searxng` + `redis` alongside `app`, so the
-> native web tools work locally too. The local compose defaults `SEARXNG_SECRET`
-> (no setup needed) and publishes the searxng UI on `SEARXNG_PORT` (default `8888`)
-> for debugging. If searxng is unreachable, web-search tools degrade per request
-> while the rest of the bot keeps working. See [Web Search](web-search.md).
+> `docker-compose.local.yml` runs the same single `app` container. Web search needs
+> `SERPER_API_KEY` in `.env`; without it `web_search` returns a clear "not
+> configured" error while fetch/news/verticals keep working. See
+> [Web Search](web-search.md).
 
 ## Make targets
 
@@ -191,8 +189,7 @@ Deploy-specific keys:
 | `DOMAIN` | public domain the external Caddy serves / the Mini App origin (informational for the app; the Caddyfile is what binds it) |
 | `ADMIN_USER_IDS` | Telegram ids allowed into the admin (deny-by-default) |
 | `LIBSQL_URL` | `file:/data/avocado.db` (volume) or a Turso URL |
-| `SEARXNG_SECRET` | secret key the searxng container requires (prod compose fails fast if unset) |
-| `SEARXNG_PORT` | host port for the searxng UI (local compose only; default `8888`) |
+| `SERPER_API_KEY` | serper.dev key for `web_search` (optional; empty = search is disabled, everything else works) |
 
 ## Updating
 

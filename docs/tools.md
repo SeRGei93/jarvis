@@ -82,7 +82,7 @@ Free-form fields pass through `promptguard.sanitizeProfileField`; bot identity e
 
 ## Web tools (native bucket)
 
-The `web` bucket (`mastra/tools/web.ts`, registered in `mastra/tools/registry.ts`) replaces the old external MCP `search` server. It runs **in-process**: web search goes to a self-hosted [SearXNG](https://docs.searxng.org/) instance over the internal Docker network, page fetches use a browser-free `fetch` + `jsdom`/`turndown` pipeline (no Chromium), and Belarus marketplace/weather verticals are plain HTTP scrapers. Service code lives under `backend/src/services/web/`.
+The `web` bucket (`mastra/tools/web.ts`, registered in `mastra/tools/registry.ts`) replaces the old external MCP `search` server. It runs **in-process**: web search goes to [Serper](https://serper.dev/) (real Google SERP, one API key, no self-hosted engine), page fetches use a browser-free `fetch` + `jsdom`/`turndown` pipeline (no Chromium), and Belarus marketplace/weather verticals are plain HTTP scrapers. Service code lives under `backend/src/services/web/`.
 
 The bucket exposes **21 tools** — 15 main and 6 lookup helpers. Each `execute` reads the per-request HTTP timeout from `SettingsService` (`timeouts.http_client`, Go parity) and treats fetched page content as untrusted data (wrapped in an envelope). Full reference — every tool, configuration, infrastructure, security, and caching — is in **[Web Search](web-search.md)**.
 
@@ -104,6 +104,6 @@ Destructive tools require **confirm-before-execute** (C1). When `ctx.confirmatio
 
 ## See Also
 
-- [Web Search](web-search.md) — the full native web bucket: tools, SearXNG infra, SSRF guard, caching
+- [Web Search](web-search.md) — the full native web bucket: tools, Serper setup, SSRF guard, caching
 - [Chat Pipeline](chat-pipeline.md) — where tool resolution sits in a turn
-- [Configuration](configuration.md) — `SEARXNG_URL`/`WEB_CACHE_DIR`, timeouts, and plan limits that drive these tools
+- [Configuration](configuration.md) — `SERPER_API_KEY`/`WEB_CACHE_DIR`, timeouts, and plan limits that drive these tools
