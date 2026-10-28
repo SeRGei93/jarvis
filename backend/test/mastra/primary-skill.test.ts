@@ -153,3 +153,108 @@ describe("PrimarySkillSelector.selectPrimary", () => {
     expect(seenPrompt).toContain("and tomorrow?");
   });
 });
+
+describe("PrimarySkillSelector.selectPrimary — decision fast path", () => {
+  function withDecision(
+    choose: (state: string, instructions: string, criteria: Record<string, string>) => Promise<{
+      choice: string;
+      probabilities?: Record<string, number>;
+    } | null>,
+    selectFn?: SelectPrimaryFn,
+  ): PrimarySkillSelector {
+    return new PrimarySkillSelector(fakeFactory, fakeSettings, selectFn, choose);
+  }
+
+  it("uses the decision answer without calling the LLM", async () => {
+    let llmCalls = 0;
+    const s = withDecision(
+      async () => ({ choice: "weather", probabilities: { weather: 0.95, research: 0.05 } }),
+      async () => {
+        llmCalls += 1;
+        return "research";
+      },
+    );
+    expect(await s.selectPrimary(input(true))).toBe("weather");
+    expect(llmCalls).toBe(0);
+  });
+
+  it("takes the argmax of the probabilities over the declared criteria", async () => {
+    const s = withDecision(async () => ({
+      choice: "weather",
+      probabilities: { weather: 0.2, research: 0.8, "not-a-skill": 0.99 },
+    }));
+    expect(await s.selectPrimary(input(true))).toBe("research");
+  });
+
+  it("passes the routable catalog as criteria and the message window as state", async () => {
+    let seenCriteria: Record<string, string> = {};
+    let seenState = "";
+    const s = withDecision(async (state, _instructions, criteria) => {
+      seenCriteria = criteria;
+      seenState = state;
+      return { choice: "weather" };
+    }, async () => "research");
+    await s.selectPrimary(input(true, { previousSkills: ["weather"] }));
+    expect(Object.keys(seenCriteria).sort()).toEqual(["onboarding", "research", "weather"]);
+    expect(seenState).toContain("what's the weather?");
+    expect(seenState).toContain("weather"); // previousSkills continuity
+  });
+
+  it("falls back to the LLM when the decision returns null (layer off/failed)", async () => {
+    let llmCalls = 0;
+    const s = withDecision(async () => null, async () => {
+      llmCalls += 1;
+      return "weather";
+    });
+    expect(await s.selectPrimary(input(true))).toBe("weather");
+    expect(llmCalls).toBe(1);
+  });
+
+  it("falls back to the LLM when the decision throws", async () => {
+    let llmCalls = 0;
+    const s = withDecision(
+      async () => {
+        throw new Error("transport exploded");
+      },
+      async () => {
+        llmCalls += 1;
+        return "weather";
+      },
+    );
+    expect(await s.selectPrimary(input(true))).toBe("weather");
+    expect(llmCalls).toBe(1);
+  });
+
+  it("falls back to the LLM for an unknown skill name", async () => {
+    let llmCalls = 0;
+    const s = withDecision(
+      async () => ({ choice: "ghost" }),
+      async () => {
+        llmCalls += 1;
+        return "weather";
+      },
+    );
+    expect(await s.selectPrimary(input(true))).toBe("weather");
+    expect(llmCalls).toBe(1);
+  });
+
+  it("skips the decision for an empty catalog", async () => {
+    let decideCalls = 0;
+    const s = withDecision(async () => {
+      decideCalls += 1;
+      return { choice: "weather" };
+    }, async () => "research");
+    expect(await s.selectPrimary(input(true, { skills: [] }))).toBe("");
+    expect(decideCalls).toBe(0);
+  });
+
+  it("still forces onboarding before any decision", async () => {
+    let decideCalls = 0;
+    const s = withDecision(async () => {
+      decideCalls += 1;
+      return { choice: "weather" };
+    });
+    expect(await s.selectPrimary(input(false))).toBe("onboarding");
+    expect(decideCalls).toBe(0);
+  });
+});

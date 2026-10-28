@@ -6,7 +6,8 @@ import { ModelFactory } from "./mastra/models.js";
 import { LlmService, type StreamCallback, type ToolEvents } from "./mastra/llm.js";
 import { SkillService } from "./services/skill-service.js";
 import { MemoryService } from "./mastra/memory/memory-service.js";
-import { LlmDedupChecker } from "./mastra/memory/dedup.js";
+import { DecisionDedupChecker, LlmDedupChecker } from "./mastra/memory/dedup.js";
+import { DecisionService, createScopeDecider } from "./mastra/decisions/service.js";
 import { RollingSummaryService, LlmSummarizer } from "./mastra/memory/rolling-summary.js";
 import { FactExtractor } from "./mastra/memory/fact-extractor.js";
 import { ProfileExtractor } from "./mastra/memory/profile-extractor.js";
@@ -65,12 +66,20 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
   // Skills/prompts come from the file-backed content store (SKILLS_DIR/PROMPTS_DIR),
   // not the DB. The store must be populated before this runs (server.ts boot).
   const skills = opts.skills ?? new SkillService();
-  const dedup = new LlmDedupChecker(factory, settings);
-  const memoryService = new MemoryService(opts.db, dedup);
+  // Fast typed decisions (skill routing, memory dedup, memory scope). Optional:
+  // an empty `model_roles.decision` turns it off and every caller falls back.
+  const decisions = new DecisionService(settings);
+  const dedup = new DecisionDedupChecker(decisions, new LlmDedupChecker(factory, settings));
+  const memoryService = new MemoryService(opts.db, dedup, createScopeDecider(decisions));
   const rollingSummary = new RollingSummaryService(opts.db, new LlmSummarizer(factory, settings));
   const factExtractor = new FactExtractor(factory, settings);
   const profileExtractor = new ProfileExtractor(factory, settings);
-  const primarySelector = new PrimarySkillSelector(factory, settings);
+  const primarySelector = new PrimarySkillSelector(
+    factory,
+    settings,
+    undefined,
+    (state, instructions, criteria) => decisions.choose(state, instructions, criteria),
+  );
   const orchestrator = new Orchestrator({ skills, settings, factory });
   // Used only by the admin skill test-run (admin reuses ChatDeps), not the chat path.
   const llm = new LlmService(factory, settings);

@@ -19,19 +19,49 @@ export type SaveResult =
   | { saved: false; reason: "sensitive" | "duplicate" };
 
 /**
+ * Optional fast scope classifier (decision layer): `session` vs `permanent`, or
+ * `null` to fall back to the deterministic keyword classifier.
+ */
+export type ScopeDecider = (category: string, content: string) => Promise<MemoryScope | null>;
+
+/**
  * Long-term user memory over a single relational table. The per-user set is small
  * (permanent cap 50), so the whole of it is loaded into context each turn — no
  * vector RAG, no embeddings. Save path: sensitivity filter, sanitize, scope
- * classification, LLM dedup, insert, and a permanent cap (50).
+ * classification, dedup, insert, and a permanent cap (50).
  */
 export class MemoryService {
   constructor(
     private readonly db: Db,
     private readonly dedup: DedupChecker,
+    private readonly scopeDecider?: ScopeDecider,
   ) {}
 
   private async allMemories(userId: number): Promise<StoredMemory[]> {
     return this.db.select().from(memories).where(eq(memories.userId, userId));
+  }
+
+  /**
+   * Scope for a new memory. Only plain `fact` rows consult the decision layer —
+   * preferences/onboarding keep their keyword classification, and any failure
+   * falls back to `classifyScope` (the deterministic path stays authoritative).
+   */
+  private async resolveScope(category: string, content: string): Promise<MemoryScope> {
+    if (this.scopeDecider && category === "fact") {
+      try {
+        const decided = await this.scopeDecider(category, content);
+        if (decided) {
+          log.debug({ scope: decided, via: "decision" }, "memory scope classified");
+          return decided;
+        }
+      } catch (err) {
+        log.warn(
+          { reason: err instanceof Error ? err.message : String(err) },
+          "scope decision failed -> keyword classifier",
+        );
+      }
+    }
+    return classifyScope(category, content);
   }
 
   /**
@@ -46,7 +76,7 @@ export class MemoryService {
     return [...onboarding, ...regular];
   }
 
-  /** Save a memory (sensitivity -> sanitize -> classify -> LLM dedup -> insert -> cap). */
+  /** Save a memory (sensitivity -> sanitize -> classify -> dedup -> insert -> cap). */
   async save(
     userId: number,
     category: string,
@@ -59,7 +89,7 @@ export class MemoryService {
       return { saved: false, reason: "sensitive" };
     }
     const clean = sanitizeMemoryContent(content);
-    const scope = scopeOverride ?? classifyScope(category, clean);
+    const scope = scopeOverride ?? (await this.resolveScope(category, clean));
 
     const existing = await this.allMemories(userId);
     if (await this.dedup.isDuplicate(clean, existing.map((m) => m.content))) {

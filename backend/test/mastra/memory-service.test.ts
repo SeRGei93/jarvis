@@ -115,3 +115,59 @@ describe("MemoryService", () => {
     }
   });
 });
+
+describe("MemoryService — decision scope", () => {
+  async function setupWithScope(
+    decide: (category: string, content: string) => Promise<"session" | "permanent" | null>,
+  ): Promise<{ m: MemoryService; calls: Array<{ category: string; content: string }> }> {
+    t = await createTestDb();
+    await t.db.insert(users).values({ id: 1, name: "u1" });
+    const calls: Array<{ category: string; content: string }> = [];
+    const m = new MemoryService(t.db, dedup, async (category, content) => {
+      calls.push({ category, content });
+      return decide(category, content);
+    });
+    return { m, calls };
+  }
+
+  it("uses the decision scope for a plain fact", async () => {
+    const { m, calls } = await setupWithScope(async () => "session");
+    await m.save(1, "fact", "сейчас ищу ноутбук до 1500$");
+    expect(calls).toHaveLength(1);
+    expect(await m.listPermanent(1)).toHaveLength(0);
+  });
+
+  it("stores a permanent fact when the decision says so", async () => {
+    const { m } = await setupWithScope(async () => "permanent");
+    await m.save(1, "fact", "живёт в Минске");
+    expect(await m.listPermanent(1)).toHaveLength(1);
+  });
+
+  it("falls back to the keyword classifier when the decision returns null", async () => {
+    const { m } = await setupWithScope(async () => null);
+    // "навсегда" is a permanent keyword in domain/memory-classifier.
+    await m.save(1, "fact", "навсегда переехал в Варшаву");
+    expect(await m.listPermanent(1)).toHaveLength(1);
+  });
+
+  it("falls back to the keyword classifier when the decider throws", async () => {
+    const { m } = await setupWithScope(async () => {
+      throw new Error("transport down");
+    });
+    await m.save(1, "fact", "навсегда переехал в Варшаву");
+    expect(await m.listPermanent(1)).toHaveLength(1);
+  });
+
+  it("never asks the decision layer for non-fact categories", async () => {
+    const { m, calls } = await setupWithScope(async () => "session");
+    await m.save(1, "preference", "любит кофе");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("an explicit scopeOverride skips the decision layer", async () => {
+    const { m, calls } = await setupWithScope(async () => "session");
+    await m.save(1, "fact", "живёт в Минске", null, "permanent");
+    expect(calls).toHaveLength(0);
+    expect(await m.listPermanent(1)).toHaveLength(1);
+  });
+});

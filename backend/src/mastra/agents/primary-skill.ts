@@ -41,6 +41,46 @@ export interface TurnConfig {
 export type SelectPrimaryFn = (modelRef: string, system: string, prompt: string) => Promise<string>;
 
 /**
+ * Injectable fast-decision hook (`DecisionService.choose`, decision layer).
+ * `null` = the decision layer is off or failed → the LLM classifier runs instead.
+ */
+export type ChoosePrimaryFn = (
+  state: string,
+  instructions: string,
+  criteria: Record<string, string>,
+) => Promise<{ choice: string; probabilities?: Record<string, number> } | null>;
+
+/** Instruction sent to the decision model with the routable-skill catalog. */
+const ROUTING_INSTRUCTIONS =
+  "Pick the single skill that should lead the answer to the user's message. " +
+  "For a follow-up or correction pick the same skill as the previous reply. " +
+  "If nothing clearly matches, pick the research option.";
+
+/** Keep each option description short — the criteria travel with every decision. */
+function briefDescription(description: string): string {
+  const oneLine = description.replace(/\s+/g, " ").trim();
+  return oneLine.length > 160 ? `${oneLine.slice(0, 157)}…` : oneLine;
+}
+
+/** Highest-probability criterion id, or null when no probabilities came back. */
+function argmaxOver(
+  probabilities: Record<string, number> | undefined,
+  allowed: ReadonlySet<string>,
+): string | null {
+  if (!probabilities) return null;
+  let best: string | null = null;
+  let bestValue = -Infinity;
+  for (const [id, p] of Object.entries(probabilities)) {
+    if (!allowed.has(id) || typeof p !== "number") continue;
+    if (p > bestValue) {
+      bestValue = p;
+      best = id;
+    }
+  }
+  return best;
+}
+
+/**
  * Pure post-processing: keep the chosen skill if known, else research fallback,
  * else "" (no primary — orchestrator falls back to the catalog alone).
  * Single-skill analogue of the old router's `normalizeRoutedSkills`.
@@ -110,6 +150,7 @@ export class PrimarySkillSelector {
     private readonly factory: ModelFactory,
     private readonly settings: SettingsService,
     private readonly selectFn?: SelectPrimaryFn,
+    private readonly chooseFn?: ChoosePrimaryFn,
   ) {}
 
   private async callModel(modelRef: string, system: string, prompt: string): Promise<string> {
@@ -135,6 +176,35 @@ export class PrimarySkillSelector {
       return ONBOARDING;
     }
     const known = new Set(input.skills.map((s) => s.name));
+
+    // Fast path: one typed decision over the routable catalog. Any null/failed
+    // answer falls through to the LLM classifier below — the layer is optional.
+    if (this.chooseFn && input.skills.length > 0) {
+      const criteria = Object.fromEntries(
+        input.skills.map((s) => [s.name, briefDescription(s.description)]),
+      );
+      try {
+        const decided = await this.chooseFn(buildUserPrompt(input), ROUTING_INSTRUCTIONS, criteria);
+        if (decided) {
+          const winner = argmaxOver(decided.probabilities, new Set(Object.keys(criteria)));
+          const picked = winner ?? decided.choice;
+          // An unknown id is a real miss (not "research") — let the LLM decide.
+          if (known.has(picked)) {
+            log.info({ primary: picked, via: "decision" }, "primary skill selected");
+            return picked;
+          }
+          log.warn({ picked }, "decision routing picked an unknown skill -> LLM classifier");
+        } else {
+          log.warn("decision routing gave no answer -> LLM classifier");
+        }
+      } catch (err) {
+        log.warn(
+          { reason: err instanceof Error ? err.message : String(err) },
+          "decision routing failed -> LLM classifier",
+        );
+      }
+    }
+
     try {
       const roles = await this.settings.getModelRoles();
       const chosen = await this.callModel(
