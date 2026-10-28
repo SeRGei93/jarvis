@@ -180,6 +180,7 @@ describe("ModelsCatalog — decision list", () => {
     expect(res.items).toHaveLength(DECISION_MODELS.length);
     const def = res.items.find((i) => i.ref === "openrouter:~perplexity/pplx-decider-latest");
     expect(def?.aliased).toBe(true);
+    expect(res.items.some((i) => i.id === "typesafe/jev-1.13")).toBe(true);
   });
 
   it("returns copies so a caller cannot mutate the curated list", () => {

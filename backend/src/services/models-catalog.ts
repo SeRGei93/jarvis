@@ -58,8 +58,9 @@ export interface CatalogResponse {
  * Verified live on 2026-10-28:
  *  - `~perplexity/pplx-decider-latest` → resolves to `pplx-decider-v1.2-*`;
  *  - `perplexity/pplx-decider-v1.2`, `cloudflare/clef`, `cloudflare/clef-flash` answer;
- *  - Typesafe/Jev ids answer `451 Typesafe is not available in your region` from
- *    Belarus — kept because they work from other regions, never used as default;
+ *  - Typesafe/Jev ids (`~typesafe/jev-latest`, `jev-1.14`, `jev-1.13`) answer
+ *    `451 Typesafe is not available in your region` from Belarus — kept because
+ *    they work from other regions, never used as default;
  *  - `perplexity/pplx-decider-v1-27b` / `-v1.1-27b` → 404 (no endpoints), dropped.
  */
 export const DECISION_MODELS: readonly CatalogRow[] = [
@@ -124,6 +125,17 @@ export const DECISION_MODELS: readonly CatalogRow[] = [
     ref: "openrouter:typesafe/jev-1.14",
     id: "typesafe/jev-1.14",
     name: "Typesafe Jev 1.14",
+    contextLength: null,
+    pricingIn: null,
+    pricingOut: null,
+    supportsTools: false,
+    supportsReasoning: false,
+    note: "Пиннутая версия Jev — недоступна из Беларуси (HTTP 451).",
+  },
+  {
+    ref: "openrouter:typesafe/jev-1.13",
+    id: "typesafe/jev-1.13",
+    name: "Typesafe Jev 1.13",
     contextLength: null,
     pricingIn: null,
     pricingOut: null,

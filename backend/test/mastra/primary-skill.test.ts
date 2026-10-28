@@ -4,6 +4,7 @@ import {
   normalizePrimary,
   resolveTurnConfig,
   type SelectPrimaryFn,
+  type ChoosePrimaryFn,
   type PrimaryInput,
 } from "../../src/mastra/agents/primary-skill.js";
 import type { SettingsService } from "../../src/config/settings.js";
@@ -155,13 +156,7 @@ describe("PrimarySkillSelector.selectPrimary", () => {
 });
 
 describe("PrimarySkillSelector.selectPrimary — decision fast path", () => {
-  function withDecision(
-    choose: (state: string, instructions: string, criteria: Record<string, string>) => Promise<{
-      choice: string;
-      probabilities?: Record<string, number>;
-    } | null>,
-    selectFn?: SelectPrimaryFn,
-  ): PrimarySkillSelector {
+  function withDecision(choose: ChoosePrimaryFn, selectFn?: SelectPrimaryFn): PrimarySkillSelector {
     return new PrimarySkillSelector(fakeFactory, fakeSettings, selectFn, choose);
   }
 
@@ -192,7 +187,7 @@ describe("PrimarySkillSelector.selectPrimary — decision fast path", () => {
     const s = withDecision(async (state, _instructions, criteria) => {
       seenCriteria = criteria;
       seenState = state;
-      return { choice: "weather" };
+      return { choice: "weather", probabilities: { weather: 0.9, research: 0.1 } };
     }, async () => "research");
     await s.selectPrimary(input(true, { previousSkills: ["weather"] }));
     expect(Object.keys(seenCriteria).sort()).toEqual(["onboarding", "research", "weather"]);
@@ -225,10 +220,23 @@ describe("PrimarySkillSelector.selectPrimary — decision fast path", () => {
     expect(llmCalls).toBe(1);
   });
 
+  it("falls back to the LLM when the answer has no usable probabilities", async () => {
+    let llmCalls = 0;
+    const s = withDecision(
+      async () => ({ choice: "weather", probabilities: {} }),
+      async () => {
+        llmCalls += 1;
+        return "research";
+      },
+    );
+    expect(await s.selectPrimary(input(true))).toBe("research");
+    expect(llmCalls).toBe(1);
+  });
+
   it("falls back to the LLM for an unknown skill name", async () => {
     let llmCalls = 0;
     const s = withDecision(
-      async () => ({ choice: "ghost" }),
+      async () => ({ choice: "ghost", probabilities: { ghost: 0.9 } }),
       async () => {
         llmCalls += 1;
         return "weather";
@@ -242,7 +250,7 @@ describe("PrimarySkillSelector.selectPrimary — decision fast path", () => {
     let decideCalls = 0;
     const s = withDecision(async () => {
       decideCalls += 1;
-      return { choice: "weather" };
+      return null;
     }, async () => "research");
     expect(await s.selectPrimary(input(true, { skills: [] }))).toBe("");
     expect(decideCalls).toBe(0);
@@ -252,7 +260,7 @@ describe("PrimarySkillSelector.selectPrimary — decision fast path", () => {
     let decideCalls = 0;
     const s = withDecision(async () => {
       decideCalls += 1;
-      return { choice: "weather" };
+      return null;
     });
     expect(await s.selectPrimary(input(false))).toBe("onboarding");
     expect(decideCalls).toBe(0);

@@ -116,13 +116,14 @@ export class DecisionService {
 
   /**
    * Pick one option out of `criteria` (`id → description`).
-   * Returns `null` when the layer is off, the criteria are empty, or anything fails.
+   * Returns `null` when the layer is off, the criteria are empty, the answer
+   * carries no usable probabilities, or anything else fails.
    */
   async choose(
     state: string,
     instructions: string,
     criteria: Record<string, string>,
-  ): Promise<{ choice: string; probabilities?: Record<string, number> } | null> {
+  ): Promise<{ choice: string; probabilities: Record<string, number> } | null> {
     if (Object.keys(criteria).length === 0) return null; // the API rejects empty criteria
     const answer = await this.ask(state, { type: "choice", instructions, criteria });
     if (!answer || answer.type !== "choice") return null;
@@ -130,7 +131,12 @@ export class DecisionService {
       log.warn({ choice: answer.choice }, "decision returned an option outside the criteria");
       return null;
     }
-    return { choice: answer.choice, probabilities: answer.probabilities };
+    const probabilities = answer.probabilities;
+    if (!probabilities || Object.keys(probabilities).length === 0) {
+      log.warn({ choice: answer.choice }, "choice answer without probabilities — falling back");
+      return null;
+    }
+    return { choice: answer.choice, probabilities };
   }
 
   /**

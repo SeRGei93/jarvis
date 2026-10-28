@@ -48,7 +48,7 @@ export type ChoosePrimaryFn = (
   state: string,
   instructions: string,
   criteria: Record<string, string>,
-) => Promise<{ choice: string; probabilities?: Record<string, number> } | null>;
+) => Promise<{ choice: string; probabilities: Record<string, number> } | null>;
 
 /** Instruction sent to the decision model with the routable-skill catalog. */
 const ROUTING_INSTRUCTIONS =
@@ -185,18 +185,19 @@ export class PrimarySkillSelector {
       );
       try {
         const decided = await this.chooseFn(buildUserPrompt(input), ROUTING_INSTRUCTIONS, criteria);
-        if (decided) {
-          const winner = argmaxOver(decided.probabilities, new Set(Object.keys(criteria)));
-          const picked = winner ?? decided.choice;
-          // An unknown id is a real miss (not "research") — let the LLM decide.
-          if (known.has(picked)) {
-            log.info({ primary: picked, via: "decision" }, "primary skill selected");
-            return picked;
-          }
-          log.warn({ picked }, "decision routing picked an unknown skill -> LLM classifier");
-        } else {
-          log.warn("decision routing gave no answer -> LLM classifier");
+        // argmax keeps only criteria ids: a probability mass on an unknown id is
+        // a real miss (not "research") and yields null, letting the LLM decide.
+        const winner = decided
+          ? argmaxOver(decided.probabilities, new Set(Object.keys(criteria)))
+          : null;
+        if (winner) {
+          log.info({ primary: winner, via: "decision" }, "primary skill selected");
+          return winner;
         }
+        log.warn(
+          { picked: decided?.choice },
+          "decision routing gave no usable probabilities -> LLM classifier",
+        );
       } catch (err) {
         log.warn(
           { reason: err instanceof Error ? err.message : String(err) },

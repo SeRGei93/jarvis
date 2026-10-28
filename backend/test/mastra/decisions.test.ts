@@ -71,6 +71,11 @@ describe("DecisionService.choose", () => {
     expect(await service("openrouter:cloudflare/clef", client).choose("x", "i", CRITERIA)).toBeNull();
   });
 
+  it("returns null when the answer carries no probabilities", async () => {
+    const client = fakeClient({ type: "choice", choice: "weather" });
+    expect(await service("openrouter:cloudflare/clef", client).choose("x", "i", CRITERIA)).toBeNull();
+  });
+
   it("returns null when the call throws", async () => {
     const client = fakeClient(null, { throws: true });
     expect(await service("openrouter:cloudflare/clef", client).choose("x", "i", CRITERIA)).toBeNull();
