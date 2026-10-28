@@ -25,7 +25,7 @@ describe("createScorer offline smoke (S2 go/no-go)", () => {
     const version = require("@mastra/core/package.json").version as string;
     // S2 snapshotted the .run() shape against this exact version. Bumping it must
     // be a deliberate act that re-validates the scorer contract below.
-    expect(version).toBe("1.42.0");
+    expect(version).toBe("1.79.0");
   });
 
   it("scores a correct skill choice as 1 with no network", async () => {
