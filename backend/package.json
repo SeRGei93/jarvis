@@ -31,6 +31,7 @@
     "@mastra/core": "^1.79.0",
     "@mastra/libsql": "^1.27.0",
     "@mastra/memory": "^1.39.0",
+    "@mozilla/readability": "^0.6.0",
     "@openrouter/ai-sdk-provider": "^2.9.1",
     "ai": "^6.0.204",
     "cron-parser": "^5.5.0",

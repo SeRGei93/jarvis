@@ -2,6 +2,7 @@ import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./registry.js";
 import { parseGoDuration } from "../../config/settings.js";
+import { env } from "../../config/env.js";
 import { logger } from "../../pkg/logger.js";
 
 // --- Native web service: search / fetch / news ---------------------------------
@@ -13,6 +14,10 @@ import {
   fetchPageAsMarkdown,
   type PageParser,
 } from "../../services/web/fetch.js";
+import {
+  createContentProvider,
+  type ContentProvider,
+} from "../../services/web/content/index.js";
 import {
   searchNews,
   mergeAndLimitNews,
@@ -110,6 +115,8 @@ const FETCH_TIMEOUT_FALLBACK_MS = 30000;
 interface WebDeps {
   fetchFn: typeof globalThis.fetch;
   timeoutMs: number;
+  /** External page-text provider (Firecrawl, …); absent = local-only. */
+  contentProvider?: ContentProvider;
 }
 
 /**
@@ -228,11 +235,15 @@ export function buildWebTools(
   ctx: ToolContext,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): ToolSet {
+  // One provider instance per bucket; the factory decides whether it is
+  // configured (missing key / `CONTENT_PROVIDER=none` → local fallback).
+  const contentProvider = createContentProvider(env, fetchFn);
+
   /** Resolve the per-request HTTP timeout and assemble injectable deps. */
   async function resolveDeps(): Promise<WebDeps> {
     const timeouts = await ctx.settings.getTimeouts();
     const timeoutMs = parseGoDuration(timeouts.http_client) || FETCH_TIMEOUT_FALLBACK_MS;
-    return { fetchFn, timeoutMs };
+    return { fetchFn, timeoutMs, contentProvider };
   }
 
   return {
@@ -357,6 +368,7 @@ export function buildWebTools(
             fetchFn: deps.fetchFn,
             pageParsers: WEB_PAGE_PARSERS,
             articleHandler,
+            contentProvider: deps.contentProvider,
             signal: abortSignal,
           });
           return markUntrusted(md, url);
@@ -401,7 +413,7 @@ export function buildWebTools(
             sites.length > 0
               ? sites
               : ["onliner.by", "tochka.by", "smartpress.by", "gismeteo.by", "wikidom.by"];
-          const sections = await searchNews(sitesToUse, effectiveTimeout);
+          const sections = await searchNews(sitesToUse, effectiveTimeout, deps.contentProvider);
           const merged = mergeAndLimitNews(sections);
           return merged.length > 0
             ? formatNewsWithSourceToMarkdown(merged)

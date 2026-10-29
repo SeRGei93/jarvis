@@ -43,24 +43,30 @@ export const onlinerParser: NewsParser = {
 
       const linkEl =
         item.querySelector<HTMLAnchorElement>("a.news-tidings__link") ??
-        item.querySelector<HTMLAnchorElement>("a.news-tidings__stub");
+        item.querySelector<HTMLAnchorElement>("a.news-tidings__stub") ??
+        item.querySelector<HTMLAnchorElement>("a.news-tiles__stub");
       const href = linkEl?.getAttribute("href") ?? "";
       const url = resolveUrl(href, baseUrl);
       if (!url) continue;
 
       const title =
         item.querySelector(".news-tidings__link span")?.textContent?.trim() ??
+        item.querySelector(".news-tiles__subtitle")?.textContent?.trim() ??
         linkEl?.textContent?.trim() ??
         "";
 
       const description =
         item.querySelector(".news-tidings__speech")?.textContent?.trim() ?? "";
 
-      const viewsEl = item.querySelector(".news-tidings__button_views");
+      const viewsEl =
+        item.querySelector(".news-tidings__button_views") ??
+        item.querySelector(".news-tiles__button_views");
       const views = parseViews(viewsEl?.textContent?.trim() ?? "0");
 
       const date =
-        item.querySelector(".news-tidings__time")?.textContent?.trim() ?? "";
+        item.querySelector(".news-tidings__time")?.textContent?.trim() ??
+        item.querySelector(".news-tiles__time")?.textContent?.trim() ??
+        "";
 
       const timestampAttr = item.getAttribute("data-post-date");
       const timestamp = timestampAttr

@@ -4,13 +4,16 @@
  * Fetches a URL with realistic browser headers, follows redirects manually (so
  * the SSRF guard runs on every hop), strips junk markup, and produces a compact
  * markdown-ish document. Specialised parsers and news-article handlers are
- * INJECTED by the caller (see {@link FetchPageOptions}) — this module never
- * imports parser/vertical code or any browser engine.
+ * INJECTED by the caller (see {@link FetchPageOptions}); generic pages may be
+ * delegated to a replaceable external content provider (Firecrawl by default).
+ * This module never imports a browser engine.
  */
 import { JSDOM } from "jsdom";
 
 import { readFetchCache, writeFetchCache } from "./fetch-cache.js";
 import { webChild } from "./logger.js";
+import { readableFromHtml } from "./readable.js";
+import type { ContentProvider, PageContent } from "./content/types.js";
 import {
   assertUrlAllowed,
   SsrfError,
@@ -40,6 +43,12 @@ export interface FetchPageOptions {
   /** Read/write the on-disk fetch cache; default `true`. */
   useCache?: boolean;
   /**
+   * Optional external content provider (Firecrawl, Jina, …). Local HTTP +
+   * Readability is always tried first; the provider is used only when the local
+   * fetch fails or produces no usable content.
+   */
+  contentProvider?: ContentProvider;
+  /**
    * Caller abort signal (e.g. the agent watchdog). Composed with the internal
    * per-request timeout via `AbortSignal.any`, so EITHER aborts the in-flight
    * HTTP request. Optional — omit for the legacy timeout-only behaviour.
@@ -55,6 +64,8 @@ const CHROME_UA =
 const DEFAULT_MAX_REDIRECTS = 5;
 /** Hard cap on a fetched page body — guards against memory exhaustion from a hostile/huge response. */
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024; // 8 MiB
+/** Below this many Markdown chars, prefer the external provider when configured. */
+const MIN_READABLE_CHARS = 200;
 
 /**
  * Read a response body as UTF-8 text, aborting if it exceeds `maxBytes`.
@@ -96,6 +107,26 @@ function concatChunks(chunks: Uint8Array[], total: number): Uint8Array {
   }
   return out;
 }
+
+/**
+ * Extract a cookie from a lightweight JS challenge page.
+ *
+ * Some sites answer with HTTP 200 + a tiny script that sets a cookie and
+ * reloads (`document.cookie = "name=…; path=/; …"`). We can satisfy that
+ * without a browser by echoing the cookie once — saving a Firecrawl credit.
+ * Only short documents with an explicit cookie/path assignment qualify.
+ */
+function extractChallengeCookie(html: string): string | undefined {
+  if (html.length > 32_000) return undefined;
+  const direct = html.match(/document\.cookie\s*=\s*["']([^"']+)["']/i)?.[1];
+  const assigned = html.match(/["']([A-Za-z0-9_-]+=[^;"'\s]+)[^"']*;\s*path=\//i)?.[1];
+  const raw = direct ?? assigned;
+  if (!raw) return undefined;
+  const pair = raw.split(";")[0]?.trim();
+  if (!pair || pair.length > 4096) return undefined;
+  return /^[A-Za-z0-9_-]+=[^;\s]+$/.test(pair) ? pair : undefined;
+}
+
 
 /** Селекторы мусора удаляемого при универсальной очистке. */
 const JUNK_SELECTORS = [
@@ -164,6 +195,10 @@ export async function fetchRawHtml(
      * per-request timeout via `AbortSignal.any` — EITHER aborts the fetch.
      */
     signal?: AbortSignal;
+    /** Internal: cookie obtained from a JS challenge, sent once on retry. */
+    cookie?: string;
+    /** Internal: prevents a challenge-cookie retry loop. */
+    challengeRetried?: boolean;
   } = {},
 ): Promise<string> {
   const fetchFn = opts.fetchFn ?? globalThis.fetch;
@@ -190,11 +225,22 @@ export async function fetchRawHtml(
 
     let response: Response;
     try {
+      const headers: Record<string, string> = { ...REQUEST_HEADERS };
+      // Send a challenge cookie only to the same host that issued it.
+      if (opts.cookie) {
+        try {
+          if (new URL(currentUrl).hostname === new URL(url).hostname) {
+            headers.cookie = opts.cookie;
+          }
+        } catch {
+          /* malformed URL is rejected by the guard above */
+        }
+      }
       response = await fetchFn(encodeBrackets(currentUrl), {
         method: "GET",
         redirect: "manual",
         signal,
-        headers: REQUEST_HEADERS,
+        headers,
       });
     } finally {
       clearTimeout(timer);
@@ -229,7 +275,23 @@ export async function fetchRawHtml(
       throw new Error(`Unsupported content-type: ${contentType}`);
     }
 
-    return await readTextCapped(response, MAX_RESPONSE_BYTES);
+    const body = await readTextCapped(response, MAX_RESPONSE_BYTES);
+
+    // Some sites answer HTTP 200 with a tiny JS cookie challenge (Tochka). Echo
+    // the cookie once instead of spending an external-provider credit.
+    if (!opts.challengeRetried) {
+      const cookie = extractChallengeCookie(body);
+      if (cookie) {
+        log.debug({ url: currentUrl }, "fetch: JS cookie challenge, retrying with cookie");
+        return await fetchRawHtml(url, timeoutMs, {
+          ...opts,
+          cookie,
+          challengeRetried: true,
+        });
+      }
+    }
+
+    return body;
   }
 }
 
@@ -282,10 +344,30 @@ function buildOutput(title: string, url: string, bodyHtml: string): string {
   return `# ${title}\n\nSource: ${url}\n\n---\n\n${bodyHtml}`;
 }
 
+/** True for aborts that must not be swallowed by provider/local fallbacks. */
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && (err.name === "AbortError" || /abort/i.test(err.message));
+}
+
+/** Normalise a provider result into the markdown document shell. */
+function buildProviderOutput(page: PageContent, fallbackUrl: string): string {
+  let title = page.title?.trim();
+  if (!title) {
+    try {
+      title = new URL(fallbackUrl).hostname;
+    } catch {
+      title = "Page";
+    }
+  }
+  const source = page.finalUrl || fallbackUrl;
+  return buildOutput(title, source, page.content);
+}
+
 /**
  * Fetches `url`, runs the (injected) article handler / parsers / generic
- * cleanup, and returns a markdown document. Results are cached on disk unless
- * `useCache === false`. No browser engine is ever used.
+ * cleanup, and returns a markdown document. Generic pages (or local failures)
+ * may be delegated to a configured {@link ContentProvider} (Firecrawl, …).
+ * Results are cached on disk unless `useCache === false`.
  */
 export async function fetchPageAsMarkdown(
   url: string,
@@ -294,6 +376,35 @@ export async function fetchPageAsMarkdown(
 ): Promise<string> {
   const started = Date.now();
   const useCache = opts.useCache !== false;
+  const provider = opts.contentProvider;
+  let providerAttempted = false;
+
+  /** Fetch through the external provider and cache the rendered document. */
+  const fetchViaProvider = async (): Promise<string> => {
+    if (!provider) throw new Error("content provider is not configured");
+    // Never let an external provider bypass the SSRF guard (initial URL + DNS).
+    await assertUrlAllowed(url, opts.lookupFn);
+    providerAttempted = true;
+    const page = await provider.fetchPage({
+      url,
+      format: "markdown",
+      timeoutMs,
+      signal: opts.signal,
+    });
+    const output = buildProviderOutput(page, url);
+    if (useCache) await writeFetchCache(url, output);
+    log.debug(
+      {
+        url,
+        provider: page.provider,
+        finalUrl: page.finalUrl,
+        len: output.length,
+        elapsedMs: Date.now() - started,
+      },
+      "fetch: provider",
+    );
+    return output;
+  };
 
   try {
     // 1) Cache hit short-circuit.
@@ -307,27 +418,58 @@ export async function fetchPageAsMarkdown(
         return cached;
       }
     }
-    log.debug({ url, useCache }, "fetch: cache miss");
+    log.debug({ url, useCache, provider: provider?.name }, "fetch: cache miss");
 
     // 2) Special article handler (returns ready markdown), injected by caller.
     if (opts.articleHandler) {
-      const md = await opts.articleHandler(url, timeoutMs);
-      if (md) {
-        if (useCache) await writeFetchCache(url, md);
-        log.debug(
-          { url, len: md.length, parser: "article", elapsedMs: Date.now() - started },
-          "fetch: article handler",
+      try {
+        const md = await opts.articleHandler(url, timeoutMs);
+        if (md) {
+          if (useCache) await writeFetchCache(url, md);
+          log.debug(
+            { url, len: md.length, parser: "article", elapsedMs: Date.now() - started },
+            "fetch: article handler",
+          );
+          return md;
+        }
+      } catch (err) {
+        if (isAbortError(err) || err instanceof SsrfError) throw err;
+        log.warn(
+          { url, err: (err as Error).message, elapsedMs: Date.now() - started },
+          "fetch: article handler failed; falling through",
         );
-        return md;
       }
     }
 
-    // 3) Plain HTML fetch (no browser branch).
-    const rawHtml = await fetchRawHtml(url, timeoutMs, {
-      fetchFn: opts.fetchFn,
-      lookupFn: opts.lookupFn,
-      signal: opts.signal,
-    });
+    // 3) Plain HTML fetch (local-first). The external provider is only used
+    // when the local fetch fails or produces no usable content.
+    let rawHtml: string;
+    try {
+      rawHtml = await fetchRawHtml(url, timeoutMs, {
+        fetchFn: opts.fetchFn,
+        lookupFn: opts.lookupFn,
+        signal: opts.signal,
+      });
+    } catch (err) {
+      if (isAbortError(err) || err instanceof SsrfError) throw err;
+      if (provider && !providerAttempted) {
+        try {
+          return await fetchViaProvider();
+        } catch (providerErr) {
+          if (isAbortError(providerErr)) throw providerErr;
+          log.warn(
+            {
+              url,
+              provider: provider.name,
+              localErr: (err as Error).message,
+              providerErr: (providerErr as Error).message,
+            },
+            "fetch: local fetch and provider both failed",
+          );
+        }
+      }
+      throw err;
+    }
 
     // 4) Specialised parsers — first match wins.
     let output: string | null = null;
@@ -343,13 +485,48 @@ export async function fetchPageAsMarkdown(
       }
     }
 
-    // 5) Generic cleanup fallback.
+    // 5) Generic SSR page: local Readability → Markdown. No Firecrawl credit is
+    // spent when the server-rendered HTML already contains the article.
+    let readableOutput: string | null = null;
+    if (output === null) {
+      const readable = readableFromHtml(rawHtml, url);
+      if (readable?.markdown) {
+        const title = readable.title?.trim() || new URL(url).hostname;
+        readableOutput = buildOutput(title, url, readable.markdown);
+        if (readable.charCount >= MIN_READABLE_CHARS || !provider) {
+          output = readableOutput;
+          chosen = "readable";
+        }
+      }
+    }
+
+    // 6) No local content (or a JS shell / tiny challenge page): ask the
+    // external provider before falling back to the old denylist cleanup.
+    if (output === null && provider && !providerAttempted) {
+      try {
+        return await fetchViaProvider();
+      } catch (err) {
+        if (isAbortError(err)) throw err;
+        log.warn(
+          { url, provider: provider.name, err: (err as Error).message },
+          "fetch: provider failed; using local fallback",
+        );
+      }
+    }
+
+    // 7) Keep a short-but-real local page if the provider is unavailable/failed.
+    if (output === null && readableOutput) {
+      output = readableOutput;
+      chosen = "readable";
+    }
+
+    // 8) Generic cleanup fallback.
     if (output === null) {
       const { title, html } = cleanHtml(url, rawHtml);
       output = buildOutput(title, url, html);
     }
 
-    // 6) Cache and return.
+    // 8) Cache and return.
     if (useCache) await writeFetchCache(url, output);
     log.debug(
       { url, parser: chosen, len: output.length, elapsedMs: Date.now() - started },

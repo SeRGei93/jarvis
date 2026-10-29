@@ -31,6 +31,18 @@ const EnvSchema = z.object({
   // Web search (Serper — Google SERP). Optional: without the key web_search
   // returns a clear error while fetch_url / news / verticals keep working.
   SERPER_API_KEY: z.string().optional(),
+
+  // Page-text provider (vendor-neutral; see services/web/content/). `firecrawl`
+  // is the default when FIRECRAWL_API_KEY is present; `none` forces the local
+  // HTTP/cleanup path. FIRECRAWL_API_URL overrides the cloud endpoint (proxy or
+  // self-hosted deployment).
+  CONTENT_PROVIDER: z.string().optional(),
+  FIRECRAWL_API_KEY: z.string().optional(),
+  FIRECRAWL_API_URL: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().url().optional(),
+  ),
+
   // Web fetch/search file cache dir; container overrides to /data/web-cache via compose.
   WEB_CACHE_DIR: z.string().min(1).default("./data/web-cache"),
 

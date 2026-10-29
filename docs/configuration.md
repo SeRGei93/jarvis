@@ -18,6 +18,9 @@
 | `GOOGLE_API_KEY` | no | — | Google provider |
 | `ADMIN_USER_IDS` | no | `""` | comma-separated Telegram ids for the Mini App (M8) |
 | `SERPER_API_KEY` | for search | — | serper.dev key for `web_search` (Google SERP). Empty = search reports "not configured"; fetch/news/verticals still work |
+| `CONTENT_PROVIDER` | no | `firecrawl` | fallback page-text provider id; `none`/`local` disables the external fallback (local Readability only) |
+| `FIRECRAWL_API_KEY` | no | — | Firecrawl key for the fallback provider. Empty = provider not configured → local path only |
+| `FIRECRAWL_API_URL` | no | `https://api.firecrawl.dev` | optional Firecrawl base URL (proxy/self-hosted) |
 | `WEB_CACHE_DIR` | no | `./data/web-cache` | root dir for the web fetch/search file cache (container: `/data/web-cache`) |
 | `SKILLS_DIR` | no | `./data/skills` | file-backed skill store dir (container: `/data/skills`) |
 | `PROMPTS_DIR` | no | `./data/prompts` | file-backed system-prompt store dir (container: `/data/prompts`) |

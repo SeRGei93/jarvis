@@ -3,6 +3,8 @@ import { mkdir, readFile, writeFile } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
 import { fetchRawHtml } from "../fetch.js";
+import { SsrfError } from "../ssrf-guard.js";
+import type { ContentProvider } from "../content/types.js";
 import type { NewsItem, NewsParser } from "./types.js";
 import type { NewsArticle, NewsFeedSection } from "./types.js";
 import {
@@ -27,6 +29,7 @@ import { isRealtArticleUrl, parseRealtArticle } from "./realt.js";
 import {
   SEARCH_NEWS_MAX_TOTAL,
   SEARCH_NEWS_MIN_ONLINER,
+  SEARCH_NEWS_MIN_PER_SOURCE,
   CACHE_TTL,
   CACHE_DIR,
 } from "../config.js";
@@ -195,6 +198,26 @@ function getParserForUrl(url: string): NewsParser | null {
   }
 }
 
+/**
+ * Fetch a news/list page as HTML. Local HTTP first; if it is blocked or fails
+ * and a content provider is configured, ask the provider for rendered HTML so
+ * the same site parser can run on it.
+ */
+async function fetchNewsHtml(
+  url: string,
+  timeoutMs: number,
+  contentProvider?: ContentProvider,
+): Promise<string> {
+  try {
+    return await fetchRawHtml(url, timeoutMs);
+  } catch (err) {
+    if (err instanceof SsrfError) throw err;
+    if (!contentProvider) throw err;
+    const page = await contentProvider.fetchPage({ url, format: "html", timeoutMs });
+    return page.content;
+  }
+}
+
 function isOnlinerSite(siteInput: string): boolean {
   const s = siteInput.trim().toLowerCase();
   return s === "onliner.by";
@@ -223,61 +246,68 @@ function isWikidomSite(siteInput: string): boolean {
 const ONLINER_SOURCE = "onliner.by";
 
 /**
- * Объединяет новости из секций, сортирует по времени (свежие первыми),
- * применяет лимиты: макс. 50 всего, мин. 15 от onliner.by.
+ * Объединяет новости из секций в общий список:
+ *  - дедуп по URL;
+ *  - гарантирует minOnliner от onliner.by и minPerSource от каждого
+ *    остального источника (иначе date-only ленты вроде Tochka/Wikidom
+ *    проигрывают источникам с точным временем и исчезают из топ-50);
+ *  - добивает остаток самыми свежими новостями и сортирует по времени.
  */
 export function mergeAndLimitNews(
   sections: NewsFeedSection[],
   maxTotal: number = SEARCH_NEWS_MAX_TOTAL,
-  minOnliner: number = SEARCH_NEWS_MIN_ONLINER
+  minOnliner: number = SEARCH_NEWS_MIN_ONLINER,
+  minPerSource: number = SEARCH_NEWS_MIN_PER_SOURCE,
 ): NewsItemWithSource[] {
-  const withSource: NewsItemWithSource[] = [];
+  const groups = new Map<string, NewsItemWithSource[]>();
   for (const section of sections) {
     if (section.error || section.fallbackMarkdown) continue;
-    for (const item of section.items) {
-      withSource.push({ ...item, source: section.source });
+    const items = section.items.map((item) => ({ ...item, source: section.source }));
+    items.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+    const existing = groups.get(section.source);
+    if (existing) existing.push(...items);
+    else groups.set(section.source, items);
+  }
+
+  const result: NewsItemWithSource[] = [];
+  const used = new Set<string>();
+  const add = (item: NewsItemWithSource): void => {
+    if (used.has(item.url)) return;
+    used.add(item.url);
+    result.push(item);
+  };
+
+  // Onliner first (its minimum is larger); then every other source gets a quota.
+  const ordered = [...groups.entries()].sort(([a], [b]) =>
+    a === ONLINER_SOURCE ? -1 : b === ONLINER_SOURCE ? 1 : 0,
+  );
+  for (const [source, items] of ordered) {
+    if (result.length >= maxTotal) break;
+    const quota = source === ONLINER_SOURCE ? minOnliner : minPerSource;
+    for (const item of items.slice(0, quota)) {
+      if (result.length >= maxTotal) break;
+      add(item);
     }
   }
 
-  withSource.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
-
-  const onlinerItems = withSource.filter((i) => i.source === ONLINER_SOURCE);
-  const hasOnliner = onlinerItems.length > 0;
-
-  let result = withSource.slice(0, maxTotal);
-  const onlinerCount = result.filter((i) => i.source === ONLINER_SOURCE).length;
-
-  if (hasOnliner && onlinerCount < minOnliner) {
-    const need = Math.min(minOnliner - onlinerCount, onlinerItems.length);
-    const onlinerUrlsInResult = new Set(
-      result.filter((i) => i.source === ONLINER_SOURCE).map((i) => i.url)
-    );
-    const extraOnliner = onlinerItems.filter(
-      (i) => !onlinerUrlsInResult.has(i.url)
-    ).slice(0, need);
-
-    const nonOnliner = result.filter((i) => i.source !== ONLINER_SOURCE);
-    const toRemove = Math.min(need, nonOnliner.length);
-    const removedUrls = new Set(
-      nonOnliner
-        .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
-        .slice(0, toRemove)
-        .map((i) => i.url)
-    );
-
-    result = result
-      .filter((i) => !removedUrls.has(i.url))
-      .concat(extraOnliner);
-    result.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
-    result = result.slice(0, maxTotal);
+  // Fill the remaining slots with the newest items across all sources.
+  const remaining = [...groups.values()]
+    .flat()
+    .filter((item) => !used.has(item.url))
+    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+  for (const item of remaining) {
+    if (result.length >= maxTotal) break;
+    add(item);
   }
 
+  result.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
   return result;
 }
 
 export async function searchNews(
   sites: string[],
-  timeoutMs: number = 30000
+  timeoutMs: number = 30000,
+  contentProvider?: ContentProvider,
 ): Promise<NewsFeedSection[]> {
   const sections: NewsFeedSection[] = [];
 
@@ -305,7 +335,7 @@ export async function searchNews(
           continue;
         }
         try {
-          const html = await fetchRawHtml(url, timeoutMs);
+          const html = await fetchNewsHtml(url, timeoutMs, contentProvider);
           const items = parser.parse(html, url);
           allItems.push(...items);
         } catch (error) {
@@ -332,7 +362,7 @@ export async function searchNews(
           continue;
         }
         try {
-          const html = await fetchRawHtml(url, timeoutMs);
+          const html = await fetchNewsHtml(url, timeoutMs, contentProvider);
           const items = parser.parse(html, url);
           allItems.push(...items);
         } catch (error) {
@@ -348,6 +378,30 @@ export async function searchNews(
       });
       uniqueItems.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
 
+      // Tochka serves a JS "Verification" challenge with HTTP 200, so the local
+      // fetch succeeds but the parser sees no items. Ask the provider for the
+      // rendered HTML and parse that instead.
+      if (uniqueItems.length === 0 && contentProvider) {
+        for (const url of urls) {
+          const parser = getParserForUrl(url);
+          if (!parser) continue;
+          try {
+            const page = await contentProvider.fetchPage({ url, format: "html", timeoutMs });
+            allItems.push(...parser.parse(page.content, url));
+          } catch (error) {
+            lastError = error instanceof Error ? error.message : String(error);
+          }
+        }
+        uniqueItems.length = 0;
+        const seenRendered = new Set<string>();
+        for (const item of allItems) {
+          if (seenRendered.has(item.url)) continue;
+          seenRendered.add(item.url);
+          uniqueItems.push(item);
+        }
+        uniqueItems.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+      }
+
       siteSections.push({
         source: "tochka.by",
         url: "https://tochka.by/articles/",
@@ -358,7 +412,7 @@ export async function searchNews(
       const parser = getParserForUrl(urls[0]);
       if (parser) {
         try {
-          const html = await fetchRawHtml(urls[0], timeoutMs);
+          const html = await fetchNewsHtml(urls[0], timeoutMs, contentProvider);
           const items = parser.parse(html, urls[0]);
           items.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
           siteSections.push({
@@ -387,7 +441,7 @@ export async function searchNews(
       const parser = getParserForUrl(urls[0]);
       if (parser) {
         try {
-          const html = await fetchRawHtml(urls[0], timeoutMs);
+          const html = await fetchNewsHtml(urls[0], timeoutMs, contentProvider);
           const items = parser.parse(html, urls[0]);
           items.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
           siteSections.push({
@@ -416,7 +470,7 @@ export async function searchNews(
       const parser = getParserForUrl(urls[0]);
       if (parser) {
         try {
-          const html = await fetchRawHtml(urls[0], timeoutMs);
+          const html = await fetchNewsHtml(urls[0], timeoutMs, contentProvider);
           const items = parser.parse(html, urls[0]);
           items.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
           siteSections.push({
@@ -455,7 +509,9 @@ export async function searchNews(
         if (!parser) {
           try {
             const { fetchPageAsMarkdown } = await import("../fetch.js");
-            const fallbackMarkdown = await fetchPageAsMarkdown(url, timeoutMs);
+            const fallbackMarkdown = await fetchPageAsMarkdown(url, timeoutMs, {
+              contentProvider,
+            });
             siteSections.push({
               source: sourceName,
               url,
@@ -475,7 +531,7 @@ export async function searchNews(
         }
 
         try {
-          const html = await fetchRawHtml(url, timeoutMs);
+          const html = await fetchNewsHtml(url, timeoutMs, contentProvider);
           const items = parser.parse(html, url);
           items.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
           siteSections.push({ source: sourceName, url, items });

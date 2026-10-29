@@ -3,12 +3,15 @@ import { JSDOM } from "jsdom";
 import {
   formatNewsToMarkdown,
   formatArticleToMarkdown,
+  type NewsItemWithSource,
 } from "../../../src/services/web/parsers/markdown.js";
+import { mergeAndLimitNews } from "../../../src/services/web/parsers/index.js";
 import { tochkaParser } from "../../../src/services/web/parsers/tochka.js";
 import { onlinerParser } from "../../../src/services/web/parsers/onliner.js";
+import { wikidomParser } from "../../../src/services/web/parsers/wikidom.js";
 import { parseOnlinerArticle } from "../../../src/services/web/parsers/onliner-article.js";
 import { extractImageUrl, toAbsoluteHttp, collectImageUrls } from "../../../src/services/web/parsers/image.js";
-import type { NewsArticle, NewsItem } from "../../../src/services/web/parsers/types.js";
+import type { NewsArticle, NewsFeedSection, NewsItem } from "../../../src/services/web/parsers/types.js";
 
 /** Build a detached element wrapping `html` so image extraction can be tested. */
 function elementFrom(html: string): Element {
@@ -47,6 +50,49 @@ describe("formatNewsToMarkdown", () => {
 
   it("returns an empty string for no items", () => {
     expect(formatNewsToMarkdown([])).toBe("");
+  });
+});
+
+describe("mergeAndLimitNews", () => {
+  function item(source: string, n: number, ts: number): NewsItemWithSource {
+    return {
+      title: `${source}-${n}`,
+      url: `https://${source}/${n}`,
+      date: "today",
+      views: 0,
+      description: "",
+      source,
+      timestamp: ts,
+    };
+  }
+  function section(source: string, count: number, baseTs: number): NewsFeedSection {
+    return {
+      source,
+      url: `https://${source}/`,
+      items: Array.from({ length: count }, (_, i) => item(source, i, baseTs + i)),
+    };
+  }
+
+  it("keeps a quota for every source so date-only feeds are not squeezed out", () => {
+    const sections = [
+      section("smartpress.by", 10, 1_000),
+      section("tochka.by", 2, 10),
+      section("wikidom.by", 2, 5),
+      section("onliner.by", 10, 500),
+    ];
+
+    const merged = mergeAndLimitNews(sections, 10, 5, 2);
+    const sources = merged.map((i) => i.source);
+    expect(merged).toHaveLength(10);
+    expect(sources.filter((s) => s === "onliner.by")).toHaveLength(5);
+    expect(sources).toContain("tochka.by");
+    expect(sources).toContain("wikidom.by");
+  });
+
+  it("deduplicates URLs across sections", () => {
+    const sections = [section("onliner.by", 3, 100), section("onliner.by", 3, 100)];
+    const merged = mergeAndLimitNews(sections, 50, 5, 2);
+    expect(new Set(merged.map((i) => i.url)).size).toBe(merged.length);
   });
 });
 
@@ -136,6 +182,61 @@ describe("onlinerParser (image extraction)", () => {
     expect(items[0]!.title).toBe("Заголовок");
     expect(items[0]!.url).toBe("https://money.onliner.by/2026/06/18/test");
     expect(items[0]!.image).toBe("https://imgproxy.onliner.by/l.webp");
+  });
+
+  it("parses the newer news-tiles variant", () => {
+    const html = `<html><body>
+      <div class="news-tidings">
+        <div class="news-tidings__item" data-post-date="1793250010">
+          <div class="news-tiles__list"><div class="news-tiles__item">
+            <a class="news-tiles__stub" href="/2026/10/29/new-tile"></a>
+            <div class="news-tiles__button news-tiles__button_views">17 409</div>
+            <div class="news-tiles__time">29 октября 2026 в 8:00</div>
+            <div class="news-tiles__subtitle">Новый заголовок</div>
+          </div></div>
+        </div>
+      </div>
+    </body></html>`;
+
+    const items = onlinerParser.parse(html, "https://money.onliner.by/");
+    expect(items.length).toBe(1);
+    expect(items[0]!.title).toBe("Новый заголовок");
+    expect(items[0]!.url).toBe("https://money.onliner.by/2026/10/29/new-tile");
+    expect(items[0]!.views).toBe(17409);
+    expect(items[0]!.date).toBe("29 октября 2026 в 8:00");
+  });
+});
+
+describe("wikidomParser", () => {
+  it("falls back to the current SSR markup when v-magazine is gone", () => {
+    const html = `<html><body>
+      <div class="magazine__main">
+        <a class="v-magazine-poster" href="/blog/first-114461-p">
+          <time datetime="2026-10-29T10:00:00.000Z">29.10.2026</time>
+          <h2 class="magazine-poster__title">Первый материал</h2>
+          <div class="magazine-poster__text">Краткое описание</div>
+          <img src="/upload/first.jpg" alt="Первый материал">
+          <span class="magazine-poster__views-text">285</span>
+        </a>
+        <a class="blog-analytics-list__link" href="/blog/second-114262-p">
+          <time datetime="2026-10-20T10:06:42.000Z">20.10.2026</time>
+          <span class="blog-analytics-list__name">Второй материал</span>
+        </a>
+      </div>
+    </body></html>`;
+
+    const items = wikidomParser.parse(html, "https://wikidom.by/blog");
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({
+      title: "Первый материал",
+      url: "https://wikidom.by/blog/first-114461-p",
+      date: "29.10.2026",
+      views: 285,
+      description: "Краткое описание",
+      image: "https://wikidom.by/upload/first.jpg",
+    });
+    expect(items[1]!.title).toBe("Второй материал");
+    expect(items[1]!.timestamp).toBe(Math.floor(Date.parse("2026-10-20T10:06:42.000Z") / 1000));
   });
 });
 

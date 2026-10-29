@@ -82,7 +82,7 @@ Free-form fields pass through `promptguard.sanitizeProfileField`; bot identity e
 
 ## Web tools (native bucket)
 
-The `web` bucket (`mastra/tools/web.ts`, registered in `mastra/tools/registry.ts`) replaces the old external MCP `search` server. It runs **in-process**: web search goes to [Serper](https://serper.dev/) (real Google SERP, one API key, no self-hosted engine), page fetches use a browser-free `fetch` + `jsdom`/`turndown` pipeline (no Chromium), and Belarus marketplace/weather verticals are plain HTTP scrapers. Service code lives under `backend/src/services/web/`.
+The `web` bucket (`mastra/tools/web.ts`, registered in `mastra/tools/registry.ts`) replaces the old external MCP `search` server. It runs **in-process**: web search goes to [Serper](https://serper.dev/) (real Google SERP, one API key, no self-hosted engine), page text is extracted locally with Readability/Turndown (a replaceable Firecrawl provider is an optional fallback), and Belarus marketplace/weather verticals are plain HTTP scrapers. Service code lives under `backend/src/services/web/`.
 
 The bucket exposes **21 tools** — 15 main and 6 lookup helpers. Each `execute` reads the per-request HTTP timeout from `SettingsService` (`timeouts.http_client`, Go parity) and treats fetched page content as untrusted data (wrapped in an envelope). Full reference — every tool, configuration, infrastructure, security, and caching — is in **[Web Search](web-search.md)**.
 

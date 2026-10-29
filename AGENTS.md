@@ -17,7 +17,7 @@ Node 22 · TS5 ESM · `@mastra/core` 1.79 · `@mastra/libsql` (LibSQLStore, no v
 | `db/` | `schema` (13 tables — incl. `pending_confirmations`/`access_requests`, no `skills`/`prompts`/`models`), `migrations/`, `client`, `migrate`, `seed` (code seed), `seed-data` |
 | `domain/` | `entities` (+ constants), `memory-classifier`, `sensitivity-filter` |
 | `mastra/` | `models`, `llm`, `strip-leaked-tools`, `speech`, `agents/{primary-skill,orchestrator,prompt-builder,skill-agent,loop-guard}`, `decisions/{service,types}` (Classifier→OpenRouter System One), `confirmations/confirmation-service`, `memory/{memory-service,dedup,profile-extractor,history,…}`, `tools/{load-skill,memory-tools,registry,…}`, `workflows/chat`, `index` |
-| `services/` | `skill-service` (file-backed via content repos), `conversation-context`, `rate-limit`, `usage` |
+| `services/` | `skill-service` (file-backed via content repos), `conversation-context`, `rate-limit`, `usage`, `web/` (native web tools; local Readability + replaceable page-content providers, Firecrawl fallback) |
 | `telegram/` | `bot`, `stream`, `format`, `voice`, `messenger`, `identity`, `commands`, `errors` (grammY transport, M6) |
 | `scheduler/` | `schedule`, `executor`, `scheduler` (node-cron), `wiring` — due cron tasks → chat pipeline → notify (M7) |
 | `admin/` | `app` (Hono), `auth` (Telegram `initData` HMAC + `ADMIN_USER_IDS`), `api/{settings,models,skills,prompts,users,plans,usage,tasks}` (M8) |

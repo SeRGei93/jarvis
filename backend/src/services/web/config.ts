@@ -90,6 +90,8 @@ export const SEARCH_NEWS_DEFAULT_SITES = [
 
 export const SEARCH_NEWS_MAX_TOTAL = 50;
 export const SEARCH_NEWS_MIN_ONLINER = 15;
+/** Keep at least this many items from every other source when available. */
+export const SEARCH_NEWS_MIN_PER_SOURCE = 3;
 
 export const FETCH_LIMITS = {
   timeoutMs: 30000,
