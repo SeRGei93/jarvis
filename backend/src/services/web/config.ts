@@ -99,6 +99,8 @@ export const FETCH_LIMITS = {
 
 /** Serper (Google SERP) endpoint. The key comes from `env.SERPER_API_KEY`. */
 export const SERPER_SEARCH_URL = "https://google.serper.dev/search";
+/** Serper Google News endpoint (query → `news` array with date/source). */
+export const SERPER_NEWS_URL = "https://google.serper.dev/news";
 
 /** Search request shape constants. The real per-request timeout comes from
  * SettingsService at call time; these are fallbacks/limits. */
@@ -108,6 +110,8 @@ export const SEARCH_API_BACKOFF_MS = 350;
 export const MAX_BATCH_QUERIES = 8;
 /** Google returns ~10 organic results per page; extra pages cost another credit. */
 export const SERPER_MAX_RESULTS = 10;
+/** Google News accepts a larger `num`; keep a sane cap for one request. */
+export const SERPER_NEWS_MAX_RESULTS = 20;
 
 export const REGION_ALIASES: Record<string, string> = {
   // "global"/"world"/"all"/"wt" → worldwide (wt-wt). These previously mapped to

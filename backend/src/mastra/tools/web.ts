@@ -9,6 +9,7 @@ import { logger } from "../../pkg/logger.js";
 import {
   performWebSearch,
   performWebSearchBatch,
+  performSerperNewsSearch,
 } from "../../services/web/search.js";
 import {
   fetchPageAsMarkdown,
@@ -158,10 +159,11 @@ async function articleHandler(url: string, timeoutMs: number): Promise<string | 
   return null;
 }
 
-/** Tool names provided by this bucket (21 total). */
+/** Tool names provided by this bucket (22 total). */
 export const WEB_TOOL_NAMES = new Set([
   "web_search",
   "web_search_batch",
+  "serper_news",
   "fetch_url",
   "search_news",
   "kufar_search",
@@ -341,13 +343,55 @@ export function buildWebTools(
       },
     }),
 
-    // -- 3. fetch_url ---------------------------------------------------------
+    // -- 3. serper_news -------------------------------------------------------
+    serper_news: tool({
+      description:
+        "Search Google News via Serper and return the RAW JSON response (no field " +
+        "selection or formatting). The `news` array carries title, link, snippet, " +
+        "date, source and imageUrl; Serper metadata is preserved too. Use for " +
+        "query-based regional/world news, with an explicit region.",
+      inputSchema: z.object({
+        query: z.string().min(1).max(400).describe("News search query, max 400 characters"),
+        count: z
+          .number()
+          .int()
+          .min(1)
+          .max(20)
+          .optional()
+          .describe("Number of news results, 1–20, default 10"),
+        region: z
+          .string()
+          .min(2)
+          .max(32)
+          .optional()
+          .describe(
+            'News region (e.g. "ru-by", "ru-ru", "ua-uk", "us-en", "wt-wt") or alias ("belarus", "by", "ru", "world").',
+          ),
+      }),
+      execute: async ({ query, count, region }) => {
+        try {
+          const { fetchFn: f, timeoutMs } = await resolveDeps();
+          return await performSerperNewsSearch(query, {
+            count,
+            region,
+            fetchFn: f,
+            timeoutMs,
+          });
+        } catch (err) {
+          log.warn({ tool: "serper_news", err: errStr(err) }, "serper_news failed");
+          return `Error: news search failed: ${errStr(err)}`;
+        }
+      },
+    }),
+
+    // -- 4. fetch_url ---------------------------------------------------------
     fetch_url: tool({
       description:
-        "Fetch a web page and return its main content as markdown. Specialised " +
-        "extractors clean known Belarusian sites (onliner, kufar, av.by, rabota, " +
-        "relax, 103.by, gismeteo, realt, shop.by, etc.); other pages get generic " +
-        "cleanup. Use to read an article or listing found via web_search.",
+        "Fetch a web page and return its main content as markdown. Local " +
+        "Readability handles generic pages; specialised extractors cover known " +
+        "Belarusian sites (onliner, kufar, av.by, rabota, relax, 103.by, gismeteo, " +
+        "realt, shop.by, etc.). JS-only/blocked pages may fall back to a configured " +
+        "content provider. Use to read an article or listing found via search.",
       inputSchema: z.object({
         url: z.string().url().describe("URL of the page to fetch"),
         timeoutMs: z

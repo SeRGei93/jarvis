@@ -35,8 +35,8 @@ function serperFetch(
 }
 
 describe("buildWebTools registry", () => {
-  it("exposes exactly 21 tools matching WEB_TOOL_NAMES", () => {
-    expect(WEB_TOOL_NAMES.size).toBe(21);
+  it("exposes exactly 22 tools matching WEB_TOOL_NAMES", () => {
+    expect(WEB_TOOL_NAMES.size).toBe(22);
     const tools = buildWebTools(ctx, serperFetch([]));
     expect(new Set(Object.keys(tools))).toEqual(WEB_TOOL_NAMES);
   });
@@ -64,6 +64,26 @@ describe("web_search tool (fetchFn-only, no DNS)", () => {
     const out = (await tools.web_search!.execute!({ query: "hello" }, opts)) as string;
     expect(typeof out).toBe("string");
     expect(out.startsWith("Error:")).toBe(true);
+  });
+});
+
+describe("serper_news tool (raw JSON)", () => {
+  it("returns the Serper body verbatim and posts to /news", async () => {
+    const raw = JSON.stringify({ news: [{ title: "News", link: "https://n.test", date: "1 day" }], credits: 1 });
+    const fetchFn = vi.fn(async () =>
+      new Response(raw, { status: 200, headers: { "content-type": "application/json" } }),
+    ) as unknown as typeof globalThis.fetch;
+    const tools = buildWebTools(ctx, fetchFn);
+
+    const out = (await tools.serper_news!.execute!({ query: "news", region: "by" }, opts)) as string;
+    expect(out).toBe(raw);
+
+    const [input, init] = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]! as [
+      string,
+      RequestInit,
+    ];
+    expect(input).toBe("https://google.serper.dev/news");
+    expect(JSON.parse(String(init.body))).toMatchObject({ q: "news", gl: "by", hl: "ru" });
   });
 });
 

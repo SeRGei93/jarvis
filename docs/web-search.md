@@ -12,14 +12,15 @@ The `web` tool bucket gives skills live access to the internet — general web s
 
 ## Tools
 
-**21 tools** total — 15 main, 6 lookup. A skill enables them via its `allowed-tools` (see [Tools](tools.md)).
+**22 tools** total — 16 main, 6 lookup. A skill enables them via its `allowed-tools` (see [Tools](tools.md)).
 
-### Main (15)
+### Main (16)
 
 | Tool | Purpose |
 |------|---------|
 | `web_search` | general web search via Google (Serper), region-aware |
 | `web_search_batch` | run several search queries in parallel, grouped results |
+| `serper_news` | Google News via Serper — **raw JSON** (`news[]`: title/link/snippet/date/source) |
 | `fetch_url` | fetch a page and return readable markdown (local Readability; provider fallback; SSRF-guarded) |
 | `search_news` | Belarus news feed (onliner.by, tochka.by, smartpress.by, gismeteo.by, wikidom.by) |
 | `kufar_search` | search listings on kufar.by (general marketplace) |
@@ -65,6 +66,10 @@ Serper pricing is per 1k queries (2 500 free credits on signup, then a paid plan
 
 The per-request HTTP timeout for search, fetch and the verticals is **not** an env var — it comes from `SettingsService` (`timeouts.http_client`, Go parity) at call time. Search retries twice on network errors / 429 / 5xx; `401`/`403` fail immediately with a key/credits message.
 
+### Serper News (`serper_news`)
+
+`serper_news` posts to `https://google.serper.dev/news` with the same `gl`/`hl` mapping and returns the **raw JSON body** — no field selection. The `news[]` array carries `title`, `link`, `snippet`, `date`, `source`, and `imageUrl`; Serper metadata is preserved. Use it for query-based country/city/topic news; for a fixed Belarus digest use `search_news` (local, zero Serper/Firecrawl credits).
+
 ### Region → Google locale
 
 `web_search` takes `region` (a locale like `ru-by`/`us-en`/`wt-wt`, or an alias like `belarus`/`world`). The client resolves the alias, then sends `gl` (country) and `hl` (interface language):
@@ -107,7 +112,7 @@ Design notes:
 - **Replaceable content provider.** `content/types.ts` defines the vendor-neutral `ContentProvider` contract; `content/firecrawl.ts` is the default implementation and `content/index.ts` is the registry/factory (`CONTENT_PROVIDER`). Server-rendered pages are processed locally (Readability → Markdown); the provider is called only when the local fetch fails or produces no usable content, so Firecrawl credits are not spent on SSR pages. Swapping Firecrawl for Jina/Firecrawl-self-hosted/another vendor only requires a new `ContentProvider` + factory entry.
 - **`PageParser` registry.** `fetch_url` is driven by an ordered registry of `{ match, extract }` parsers assembled in `tools/web.ts` (`WEB_PAGE_PARSERS`): generic `parsers/` extractors first, then each vertical's exported `*PageParsers`. The first parser whose `match(url)` is true cleans the page; otherwise local Readability runs, and the external provider is the last fallback. News-article URLs (onliner/tochka/smartpress/realt) are handled by a separate `articleHandler` before the generic pipeline.
 - **News lists are local.** `searchNews` uses HTTP + the site parser; Tochka's small JS cookie challenge is solved with one cookie retry, and Wikidom's current SSR markup is parsed by its HTML fallback. The content provider is only used if local fetching still fails; the five default sources currently produce items with **zero Firecrawl calls**.
-- **`tools/web.ts` bucket.** Exports `WEB_TOOL_NAMES` (the 21 names) and `buildWebTools(ctx, fetchFn?)`. The registry registers it as the `web` bucket and builds it lazily, only when a skill references one of its tools.
+- **`tools/web.ts` bucket.** Exports `WEB_TOOL_NAMES` (the 22 names) and `buildWebTools(ctx, fetchFn?)`. The registry registers it as the `web` bucket and builds it lazily, only when a skill references one of its tools.
 
 ## Security
 

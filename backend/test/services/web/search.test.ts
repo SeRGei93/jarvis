@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   performWebSearch,
   performWebSearchBatch,
+  performSerperNewsSearch,
   resolveSearchRegion,
 } from "../../../src/services/web/search.js";
 import { googleLocale } from "../../../src/services/web/config.js";
@@ -215,5 +216,54 @@ describe("performWebSearchBatch", () => {
     const md = await performWebSearchBatch(["bad"], { ...DEPS, fetchFn });
     expect(md).toContain("Failed: 1");
     expect(md).toContain("Error:");
+  });
+});
+
+describe("performSerperNewsSearch (raw JSON)", () => {
+  function rawResp(body: string, status = 200): Response {
+    return new Response(body, { status, headers: { "content-type": "application/json" } });
+  }
+
+  it("returns the Serper News body verbatim and sends region/num", async () => {
+    const raw = JSON.stringify(
+      { news: [{ title: "N1", link: "https://n.test", date: "1 day", source: "Src" }], credits: 1 },
+      null,
+      2,
+    );
+    const { fetchFn, calls } = recordingFetch(() => rawResp(raw));
+
+    const out = await performSerperNewsSearch("news", {
+      ...DEPS,
+      fetchFn,
+      region: "belarus",
+      count: 20,
+    });
+
+    expect(out).toBe(raw);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("https://google.serper.dev/news");
+    expect(calls[0]!.headers["X-API-KEY"]).toBe("k-test");
+    expect(calls[0]!.body).toMatchObject({ q: "news", num: 20, gl: "by", hl: "ru" });
+  });
+
+  it("omits gl/hl for worldwide", async () => {
+    const { fetchFn, calls } = recordingFetch(() => rawResp("{}"));
+    await performSerperNewsSearch("x", { ...DEPS, fetchFn, region: "world" });
+    expect(calls[0]!.body.gl).toBeUndefined();
+    expect(calls[0]!.body.hl).toBeUndefined();
+  });
+
+  it("does not retry a 401 and reports the key/credits problem", async () => {
+    const { fetchFn, calls } = recordingFetch(() => rawResp("{}", 401));
+    await expect(performSerperNewsSearch("x", { ...DEPS, fetchFn })).rejects.toThrow(/SERPER_API_KEY/);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("fails fast when no API key is configured", async () => {
+    const fetchFn = vi.fn() as unknown as typeof globalThis.fetch;
+    await expect(performSerperNewsSearch("x", { fetchFn, apiKey: "" })).rejects.toThrow(
+      /SERPER_API_KEY is missing/,
+    );
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 });

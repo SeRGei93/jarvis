@@ -23,6 +23,8 @@ import {
   SEARCH_API_RETRIES,
   SEARCH_API_TIMEOUT_MS,
   SERPER_MAX_RESULTS,
+  SERPER_NEWS_MAX_RESULTS,
+  SERPER_NEWS_URL,
   SERPER_SEARCH_URL,
   googleLocale,
 } from "./config.js";
@@ -55,6 +57,14 @@ interface SearchOpts extends SearchDeps {
   region?: string;
 }
 
+/** Google News options: raw Serper JSON, no field selection. */
+export interface NewsSearchOpts extends SearchDeps {
+  count?: number;
+  region?: string;
+  /** Serper News endpoint override (tests). */
+  newsUrl?: string;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -77,6 +87,12 @@ function clampQuery(query: string): string {
 function clampCount(count: number): number {
   if (!Number.isFinite(count)) return CONFIG.search.defaultResults;
   return Math.max(1, Math.min(SERPER_MAX_RESULTS, Math.trunc(count)));
+}
+
+/** Google News allows more than the 10 organic results; cap at 20. */
+function clampNewsCount(count: number): number {
+  if (!Number.isFinite(count)) return CONFIG.search.defaultResults;
+  return Math.max(1, Math.min(SERPER_NEWS_MAX_RESULTS, Math.trunc(count)));
 }
 
 function formatSearchResults(query: string, results: SearchResult[]): string {
@@ -262,6 +278,97 @@ async function performSerperSearch(
 
   log.warn({ query: truncate(query), attempts: SEARCH_API_RETRIES + 1 }, "serper exhausted retries");
   throw lastError instanceof Error ? lastError : new Error("Serper request failed");
+}
+
+/**
+ * Query Serper's Google News endpoint and return the **raw JSON body**.
+ *
+ * Deliberately does not parse/format: the caller/model gets every field
+ * (`news[]` with title/link/snippet/date/source/imageUrl, plus Serper metadata).
+ * Transport concerns (auth, retries, timeout, size cap) are still handled here.
+ */
+export async function performSerperNewsSearch(
+  query: string,
+  opts: NewsSearchOpts = {},
+): Promise<string> {
+  const fetchFn = opts.fetchFn ?? globalThis.fetch;
+  const timeoutMs = opts.timeoutMs ?? SEARCH_API_TIMEOUT_MS;
+  const newsUrl = opts.newsUrl ?? SERPER_NEWS_URL;
+  const apiKey = opts.apiKey ?? env.SERPER_API_KEY;
+
+  if (!apiKey) {
+    throw new Error(
+      "news search is not configured: SERPER_API_KEY is missing (fetch_url, search_news and the site tools keep working)",
+    );
+  }
+
+  const safeQuery = clampQuery(query);
+  const count = clampNewsCount(opts.count ?? CONFIG.search.defaultResults);
+  const resolvedRegion = resolveSearchRegion(opts.region);
+  const locale = googleLocale(resolvedRegion.resolved);
+  const body = JSON.stringify({
+    q: safeQuery,
+    num: count,
+    ...(locale.gl ? { gl: locale.gl } : {}),
+    ...(locale.hl ? { hl: locale.hl } : {}),
+  });
+
+  const request = timeoutFetch(timeoutMs, fetchFn);
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= SEARCH_API_RETRIES; attempt += 1) {
+    try {
+      const response = await request(newsUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          "X-API-KEY": apiKey,
+        },
+        body,
+      });
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          const detail = await serperErrorText(response);
+          log.warn(
+            { status: response.status, query: truncate(query) },
+            "serper rejected the news API key (invalid key or credits exhausted)",
+          );
+          throw new NonRetryableSearchError(
+            `Serper rejected the news request (HTTP ${response.status}): ${detail}. ` +
+              "Check SERPER_API_KEY and the remaining credits.",
+          );
+        }
+
+        const retryable = response.status === 429 || response.status >= 500;
+        const detail = await serperErrorText(response);
+        if (retryable && attempt < SEARCH_API_RETRIES) {
+          log.warn({ status: response.status, attempt }, "serper news non-2xx, retrying");
+          await sleep(SEARCH_API_BACKOFF_MS * (attempt + 1));
+          continue;
+        }
+
+        const message = `Serper news failed (HTTP ${response.status}): ${detail}`;
+        throw retryable ? new Error(message) : new NonRetryableSearchError(message);
+      }
+
+      const text = await response.text();
+      if (!text.trim()) throw new Error("Serper news returned an empty response");
+      if (text.length > 1_000_000) throw new Error("Serper news response is too large");
+      return text;
+    } catch (error) {
+      lastError = error;
+      if (error instanceof NonRetryableSearchError) throw error;
+      if (attempt < SEARCH_API_RETRIES) {
+        await sleep(SEARCH_API_BACKOFF_MS * (attempt + 1));
+        continue;
+      }
+    }
+  }
+
+  log.warn({ query: truncate(query), attempts: SEARCH_API_RETRIES + 1 }, "serper news exhausted retries");
+  throw lastError instanceof Error ? lastError : new Error("Serper news request failed");
 }
 
 /**
