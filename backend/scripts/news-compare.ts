@@ -350,8 +350,8 @@ async function runLocalBaseline(): Promise<LocalSnapshot> {
     .filter((s) => s.error)
     .map((s) => ({ source: s.source, status: "error", message: s.error }));
 
-  console.warn(
-    `WARN [news-compare] local baseline: ${metrics.items} items, ${metrics.fresh24h} fresh, ` +
+  console.log(
+    `news-compare: local baseline ${metrics.items} items, ${metrics.fresh24h} fresh, ` +
       `${providerCalls} provider call(s), ${Date.now() - started}ms`,
   );
 
@@ -447,9 +447,9 @@ async function runSerperQuery(spec: QuerySpec, now: Date): Promise<QueryResult> 
         ? payload.credits
         : 1;
     const metrics = analyzeSerper(spec, payload, now);
-    console.warn(
-      `WARN [news-compare] ${spec.id}: ${metrics.items} items, ` +
-        `${metrics.fresh24h} fresh, ${metrics.googleRedirects} redirect(s), ${credits} credit(s)`,
+    console.log(
+      `news-compare: ${spec.id} ${metrics.items} items, ${metrics.fresh24h} fresh, ` +
+        `${metrics.googleRedirects} redirect(s), ${credits} credit(s)`,
     );
     return { spec, metrics, credits };
   } catch (error) {
