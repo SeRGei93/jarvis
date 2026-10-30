@@ -113,6 +113,20 @@ describe("news source health", () => {
     expect(md).toContain("smartpress.by: ошибка — HTTP 403");
   });
 
+  it("reports how many of a source's items actually reached the digest", () => {
+    const section: NewsFeedSection = {
+      source: "onliner.by",
+      url: "https://onliner.by/",
+      items: [
+        { title: "A", url: "https://onliner.by/a", date: "today", views: 1, description: "a" },
+        { title: "B", url: "https://onliner.by/b", date: "today", views: 2, description: "b" },
+      ],
+    };
+    const merged: NewsItemWithSource[] = [{ ...section.items[0]!, source: "onliner.by" }];
+    const md = formatNewsWithSourceToMarkdown(merged, [section]);
+    expect(md).toContain("onliner.by: 2 новостей (1 в дайджесте)");
+  });
+
   it("shows the Sources block in the feed formatter too", () => {
     const md = formatFeedSectionsToMarkdown([healthy, empty, failed]);
     expect(md).toContain("Ошибка: HTTP 403");

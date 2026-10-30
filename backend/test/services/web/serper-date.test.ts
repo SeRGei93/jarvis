@@ -107,4 +107,16 @@ describe("isSerperDateFresh", () => {
     expect(isSerperDateFresh("20 авг. 2026 г.", NOW, "ru")).toBe(false);
     expect(isSerperDateFresh("недавно", NOW, "ru")).toBeUndefined();
   });
+
+  it("does not count 'yesterday' (exactly 24h) as fresh", () => {
+    // These phrases resolve to `now - 24h`, i.e. the outer edge of the window.
+    expect(serperAgeHours("вчера", NOW, "ru")).toBeCloseTo(24, 5);
+    expect(isSerperDateFresh("вчера", NOW, "ru")).toBe(false);
+    expect(isSerperDateFresh("yesterday", NOW, "en")).toBe(false);
+    expect(isSerperDateFresh("gestern", NOW, "de")).toBe(false);
+    expect(isSerperDateFresh("вчора", NOW, "uk")).toBe(false);
+    expect(isSerperDateFresh("1 день назад", NOW, "ru")).toBe(false);
+    // A hair inside the window is still fresh.
+    expect(isSerperDateFresh("23 часа назад", NOW, "ru")).toBe(true);
+  });
 });

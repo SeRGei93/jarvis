@@ -5,6 +5,12 @@ Queries: 24 (0 failed)
 Serper credits spent: 24
 Content-provider calls for local SSR feeds: 0
 
+> **Freshness numbers are a pre-fix upper bound.** This run used `age <= 24h`,
+> so items dated `вчера` / `yesterday` / `gestern` / `вчора` (which resolve to
+> exactly `now - 24h`) were counted as fresh. The harness now uses a strict
+> `age < 24h`. Nothing else in the report depends on that boundary; re-run
+> `npm run news:compare` to replace the Fresh <24h column with post-fix values.
+
 ## Method
 
 - Every query was sent to `performSerperNewsSearch` (`POST google.serper.dev/news`) with
@@ -127,8 +133,11 @@ Redirect wrappers seen in the wild:
   that also carries older weather/real-estate material.
 - `serper_news` becomes the default for query-based regional/city/topic/world
   news: 89% <24h in BY (vs 39% local), 79–100% in RU/UA/US/DE/world, and it
-  covers regions the local feed cannot. Use the `site:` recipes for small
-  cities (Gomel/Brest) instead of a bare "новости <город>".
+  covers regions the local feed cannot. The `site:` recipes for small cities
+  (Gomel/Brest) are a fallback for noisy results, **not measured in this run**:
+  the bare city queries already scored 100% fresh there, so the recipes come
+  from the earlier audit and should be re-measured before being made the
+  default.
 - Do not remove `search_news` code or routing: this is not a like-for-like
   replacement (fixed feed vs query search), and local feeds are the only
   zero-credit path for Belarus verticals.

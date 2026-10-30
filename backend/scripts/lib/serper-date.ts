@@ -344,6 +344,8 @@ export function isSerperDateFresh(
 ): boolean | undefined {
   const age = serperAgeHours(input, now, locale);
   if (age === undefined) return undefined;
+  // Strictly inside the window: "вчера" / "yesterday" / "gestern" / "вчора"
+  // resolve to exactly `now - 24h`, and an item that old is NOT "fresh <24h".
   // Future-dated items (clock skew) count as fresh; far-future ones do not.
-  return age <= maxHours && age >= -maxHours;
+  return age < maxHours && age >= -maxHours;
 }

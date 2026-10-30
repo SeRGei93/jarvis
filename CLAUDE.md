@@ -32,6 +32,7 @@ domain/ (pure zod + rules) ← config/ services/ ← mastra/ adapters ← server
 ## Before commit (run in `backend/`)
 - [ ] `npm run typecheck` clean?
 - [ ] `npm test` green?
+- [ ] No test performs a real network call — paid APIs (Serper/OpenRouter/Firecrawl) are off-limits in tests: inject `fetchFn`/`lookupFn`. `test/helpers/no-network.ts` installs a blocking `fetch` stub for the whole suite, so a missed injection fails the test instead of spending credits. Live checks (news comparison, LLM evals) are separate scripts, never `npm test`.
 - [ ] Timeouts/watchdog on every LLM/HTTP call?
 - [ ] Errors logged, not swallowed?
 - [ ] New migration generated for any schema change?

@@ -142,12 +142,13 @@ async function readCache(cacheId: string): Promise<NewsFeedSection[] | null> {
 
 async function writeCache(
   cacheId: string,
-  data: NewsFeedSection[]
+  data: NewsFeedSection[],
+  ttlMs: number = CACHE_TTL.news
 ): Promise<void> {
   await ensureCacheDir();
   const filePath = getCacheFilePath(cacheId);
   const payload = JSON.stringify({
-    expiresAt: Date.now() + CACHE_TTL.news,
+    expiresAt: Date.now() + ttlMs,
     data,
   });
   await writeFile(filePath, payload, "utf-8");
@@ -369,7 +370,7 @@ function finalizeSections(siteInput: string, sections: NewsFeedSection[]): void 
   }
 }
 
-/** Only fully healthy sections are cached; degraded ones are retried next call. */
+/** A healthy section keeps the full news TTL; a degraded one gets a short window. */
 function isCacheableSection(section: NewsFeedSection): boolean {
   const status = newsSectionStatus(section);
   return status === "ok" || status === "fallback";
@@ -622,15 +623,23 @@ export async function searchNews(
 
     finalizeSections(siteInput, siteSections);
 
-    // Never cache an error/empty section: that would hide a degraded source
-    // for the whole TTL. Healthy (or markdown-fallback) results are cached.
-    if (useCache && siteSections.length > 0 && siteSections.every(isCacheableSection)) {
-      await writeCache(cacheId, siteSections);
-    } else if (useCache) {
-      log.warn(
-        { site: siteInput, cacheId, statuses: siteSections.map((s) => s.status) },
-        "news: degraded result not cached",
+    // Healthy results keep the normal TTL. A degraded result is cached too, but
+    // only for a short window: a down source must not be re-fetched on every
+    // call (5 feeds × timeout per request), yet the degradation must stay
+    // visible instead of being hidden for the full 30 minutes.
+    if (useCache && siteSections.length > 0) {
+      const healthy = siteSections.every(isCacheableSection);
+      await writeCache(
+        cacheId,
+        siteSections,
+        healthy ? CACHE_TTL.news : CACHE_TTL.newsDegraded,
       );
+      if (!healthy) {
+        log.warn(
+          { site: siteInput, cacheId, statuses: siteSections.map((s) => s.status) },
+          "news: degraded result cached briefly",
+        );
+      }
     }
 
     sections.push(...siteSections);

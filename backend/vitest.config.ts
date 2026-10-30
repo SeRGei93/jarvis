@@ -4,6 +4,8 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],
+    // No test may reach the network (paid APIs included) — see the file.
+    setupFiles: ["./test/helpers/no-network.ts"],
     // Keep logger quiet during tests (pino accepts the "silent" level).
     // SERPER_API_KEY: the web-search client refuses to run without a key; tests
     // that assert the missing-key path inject an explicit empty `apiKey`.

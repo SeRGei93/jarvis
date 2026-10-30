@@ -5,6 +5,12 @@ import { FETCH_LIMITS } from "../../../src/services/web/config.js";
 
 const opts = { toolCallId: "test", messages: [] } as never;
 
+// Schema-only assertions below: never execute a tool, and never hand it a real
+// `fetch` (the suite installs a network-blocking stub, this keeps it explicit).
+const neverFetch = (() => {
+  throw new Error("network must not be used");
+}) as unknown as typeof globalThis.fetch;
+
 const ctx = {
   settings: {
     getTimeouts: async () => ({
@@ -51,7 +57,7 @@ describe("serper_news tool (raw JSON)", () => {
 
 describe("fetch_url maxChars contract", () => {
   it("accepts the documented range and rejects out-of-range values", () => {
-    const tools = buildWebTools(ctx, globalThis.fetch);
+    const tools = buildWebTools(ctx, neverFetch);
     const schema = tools.fetch_url!.inputSchema as {
       safeParse: (value: unknown) => { success: boolean };
     };
@@ -74,7 +80,7 @@ describe("fetch_url maxChars contract", () => {
   });
 
   it("is optional (defaults are applied at execute time)", () => {
-    const tools = buildWebTools(ctx, globalThis.fetch);
+    const tools = buildWebTools(ctx, neverFetch);
     const schema = tools.fetch_url!.inputSchema as {
       safeParse: (value: unknown) => { success: boolean };
     };

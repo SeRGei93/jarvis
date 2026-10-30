@@ -97,7 +97,7 @@ The bucket exposes **22 tools** — 16 main and 6 lookup helpers. Each `execute`
 Search/news specifics:
 
 - `serper_news` returns the **raw Serper JSON** (`news[]`: title/link/snippet/date/source/imageUrl) and spends one credit per query. It is the default for query-based country/city/topic/world news; small cities use `site:` recipes (see [Web Search](web-search.md#serper-news-serper_news)).
-- `search_news` is the **local Belarus feed** (5 sources, 0 Serper/Firecrawl credits). Its result always ends with a `## Источники` health block (`ok` / `пусто` / `ошибка` / `fallback`), so a degraded source is visible even when other items merged.
+- `search_news` is the **local Belarus feed** (5 sources, 0 Serper/Firecrawl credits). Its result always ends with a `## Источники` health block (`ok` / `пусто` / `ошибка` / `fallback`), so a degraded source is visible even when other items merged; in digest mode the line also says how many items made it into the merged list (`51 новостей (15 в дайджесте)`).
 - `fetch_url` takes an optional `maxChars` (default 35 000, range 1 000–100 000). The full text stays in the fetch cache; long output ends with `[truncated: показано X из Y символов]`.
 
 ## Tool approval

@@ -28,6 +28,12 @@ export const CONFIG = {
 export const CACHE_TTL = {
   fetch: 10 * 60 * 1000, // 10 минут
   news: 30 * 60 * 1000, // 30 минут
+  /**
+   * Short window for a degraded news feed (source error, or a parser that
+   * returned 0 items). Keeps a down source from being re-fetched on every call
+   * without hiding the degradation for the full 30 minutes.
+   */
+  newsDegraded: 2 * 60 * 1000, // 2 минуты
   weather: 60 * 60 * 1000, // 1 час
   posts: 10 * 60 * 1000, // 10 минут
   actualized: 60 * 60 * 1000, // 1 час

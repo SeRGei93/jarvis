@@ -21,14 +21,25 @@ export function newsSectionStatus(section: NewsFeedSection): NewsSourceStatus {
  * One compact `Sources` block shared by both news formatters. It must be shown
  * even when SOME items were merged — otherwise a degraded source looks like
  * "no news today" instead of "this source failed".
+ *
+ * `shownCounts` maps a source to how many of its items actually reached the
+ * merged digest; without it the block reports how many the source produced.
  */
-export function formatNewsSourceStatuses(sections: NewsFeedSection[]): string {
+export function formatNewsSourceStatuses(
+  sections: NewsFeedSection[],
+  shownCounts?: ReadonlyMap<string, number>,
+): string {
   if (sections.length === 0) return "";
   const lines = sections.map((section) => {
     const status = newsSectionStatus(section);
     switch (status) {
-      case "ok":
-        return `- ${section.source}: ${section.items.length} новостей`;
+      case "ok": {
+        const found = section.items.length;
+        const shown = shownCounts?.get(section.source);
+        return shown !== undefined && shown !== found
+          ? `- ${section.source}: ${found} новостей (${shown} в дайджесте)`
+          : `- ${section.source}: ${found} новостей`;
+      }
       case "empty":
         return `- ${section.source}: пусто (парсер вернул 0)`;
       case "fallback":
@@ -99,9 +110,16 @@ export function formatNewsWithSourceToMarkdown(
     })
     .join("\n\n");
   const statuses = sections && sections.length > 0
-    ? `\n\n${formatNewsSourceStatuses(sections)}`
+    ? `\n\n${formatNewsSourceStatuses(sections, countBySource(items))}`
     : "";
   return `## Новости (сортировка по дате, самые свежие первыми)\n\n${list}${statuses}`;
+}
+
+/** How many items of each source survived `mergeAndLimitNews`. */
+function countBySource(items: NewsItemWithSource[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const item of items) counts.set(item.source, (counts.get(item.source) ?? 0) + 1);
+  return counts;
 }
 
 export function formatFeedSectionsToMarkdown(sections: NewsFeedSection[]): string {
