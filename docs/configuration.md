@@ -17,8 +17,8 @@
 | `XAI_API_KEY` | no | — | xAI provider |
 | `GOOGLE_API_KEY` | no | — | Google provider |
 | `ADMIN_USER_IDS` | no | `""` | comma-separated Telegram ids for the Mini App (M8) |
-| `SERPER_API_KEY` | for search | — | serper.dev key for `web_search` (Google SERP). Empty = search reports "not configured"; fetch/news/verticals still work |
-| `CONTENT_PROVIDER` | no | `firecrawl` | fallback page-text provider id; `none`/`local` disables the external fallback (local Readability only) |
+| `SERPER_API_KEY` | for search/news | — | serper.dev key for `web_search` (Google SERP) and `serper_news` (Google News). Empty = those tools report "not configured"; `fetch_url`, `search_news` and the verticals still work |
+| `CONTENT_PROVIDER` | no | `firecrawl` | fallback page-text provider id; `none`/`local` disables the external fallback (local Readability only). Server-rendered pages never spend a provider credit |
 | `FIRECRAWL_API_KEY` | no | — | Firecrawl key for the fallback provider. Empty = provider not configured → local path only |
 | `FIRECRAWL_API_URL` | no | `https://api.firecrawl.dev` | optional Firecrawl base URL (proxy/self-hosted) |
 | `WEB_CACHE_DIR` | no | `./data/web-cache` | root dir for the web fetch/search file cache (container: `/data/web-cache`) |
@@ -29,6 +29,8 @@
 | `PORT` | no | `8080` | health/HTTP server port |
 
 `TELEGRAM_BOT_TOKEN` and `OPENROUTER_API_KEY` are required only when `NODE_ENV=production` (fail-fast on boot). Secrets are never logged as values — only key names appear at `DEBUG`. The web bucket and its config are documented in [Web Search](web-search.md).
+
+News credit policy: `serper_news` spends **1 Serper credit per query**; `search_news` is local and spends **0 Serper/Firecrawl credits**. Firecrawl is only a fallback for JS shells or local fetch failures — SSR news pages are parsed locally. The routing decision and measured costs are in [the comparison report](../.ai-factory/references/news-serper-comparison.md).
 
 ## Database-backed settings
 

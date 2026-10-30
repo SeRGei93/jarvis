@@ -109,7 +109,32 @@ Redirect wrappers seen in the wild:
 - Failures: none.
 - Content-provider calls: 0 (expected 0 for SSR feeds).
 - Serper credits: 24 for 24 queries.
+- Link citability: **72 of 327** items (22%) carried a direct publisher URL;
+  **255** (78%) were Google redirect wrappers. A wrapper must be resolved with
+  `fetch_url` (the fetched document now reports the final publisher URL in its
+  `Source:` line) or dropped — never cited.
+- Item count is not bounded by `num`: several queries returned 13–26 items for
+  `count: 10`, so the model must not assume a fixed digest size.
 
 ## Decision
 
-_Filled in Task 5 after reviewing this report._
+**Keep both paths.**
+
+- `search_news` stays the zero-credit, fixed Belarus feed: the general BY
+  digest and the verticals (gismeteo weather news, wikidom real estate). It
+  produced 181 items from 5 sources with 0 provider calls and 0 Serper
+  credits; 39% of them were <24h old, which is acceptable for a curated feed
+  that also carries older weather/real-estate material.
+- `serper_news` becomes the default for query-based regional/city/topic/world
+  news: 89% <24h in BY (vs 39% local), 79–100% in RU/UA/US/DE/world, and it
+  covers regions the local feed cannot. Use the `site:` recipes for small
+  cities (Gomel/Brest) instead of a bare "новости <город>".
+- Do not remove `search_news` code or routing: this is not a like-for-like
+  replacement (fixed feed vs query search), and local feeds are the only
+  zero-credit path for Belarus verticals.
+- Link policy: ~78% of Serper links are Google wrappers. Always resolve them
+  with `fetch_url` (the final URL is surfaced as `Source:`) and never cite the
+  wrapper; unresolved `news.google.com/rss/articles/...` links are dropped.
+- Re-check after 1–2 weeks of real usage with the same harness; switch the
+  general BY digest to `serper_news` only if it keeps ≥90% freshness and
+  redirect resolution proves reliable in production.

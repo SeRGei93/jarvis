@@ -500,6 +500,10 @@ function buildReport(
   const credits = results.reduce((sum, r) => sum + r.credits, 0);
   const failures = results.filter((r) => r.error);
   const providerCalls = local?.providerCalls ?? 0;
+  const successful = results.filter((r) => r.metrics);
+  const totalItems = successful.reduce((sum, r) => sum + r.metrics!.items, 0);
+  const directLinks = successful.reduce((sum, r) => sum + r.metrics!.directLinks, 0);
+  const redirectLinks = successful.reduce((sum, r) => sum + r.metrics!.googleRedirects, 0);
 
   const localTable = local
     ? [
@@ -595,6 +599,13 @@ Redirect wrappers seen in the wild:
 - Failures: ${failures.length === 0 ? "none" : failures.map((f) => `\`${f.spec.id}\``).join(", ")}.
 - Content-provider calls: ${providerCalls} (expected 0 for SSR feeds).
 - Serper credits: ${credits} for ${results.length} queries.
+- Link citability: **${directLinks} of ${totalItems}** items (${fmtPct(pct(directLinks, totalItems))})
+  carried a direct publisher URL; **${redirectLinks}** (${fmtPct(pct(redirectLinks, totalItems))})
+  were Google redirect wrappers. A wrapper must be resolved with \`fetch_url\`
+  (the fetched document now reports the final publisher URL in its \`Source:\`
+  line) or dropped — never cited.
+- Item count is not bounded by \`num\`: several queries returned 13–26 items for
+  \`count: 10\`, so the model must not assume a fixed digest size.
 
 ## Decision
 

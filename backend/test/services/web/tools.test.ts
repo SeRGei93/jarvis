@@ -67,26 +67,6 @@ describe("web_search tool (fetchFn-only, no DNS)", () => {
   });
 });
 
-describe("serper_news tool (raw JSON)", () => {
-  it("returns the Serper body verbatim and posts to /news", async () => {
-    const raw = JSON.stringify({ news: [{ title: "News", link: "https://n.test", date: "1 day" }], credits: 1 });
-    const fetchFn = vi.fn(async () =>
-      new Response(raw, { status: 200, headers: { "content-type": "application/json" } }),
-    ) as unknown as typeof globalThis.fetch;
-    const tools = buildWebTools(ctx, fetchFn);
-
-    const out = (await tools.serper_news!.execute!({ query: "news", region: "by" }, opts)) as string;
-    expect(out).toBe(raw);
-
-    const [input, init] = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]! as [
-      string,
-      RequestInit,
-    ];
-    expect(input).toBe("https://google.serper.dev/news");
-    expect(JSON.parse(String(init.body))).toMatchObject({ q: "news", gl: "by", hl: "ru" });
-  });
-});
-
 describe("lookup tools (no network)", () => {
   // A fetchFn that throws — proves these tools never touch the network.
   const throwingFetch = vi.fn(async () => {

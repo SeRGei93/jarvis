@@ -19,6 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "eval": "vitest run test/evals",
+    "news:compare": "tsx scripts/news-compare.ts",
     "skill:run": "tsx src/cli/skill-run.ts"
   },
   "dependencies": {

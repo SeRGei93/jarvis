@@ -94,6 +94,12 @@ The bucket exposes **22 tools** — 16 main and 6 lookup helpers. Each `execute`
 | med103 (health) | `med103_doctor_search`, `med103_clinic_search`, `med103_services`, `med103_pharmacy` |
 | Lookups | `kufar_categories`, `kufar_regions`, `avby_brands`, `avby_models`, `relax_categories`, `relax_afisha_categories` |
 
+Search/news specifics:
+
+- `serper_news` returns the **raw Serper JSON** (`news[]`: title/link/snippet/date/source/imageUrl) and spends one credit per query. It is the default for query-based country/city/topic/world news; small cities use `site:` recipes (see [Web Search](web-search.md#serper-news-serper_news)).
+- `search_news` is the **local Belarus feed** (5 sources, 0 Serper/Firecrawl credits). Its result always ends with a `## Источники` health block (`ok` / `пусто` / `ошибка` / `fallback`), so a degraded source is visible even when other items merged.
+- `fetch_url` takes an optional `maxChars` (default 35 000, range 1 000–100 000). The full text stays in the fetch cache; long output ends with `[truncated: показано X из Y символов]`.
+
 ## Tool approval
 
 Destructive tools require **confirm-before-execute** (C1). When `ctx.confirmations` is wired (the chat path), `forget` and `task_delete` do **not** act — they record a row in `pending_confirmations` and return "awaiting confirmation". The turn surfaces the request in `ChatResult.confirmations`; Telegram renders ✅ Подтвердить / ❌ Отменить inline buttons (`cfm:a|d:<id>`). A tap calls `ConfirmationService.resolve(userId, id, approved)`, which runs the recorded action on approval (scoped by `userId`, idempotent).

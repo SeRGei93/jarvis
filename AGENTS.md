@@ -17,7 +17,8 @@ Node 22 · TS5 ESM · `@mastra/core` 1.79 · `@mastra/libsql` (LibSQLStore, no v
 | `db/` | `schema` (13 tables — incl. `pending_confirmations`/`access_requests`, no `skills`/`prompts`/`models`), `migrations/`, `client`, `migrate`, `seed` (code seed), `seed-data` |
 | `domain/` | `entities` (+ constants), `memory-classifier`, `sensitivity-filter` |
 | `mastra/` | `models`, `llm`, `strip-leaked-tools`, `speech`, `agents/{primary-skill,orchestrator,prompt-builder,skill-agent,loop-guard}`, `decisions/{service,types}` (Classifier→OpenRouter System One), `confirmations/confirmation-service`, `memory/{memory-service,dedup,profile-extractor,history,…}`, `tools/{load-skill,memory-tools,registry,…}`, `workflows/chat`, `index` |
-| `services/` | `skill-service` (file-backed via content repos), `conversation-context`, `rate-limit`, `usage`, `web/` (native web tools; local Readability + replaceable page-content providers, Firecrawl fallback) |
+| `services/` | `skill-service` (file-backed via content repos), `conversation-context`, `rate-limit`, `usage`, `web/` (native web tools; Serper search/news, local Readability + replaceable page-content providers, Firecrawl fallback) |
+| `scripts/` | dev harnesses run via `tsx`: `news-compare` (`search_news` vs `serper_news`, writes `.ai-factory/references/news-serper-comparison.md`) |
 | `telegram/` | `bot`, `stream`, `format`, `voice`, `messenger`, `identity`, `commands`, `errors` (grammY transport, M6) |
 | `scheduler/` | `schedule`, `executor`, `scheduler` (node-cron), `wiring` — due cron tasks → chat pipeline → notify (M7) |
 | `admin/` | `app` (Hono), `auth` (Telegram `initData` HMAC + `ADMIN_USER_IDS`), `api/{settings,models,skills,prompts,users,plans,usage,tasks}` (M8) |
@@ -37,6 +38,7 @@ Vite + React 18 + Mantine 7 + `@twa-dev/sdk`, HashRouter. `lib/api` (typed clien
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm test` | `vitest run` |
 | `npm run db:generate` / `db:migrate` / `db:seed` | drizzle migrations + DB seed |
+| `npm run news:compare` | live `search_news` vs `serper_news` comparison (needs `SERPER_API_KEY`; writes a report) |
 | `npm run build` / `start` | compile to `dist/` / run compiled |
 
 ## AI Context Files
@@ -57,6 +59,7 @@ Vite + React 18 + Mantine 7 + `@twa-dev/sdk`, HashRouter. `lib/api` (typed clien
 | Architecture | `docs/architecture.md` | Layering, structure, dependency rules |
 | Chat Pipeline | `docs/chat-pipeline.md` | pre-pass → orchestrator agent, load_skill, guardrails, tool approval, evals |
 | Tools | `docs/tools.md` | built-in tool buckets (web/currency/memory/tasks), rate limit & usage |
+| Web Search | `docs/web-search.md` | native web bucket: Serper search/news, fetch budget, SSRF, caching, credit policy |
 | Telegram Bot | `docs/telegram.md` | grammY transport, streaming, voice, commands, allowlist |
 | Cron Scheduler | `docs/scheduler.md` | node-cron polls, due tasks → chat pipeline → notify |
 | Configuration | `docs/configuration.md` | `.env` secrets and DB-backed settings |
