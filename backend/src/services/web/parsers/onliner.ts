@@ -17,10 +17,12 @@ function resolveUrl(href: string, baseUrl: string): string {
   }
 }
 
-function parseViews(text: string): number {
+/** Views when the markup exposes a number; `null` when it does not (no fake 0). */
+function parseViews(text: string | undefined): number | null {
+  if (!text) return null;
   const num = text.replace(/\s/g, "").replace(/\u00a0/g, "");
   const parsed = Number.parseInt(num, 10);
-  return Number.isNaN(parsed) ? 0 : parsed;
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 export const onlinerParser: NewsParser = {
@@ -61,7 +63,7 @@ export const onlinerParser: NewsParser = {
       const viewsEl =
         item.querySelector(".news-tidings__button_views") ??
         item.querySelector(".news-tiles__button_views");
-      const views = parseViews(viewsEl?.textContent?.trim() ?? "0");
+      const views = parseViews(viewsEl?.textContent?.trim());
 
       const date =
         item.querySelector(".news-tidings__time")?.textContent?.trim() ??

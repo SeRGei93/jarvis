@@ -110,7 +110,7 @@ export const smartpressParser: NewsParser = {
         title: title.replace(/&quot;/g, '"'),
         url,
         date,
-        views: 0,
+        views: null,
         description: "",
         timestamp,
         image: extractImageUrl(li, baseUrl),

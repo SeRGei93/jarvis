@@ -29,10 +29,10 @@ export function isOnlinerArticleUrl(url: string): boolean {
   }
 }
 
-function parseViews(text: string): number {
+function parseViews(text: string): number | undefined {
   const num = String(text).replace(/\s/g, "").replace(/\u00a0/g, "");
   const parsed = Number.parseInt(num, 10);
-  return Number.isNaN(parsed) ? 0 : parsed;
+  return Number.isNaN(parsed) ? undefined : parsed;
 }
 
 export function parseOnlinerArticle(html: string, url: string): NewsArticle | null {
@@ -56,7 +56,7 @@ export function parseOnlinerArticle(html: string, url: string): NewsArticle | nu
   let title = "";
   let date = "";
   let timestamp: number | undefined;
-  let views = 0;
+  let views: number | undefined;
   let description = "";
   let author: string | undefined;
   let body = "";

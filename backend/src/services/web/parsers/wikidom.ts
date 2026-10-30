@@ -37,10 +37,11 @@ function parseTimestamp(dateText: string, datetime?: string | null): number | un
   return parseDate(dateText);
 }
 
-function parseCount(text: string | undefined): number {
+function parseCount(text: string | undefined): number | null {
   const digits = (text ?? "").replace(/[^\d]/g, "");
+  if (!digits) return null;
   const parsed = Number.parseInt(digits, 10);
-  return Number.isNaN(parsed) ? 0 : parsed;
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function stripHtml(html: string): string {
@@ -162,7 +163,7 @@ export const wikidomParser: NewsParser = {
         title: `${titlePrefix}${item.title}`,
         url,
         date,
-        views: item.views ?? 0,
+        views: item.views ?? null,
         description,
         timestamp,
         image,

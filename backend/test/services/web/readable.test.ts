@@ -44,4 +44,15 @@ describe("readableFromHtml", () => {
     expect(page?.markdown).toContain("Docs");
     expect(page?.markdown).toContain("Long article paragraph");
   });
+
+  it("returns the full long article — extraction never applies the output budget", () => {
+    const longBody = "Long article paragraph. ".repeat(2500); // ~60k chars
+    const html = `<html><body><article><h1>Long</h1><p>${longBody}</p></article></body></html>`;
+    const page = readableFromHtml(html, "https://example.test/long");
+
+    expect(page).not.toBeNull();
+    expect(page!.charCount).toBeGreaterThan(35_000);
+    expect(page!.markdown.length).toBe(page!.charCount);
+    expect(page!.markdown).toContain("Long article paragraph.");
+  });
 });

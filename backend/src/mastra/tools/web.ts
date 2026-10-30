@@ -4,6 +4,7 @@ import type { ToolContext } from "./registry.js";
 import { parseGoDuration } from "../../config/settings.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../pkg/logger.js";
+import { FETCH_LIMITS } from "../../services/web/config.js";
 
 // --- Native web service: search / fetch / news ---------------------------------
 import {
@@ -391,7 +392,8 @@ export function buildWebTools(
         "Readability handles generic pages; specialised extractors cover known " +
         "Belarusian sites (onliner, kufar, av.by, rabota, relax, 103.by, gismeteo, " +
         "realt, shop.by, etc.). JS-only/blocked pages may fall back to a configured " +
-        "content provider. Use to read an article or listing found via search.",
+        "content provider. Long pages are truncated at maxChars; the full text " +
+        "stays in the fetch cache. Use to read an article or listing found via search.",
       inputSchema: z.object({
         url: z.string().url().describe("URL of the page to fetch"),
         timeoutMs: z
@@ -401,8 +403,19 @@ export function buildWebTools(
           .max(120000)
           .optional()
           .describe("Request timeout in ms, default 30000, max 120000"),
+        maxChars: z
+          .number()
+          .int()
+          .min(FETCH_LIMITS.minMaxChars)
+          .max(FETCH_LIMITS.maxMaxChars)
+          .optional()
+          .describe(
+            `Max markdown characters to return, default ${FETCH_LIMITS.defaultMaxChars}, ` +
+              `range ${FETCH_LIMITS.minMaxChars}–${FETCH_LIMITS.maxMaxChars}. ` +
+              "The cache keeps the full text.",
+          ),
       }),
-      execute: async ({ url, timeoutMs }, { abortSignal }) => {
+      execute: async ({ url, timeoutMs, maxChars }, { abortSignal }) => {
         try {
           const deps = await resolveDeps();
           const effectiveTimeout = timeoutMs ?? deps.timeoutMs;
@@ -414,6 +427,7 @@ export function buildWebTools(
             articleHandler,
             contentProvider: deps.contentProvider,
             signal: abortSignal,
+            maxChars: maxChars ?? FETCH_LIMITS.defaultMaxChars,
           });
           return markUntrusted(md, url);
         } catch (err) {
@@ -459,8 +473,10 @@ export function buildWebTools(
               : ["onliner.by", "tochka.by", "smartpress.by", "gismeteo.by", "wikidom.by"];
           const sections = await searchNews(sitesToUse, effectiveTimeout, deps.contentProvider);
           const merged = mergeAndLimitNews(sections);
+          // Always pass the sections: a partially degraded feed must show which
+          // source failed, not silently look like "no news".
           return merged.length > 0
-            ? formatNewsWithSourceToMarkdown(merged)
+            ? formatNewsWithSourceToMarkdown(merged, sections)
             : formatFeedSectionsToMarkdown(sections);
         } catch (err) {
           log.warn({ tool: "search_news", err: errStr(err) }, "search_news failed");

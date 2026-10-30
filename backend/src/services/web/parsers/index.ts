@@ -3,7 +3,9 @@ import { mkdir, readFile, writeFile } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
 import { fetchRawHtml } from "../fetch.js";
+import { webChild } from "../logger.js";
 import { SsrfError } from "../ssrf-guard.js";
+import type { LookupFn } from "../ssrf-guard.js";
 import type { ContentProvider } from "../content/types.js";
 import type { NewsItem, NewsParser } from "./types.js";
 import type { NewsArticle, NewsFeedSection } from "./types.js";
@@ -12,6 +14,7 @@ import {
   formatNewsToMarkdown,
   formatFeedSectionsToMarkdown,
   formatNewsWithSourceToMarkdown,
+  newsSectionStatus,
   type NewsItemWithSource,
 } from "./markdown.js";
 import { onlinerParser } from "./onliner.js";
@@ -30,9 +33,13 @@ import {
   SEARCH_NEWS_MAX_TOTAL,
   SEARCH_NEWS_MIN_ONLINER,
   SEARCH_NEWS_MIN_PER_SOURCE,
+  NEWS_PARSER_CACHE_VERSION,
+  FETCH_LIMITS,
   CACHE_TTL,
   CACHE_DIR,
 } from "../config.js";
+
+const log = webChild("news");
 
 const PARSER_REGISTRY = new Map<string, NewsParser>();
 
@@ -74,25 +81,37 @@ const WIKIDOM_URLS = [
 ] as const;
 
 /**
- * Стабильный идентификатор кеша для каждого сайта.
- * Один сайт = один файл кеша.
+ * Stable cache id per requested feed.
+ *
+ * Named feeds keep a readable id; arbitrary URLs are hashed from the FULL
+ * normalised URL (not just the hostname) — two different pages on one host must
+ * not share a cache entry. The parser version is part of every id.
  */
-function getCacheIdForSite(siteInput: string): string {
+export function getCacheIdForSite(siteInput: string): string {
   const s = siteInput.trim().toLowerCase();
-  if (s === "onliner.by") return "onliner_by";
-  if (s === "tochka.by" || s === "https://tochka.by") return "tochka_by";
-  if (s === "smartpress.by" || s === "https://smartpress.by")
-    return "smartpress_by";
-  if (s === "gismeteo.by" || s === "www.gismeteo.by" || s === "https://www.gismeteo.by")
-    return "gismeteo_by";
-  if (s === "wikidom.by" || s === "https://wikidom.by")
-    return "wikidom_by";
+  const version = `v${NEWS_PARSER_CACHE_VERSION}`;
+  if (s === "onliner.by") return `onliner_by_${version}`;
+  if (s === "tochka.by" || s === "https://tochka.by") return `tochka_by_${version}`;
+  if (s === "smartpress.by" || s === "https://smartpress.by") {
+    return `smartpress_by_${version}`;
+  }
+  if (s === "gismeteo.by" || s === "www.gismeteo.by" || s === "https://www.gismeteo.by") {
+    return `gismeteo_by_${version}`;
+  }
+  if (s === "wikidom.by" || s === "https://wikidom.by") {
+    return `wikidom_by_${version}`;
+  }
+  let normalized = s;
   try {
     const url = new URL(s.startsWith("http") ? s : `https://${s}`);
-    return url.hostname.replace(/\./g, "_");
+    url.hash = "";
+    url.searchParams.sort();
+    normalized = url.href;
   } catch {
-    return createHash("sha256").update(siteInput, "utf8").digest("hex").slice(0, 16);
+    /* keep the raw input as the cache key */
   }
+  const hash = createHash("sha256").update(normalized, "utf8").digest("hex").slice(0, 16);
+  return `url_${version}_${hash}`;
 }
 
 function getCacheFilePath(cacheId: string): string {
@@ -198,6 +217,14 @@ function getParserForUrl(url: string): NewsParser | null {
   }
 }
 
+/** Injectable deps for {@link searchNews} (tests run without network/cache). */
+export interface NewsFetchOptions {
+  fetchFn?: typeof globalThis.fetch;
+  lookupFn?: LookupFn;
+  /** Read/write the on-disk news cache; default `true`. */
+  useCache?: boolean;
+}
+
 /**
  * Fetch a news/list page as HTML. Local HTTP first; if it is blocked or fails
  * and a content provider is configured, ask the provider for rendered HTML so
@@ -207,9 +234,13 @@ async function fetchNewsHtml(
   url: string,
   timeoutMs: number,
   contentProvider?: ContentProvider,
+  opts: NewsFetchOptions = {},
 ): Promise<string> {
   try {
-    return await fetchRawHtml(url, timeoutMs);
+    return await fetchRawHtml(url, timeoutMs, {
+      fetchFn: opts.fetchFn,
+      lookupFn: opts.lookupFn,
+    });
   } catch (err) {
     if (err instanceof SsrfError) throw err;
     if (!contentProvider) throw err;
@@ -304,22 +335,66 @@ export function mergeAndLimitNews(
   return result;
 }
 
+/**
+ * Mark every section with its health and log degradations. A page that was
+ * fetched but parsed to 0 items is an `empty` WARN, not a silent "no news".
+ */
+function finalizeSections(siteInput: string, sections: NewsFeedSection[]): void {
+  for (const section of sections) {
+    section.status = newsSectionStatus(section);
+    if (section.status === "error") {
+      log.warn(
+        { site: siteInput, source: section.source, url: section.url, err: section.error },
+        "news: source failed",
+      );
+    } else if (section.status === "empty") {
+      log.warn(
+        { site: siteInput, source: section.source, url: section.url },
+        "news: parser returned 0 items",
+      );
+    }
+  }
+
+  if (
+    sections.length > 0 &&
+    sections.every((s) => s.status !== "ok" && s.status !== "fallback")
+  ) {
+    log.error(
+      {
+        site: siteInput,
+        sources: sections.map((s) => ({ source: s.source, status: s.status, error: s.error })),
+      },
+      "news: all sources for site are empty",
+    );
+  }
+}
+
+/** Only fully healthy sections are cached; degraded ones are retried next call. */
+function isCacheableSection(section: NewsFeedSection): boolean {
+  const status = newsSectionStatus(section);
+  return status === "ok" || status === "fallback";
+}
+
 export async function searchNews(
   sites: string[],
   timeoutMs: number = 30000,
   contentProvider?: ContentProvider,
+  opts: NewsFetchOptions = {},
 ): Promise<NewsFeedSection[]> {
   const sections: NewsFeedSection[] = [];
+  const useCache = opts.useCache !== false;
 
   for (const siteInput of sites) {
     const urls = normalizeSites(siteInput);
     if (urls.length === 0) continue;
 
     const cacheId = getCacheIdForSite(siteInput);
-    const cached = await readCache(cacheId);
-    if (cached) {
-      sections.push(...cached);
-      continue;
+    if (useCache) {
+      const cached = await readCache(cacheId);
+      if (cached) {
+        sections.push(...cached);
+        continue;
+      }
     }
 
     const siteSections: NewsFeedSection[] = [];
@@ -335,7 +410,7 @@ export async function searchNews(
           continue;
         }
         try {
-          const html = await fetchNewsHtml(url, timeoutMs, contentProvider);
+          const html = await fetchNewsHtml(url, timeoutMs, contentProvider, opts);
           const items = parser.parse(html, url);
           allItems.push(...items);
         } catch (error) {
@@ -362,7 +437,7 @@ export async function searchNews(
           continue;
         }
         try {
-          const html = await fetchNewsHtml(url, timeoutMs, contentProvider);
+          const html = await fetchNewsHtml(url, timeoutMs, contentProvider, opts);
           const items = parser.parse(html, url);
           allItems.push(...items);
         } catch (error) {
@@ -412,7 +487,7 @@ export async function searchNews(
       const parser = getParserForUrl(urls[0]);
       if (parser) {
         try {
-          const html = await fetchNewsHtml(urls[0], timeoutMs, contentProvider);
+          const html = await fetchNewsHtml(urls[0], timeoutMs, contentProvider, opts);
           const items = parser.parse(html, urls[0]);
           items.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
           siteSections.push({
@@ -441,7 +516,7 @@ export async function searchNews(
       const parser = getParserForUrl(urls[0]);
       if (parser) {
         try {
-          const html = await fetchNewsHtml(urls[0], timeoutMs, contentProvider);
+          const html = await fetchNewsHtml(urls[0], timeoutMs, contentProvider, opts);
           const items = parser.parse(html, urls[0]);
           items.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
           siteSections.push({
@@ -470,7 +545,7 @@ export async function searchNews(
       const parser = getParserForUrl(urls[0]);
       if (parser) {
         try {
-          const html = await fetchNewsHtml(urls[0], timeoutMs, contentProvider);
+          const html = await fetchNewsHtml(urls[0], timeoutMs, contentProvider, opts);
           const items = parser.parse(html, urls[0]);
           items.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
           siteSections.push({
@@ -511,6 +586,9 @@ export async function searchNews(
             const { fetchPageAsMarkdown } = await import("../fetch.js");
             const fallbackMarkdown = await fetchPageAsMarkdown(url, timeoutMs, {
               contentProvider,
+              fetchFn: opts.fetchFn,
+              lookupFn: opts.lookupFn,
+              maxChars: FETCH_LIMITS.defaultMaxChars,
             });
             siteSections.push({
               source: sourceName,
@@ -531,7 +609,7 @@ export async function searchNews(
         }
 
         try {
-          const html = await fetchNewsHtml(url, timeoutMs, contentProvider);
+          const html = await fetchNewsHtml(url, timeoutMs, contentProvider, opts);
           const items = parser.parse(html, url);
           items.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
           siteSections.push({ source: sourceName, url, items });
@@ -542,7 +620,19 @@ export async function searchNews(
       }
     }
 
-    await writeCache(cacheId, siteSections);
+    finalizeSections(siteInput, siteSections);
+
+    // Never cache an error/empty section: that would hide a degraded source
+    // for the whole TTL. Healthy (or markdown-fallback) results are cached.
+    if (useCache && siteSections.length > 0 && siteSections.every(isCacheableSection)) {
+      await writeCache(cacheId, siteSections);
+    } else if (useCache) {
+      log.warn(
+        { site: siteInput, cacheId, statuses: siteSections.map((s) => s.status) },
+        "news: degraded result not cached",
+      );
+    }
+
     sections.push(...siteSections);
   }
 

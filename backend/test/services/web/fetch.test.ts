@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import {
   fetchPageAsMarkdown,
   fetchRawHtml,
+  truncateForOutput,
+  type FetchCache,
   type PageParser,
 } from "../../../src/services/web/fetch.js";
 import { SsrfError, type LookupFn } from "../../../src/services/web/ssrf-guard.js";
@@ -43,6 +45,140 @@ describe("generic page readable extraction", () => {
     expect(out).not.toContain("alert(");
     expect(out).not.toContain("menu links");
     expect(out).not.toContain("buy now");
+  });
+});
+
+/** In-memory FetchCache so tests never touch the real on-disk cache. */
+function memoryCache(): FetchCache & { store: Map<string, string> } {
+  const store = new Map<string, string>();
+  return {
+    store,
+    read: async (url) => store.get(url) ?? null,
+    write: async (url, markdown) => {
+      store.set(url, markdown);
+    },
+  };
+}
+
+describe("truncateForOutput", () => {
+  it("returns the text unchanged when it fits", () => {
+    const result = truncateForOutput("hello", 10);
+    expect(result).toEqual({
+      text: "hello",
+      shownChars: 5,
+      totalChars: 5,
+      truncated: false,
+    });
+  });
+
+  it("cuts at maxChars and appends an explicit marker", () => {
+    const text = "a".repeat(100);
+    const result = truncateForOutput(text, 40);
+    expect(result.truncated).toBe(true);
+    expect(result.shownChars).toBe(40);
+    expect(result.totalChars).toBe(100);
+    expect(result.text.startsWith("a".repeat(40))).toBe(true);
+    expect(result.text).toContain("[truncated: показано 40 из 100 символов]");
+  });
+
+  it("does not split a surrogate pair at the cut point", () => {
+    const text = `${"a".repeat(9)}😀tail`;
+    const result = truncateForOutput(text, 10);
+    expect(result.shownChars).toBe(9);
+    expect(result.text.startsWith(`${"a".repeat(9)}\n\n[truncated:`)).toBe(true);
+  });
+});
+
+describe("fetchPageAsMarkdown: output budget", () => {
+  it("caps a long local article but caches the full document", async () => {
+    const longBody = "Long article paragraph. ".repeat(2500); // ~60k chars
+    const html = `<html><body><article><h1>Long</h1><p>${longBody}</p></article></body></html>`;
+    const fetchFn = vi.fn(async () => htmlResp(html)) as unknown as typeof globalThis.fetch;
+    const cache = memoryCache();
+    const url = "https://example.test/long";
+
+    const out = await fetchPageAsMarkdown(url, 5000, {
+      fetchFn,
+      lookupFn: publicLookup,
+      cache,
+      maxChars: 2000,
+    });
+
+    const full = cache.store.get(url);
+    expect(full).toBeDefined();
+    expect(full!.length).toBeGreaterThan(50_000);
+    expect(full).not.toContain("[truncated:");
+    expect(out.length).toBeLessThan(2200);
+    expect(out).toContain(`[truncated: показано 2000 из ${full!.length} символов]`);
+    expect(out).toContain("Long article paragraph.");
+  });
+
+  it("does not truncate a short article", async () => {
+    const html = `<html><body><article><h1>Short</h1><p>Just a short body.</p></article></body></html>`;
+    const fetchFn = vi.fn(async () => htmlResp(html)) as unknown as typeof globalThis.fetch;
+    const cache = memoryCache();
+
+    const out = await fetchPageAsMarkdown("https://example.test/short", 5000, {
+      fetchFn,
+      lookupFn: publicLookup,
+      cache,
+      maxChars: 2000,
+    });
+
+    expect(out).not.toContain("[truncated:");
+    expect(out).toContain("Just a short body.");
+    expect(cache.store.get("https://example.test/short")).toBe(out);
+  });
+
+  it("applies the budget to provider output too, keeping the full text cached", async () => {
+    const providerBody = "P".repeat(50_000);
+    const provider = fakeProvider(providerBody);
+    const fetchFn = vi.fn(async () =>
+      htmlResp("<html><body><div id='app'></div><noscript>enable JS</noscript></body></html>"),
+    ) as unknown as typeof globalThis.fetch;
+    const cache = memoryCache();
+    const url = "https://example.test/js-shell";
+
+    const out = await fetchPageAsMarkdown(url, 5000, {
+      fetchFn,
+      lookupFn: publicLookup,
+      contentProvider: provider,
+      cache,
+      maxChars: 1500,
+    });
+
+    const full = cache.store.get(url);
+    expect(full).toBeDefined();
+    expect(full!.length).toBeGreaterThan(50_000);
+    expect(out).toContain(`[truncated: показано 1500 из ${full!.length} символов]`);
+    expect(out).not.toContain("P".repeat(2000));
+  });
+});
+
+describe("fetchPageAsMarkdown: final URL", () => {
+  it("cites the publisher URL after a redirect, not the wrapper", async () => {
+    let calls = 0;
+    const fetchFn = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://publisher.test/article" },
+        });
+      }
+      return htmlResp(
+        `<html><body><article><h1>Real</h1><p>${"Publisher body. ".repeat(40)}</p></article></body></html>`,
+      );
+    }) as unknown as typeof globalThis.fetch;
+
+    const out = await fetchPageAsMarkdown("https://wrapper.test/goto?url=abc", 5000, {
+      fetchFn,
+      lookupFn: publicLookup,
+      useCache: false,
+    });
+
+    expect(out).toContain("Source: https://publisher.test/article");
+    expect(out).not.toContain("Source: https://wrapper.test/goto");
   });
 });
 

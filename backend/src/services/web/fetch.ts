@@ -30,6 +30,48 @@ export interface PageParser {
   extract: (html: string) => { html: string; title: string } | null;
 }
 
+/** Minimal cache contract (the default is the on-disk fetch cache). */
+export interface FetchCache {
+  read(url: string): Promise<string | null>;
+  write(url: string, markdown: string): Promise<void>;
+}
+
+/** Result of {@link truncateForOutput}. */
+export interface TruncateResult {
+  /** Text to hand to the model (with the truncation marker when needed). */
+  text: string;
+  shownChars: number;
+  totalChars: number;
+  truncated: boolean;
+}
+
+/**
+ * Bound one tool result without touching the cached copy.
+ *
+ * The cache always stores the FULL extracted document, so a later call (or a
+ * larger `maxChars`) can still reach the tail. This helper only builds the
+ * model-facing string and appends an explicit marker.
+ */
+export function truncateForOutput(text: string, maxChars: number): TruncateResult {
+  const total = text.length;
+  if (!Number.isFinite(maxChars) || maxChars <= 0 || total <= maxChars) {
+    return { text, shownChars: total, totalChars: total, truncated: false };
+  }
+
+  let shown = Math.max(0, Math.trunc(maxChars));
+  // Never split a surrogate pair (emoji/CJK) at the cut point.
+  const lastCode = shown > 0 ? text.charCodeAt(shown - 1) : 0;
+  if (lastCode >= 0xd800 && lastCode <= 0xdbff) shown -= 1;
+
+  const marker = `\n\n[truncated: показано ${shown} из ${total} символов]`;
+  return {
+    text: `${text.slice(0, shown).trimEnd()}${marker}`,
+    shownChars: shown,
+    totalChars: total,
+    truncated: true,
+  };
+}
+
 /** Options for {@link fetchPageAsMarkdown}; everything network-facing is injectable. */
 export interface FetchPageOptions {
   /** Fetch implementation (defaults to global `fetch`). */
@@ -40,8 +82,15 @@ export interface FetchPageOptions {
   pageParsers?: PageParser[];
   /** Returns ready markdown for special article URLs, or null to fall through. */
   articleHandler?: (url: string, timeoutMs: number) => Promise<string | null>;
-  /** Read/write the on-disk fetch cache; default `true`. */
+  /** Read/write the fetch cache; default `true`. */
   useCache?: boolean;
+  /** Cache implementation override (default: the on-disk fetch cache). */
+  cache?: FetchCache;
+  /**
+   * Max characters of markdown returned to the caller. The cache still keeps
+   * the full document; the tail is only cut at this output boundary.
+   */
+  maxChars?: number;
   /**
    * Optional external content provider (Firecrawl, Jina, …). Local HTTP +
    * Readability is always tried first; the provider is used only when the local
@@ -176,31 +225,43 @@ const REQUEST_HEADERS: Record<string, string> = {
   "accept-language": "ru-BY,ru;q=0.9,en;q=0.8",
 };
 
+/** Options for the low-level HTML fetch. */
+export interface FetchRawOptions {
+  fetchFn?: typeof globalThis.fetch;
+  lookupFn?: LookupFn;
+  maxRedirects?: number;
+  /**
+   * Caller abort signal (e.g. the agent watchdog). Composed with the internal
+   * per-request timeout via `AbortSignal.any` — EITHER aborts the fetch.
+   */
+  signal?: AbortSignal;
+  /** Internal: cookie obtained from a JS challenge, sent once on retry. */
+  cookie?: string;
+  /** Internal: prevents a challenge-cookie retry loop. */
+  challengeRetried?: boolean;
+}
+
+/** Raw HTML plus the URL that finally served it (after redirects). */
+export interface RawHtmlResult {
+  html: string;
+  finalUrl: string;
+}
+
 /**
  * Fetches raw HTML for `url`, applying the SSRF guard before the request and on
  * every manually-followed redirect hop (so redirect-based SSRF is blocked).
  *
+ * Returns the final URL too: Google News links and many publisher links are
+ * redirects, and the caller must cite the publisher, not the wrapper.
+ *
  * @throws {SsrfError} on a disallowed URL / redirect target or redirect overflow.
  * @throws {Error} on non-2xx responses or unsupported content types.
  */
-export async function fetchRawHtml(
+export async function fetchRawHtmlResult(
   url: string,
   timeoutMs: number,
-  opts: {
-    fetchFn?: typeof globalThis.fetch;
-    lookupFn?: LookupFn;
-    maxRedirects?: number;
-    /**
-     * Caller abort signal (e.g. the agent watchdog). Composed with the internal
-     * per-request timeout via `AbortSignal.any` — EITHER aborts the fetch.
-     */
-    signal?: AbortSignal;
-    /** Internal: cookie obtained from a JS challenge, sent once on retry. */
-    cookie?: string;
-    /** Internal: prevents a challenge-cookie retry loop. */
-    challengeRetried?: boolean;
-  } = {},
-): Promise<string> {
+  opts: FetchRawOptions = {},
+): Promise<RawHtmlResult> {
   const fetchFn = opts.fetchFn ?? globalThis.fetch;
   const lookupFn = opts.lookupFn;
   const maxRedirects = opts.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
@@ -283,7 +344,7 @@ export async function fetchRawHtml(
       const cookie = extractChallengeCookie(body);
       if (cookie) {
         log.debug({ url: currentUrl }, "fetch: JS cookie challenge, retrying with cookie");
-        return await fetchRawHtml(url, timeoutMs, {
+        return await fetchRawHtmlResult(url, timeoutMs, {
           ...opts,
           cookie,
           challengeRetried: true,
@@ -291,8 +352,17 @@ export async function fetchRawHtml(
       }
     }
 
-    return body;
+    return { html: body, finalUrl: currentUrl };
   }
+}
+
+/** Backwards-compatible wrapper: HTML only (most callers do not need the URL). */
+export async function fetchRawHtml(
+  url: string,
+  timeoutMs: number,
+  opts: FetchRawOptions = {},
+): Promise<string> {
+  return (await fetchRawHtmlResult(url, timeoutMs, opts)).html;
 }
 
 /**
@@ -377,7 +447,27 @@ export async function fetchPageAsMarkdown(
   const started = Date.now();
   const useCache = opts.useCache !== false;
   const provider = opts.contentProvider;
+  const cache: FetchCache = opts.cache ?? {
+    read: readFetchCache,
+    write: writeFetchCache,
+  };
   let providerAttempted = false;
+
+  /**
+   * Apply the output budget AFTER the cache write: the disk copy always keeps
+   * the full document, the model gets a bounded string with an explicit marker.
+   */
+  const fitOutput = (targetUrl: string, output: string): string => {
+    if (opts.maxChars === undefined) return output;
+    const limited = truncateForOutput(output, opts.maxChars);
+    if (limited.truncated) {
+      log.warn(
+        { url: targetUrl, shown: limited.shownChars, total: limited.totalChars },
+        "fetch: output truncated",
+      );
+    }
+    return limited.text;
+  };
 
   /** Fetch through the external provider and cache the rendered document. */
   const fetchViaProvider = async (): Promise<string> => {
@@ -392,7 +482,7 @@ export async function fetchPageAsMarkdown(
       signal: opts.signal,
     });
     const output = buildProviderOutput(page, url);
-    if (useCache) await writeFetchCache(url, output);
+    if (useCache) await cache.write(url, output);
     log.debug(
       {
         url,
@@ -403,19 +493,19 @@ export async function fetchPageAsMarkdown(
       },
       "fetch: provider",
     );
-    return output;
+    return fitOutput(url, output);
   };
 
   try {
     // 1) Cache hit short-circuit.
     if (useCache) {
-      const cached = await readFetchCache(url);
+      const cached = await cache.read(url);
       if (cached) {
         log.debug(
           { url, len: cached.length, elapsedMs: Date.now() - started },
           "fetch: cache hit",
         );
-        return cached;
+        return fitOutput(url, cached);
       }
     }
     log.debug({ url, useCache, provider: provider?.name }, "fetch: cache miss");
@@ -425,12 +515,12 @@ export async function fetchPageAsMarkdown(
       try {
         const md = await opts.articleHandler(url, timeoutMs);
         if (md) {
-          if (useCache) await writeFetchCache(url, md);
+          if (useCache) await cache.write(url, md);
           log.debug(
             { url, len: md.length, parser: "article", elapsedMs: Date.now() - started },
             "fetch: article handler",
           );
-          return md;
+          return fitOutput(url, md);
         }
       } catch (err) {
         if (isAbortError(err) || err instanceof SsrfError) throw err;
@@ -443,9 +533,9 @@ export async function fetchPageAsMarkdown(
 
     // 3) Plain HTML fetch (local-first). The external provider is only used
     // when the local fetch fails or produces no usable content.
-    let rawHtml: string;
+    let raw: RawHtmlResult;
     try {
-      rawHtml = await fetchRawHtml(url, timeoutMs, {
+      raw = await fetchRawHtmlResult(url, timeoutMs, {
         fetchFn: opts.fetchFn,
         lookupFn: opts.lookupFn,
         signal: opts.signal,
@@ -471,6 +561,11 @@ export async function fetchPageAsMarkdown(
       throw err;
     }
 
+    const rawHtml = raw.html;
+    // Cite the URL that finally served the page (Google News and many publisher
+    // links are redirects; the wrapper must never reach the model as a source).
+    const finalUrl = raw.finalUrl;
+
     // 4) Specialised parsers — first match wins.
     let output: string | null = null;
     let chosen = "clean";
@@ -478,7 +573,7 @@ export async function fetchPageAsMarkdown(
       if (parser.match(url)) {
         const r = parser.extract(rawHtml);
         if (r) {
-          output = buildOutput(r.title, url, r.html);
+          output = buildOutput(r.title, finalUrl, r.html);
           chosen = "parser";
           break;
         }
@@ -489,10 +584,10 @@ export async function fetchPageAsMarkdown(
     // spent when the server-rendered HTML already contains the article.
     let readableOutput: string | null = null;
     if (output === null) {
-      const readable = readableFromHtml(rawHtml, url);
+      const readable = readableFromHtml(rawHtml, finalUrl);
       if (readable?.markdown) {
-        const title = readable.title?.trim() || new URL(url).hostname;
-        readableOutput = buildOutput(title, url, readable.markdown);
+        const title = readable.title?.trim() || new URL(finalUrl).hostname;
+        readableOutput = buildOutput(title, finalUrl, readable.markdown);
         if (readable.charCount >= MIN_READABLE_CHARS || !provider) {
           output = readableOutput;
           chosen = "readable";
@@ -522,17 +617,23 @@ export async function fetchPageAsMarkdown(
 
     // 8) Generic cleanup fallback.
     if (output === null) {
-      const { title, html } = cleanHtml(url, rawHtml);
-      output = buildOutput(title, url, html);
+      const { title, html } = cleanHtml(finalUrl, rawHtml);
+      output = buildOutput(title, finalUrl, html);
     }
 
-    // 8) Cache and return.
-    if (useCache) await writeFetchCache(url, output);
+    // 9) Cache the FULL document, then apply the output budget.
+    if (useCache) await cache.write(url, output);
     log.debug(
-      { url, parser: chosen, len: output.length, elapsedMs: Date.now() - started },
+      {
+        url,
+        finalUrl,
+        parser: chosen,
+        len: output.length,
+        elapsedMs: Date.now() - started,
+      },
       "fetch: done",
     );
-    return output;
+    return fitOutput(url, output);
   } catch (err) {
     if (err instanceof SsrfError) {
       log.warn(

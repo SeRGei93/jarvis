@@ -106,7 +106,6 @@ export function parseSmartpressArticle(html: string, url: string): NewsArticle |
     url,
     date,
     timestamp,
-    views: 0,
     description: "",
     author,
     body,

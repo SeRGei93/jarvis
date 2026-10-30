@@ -88,7 +88,7 @@ export const tochkaParser: NewsParser = {
           title: title.replace(/&quot;/g, '"'),
           url,
           date,
-          views: 0,
+          views: null,
           description,
           timestamp,
           image: extractImageUrl(item, baseUrl),

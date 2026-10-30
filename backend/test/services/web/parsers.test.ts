@@ -3,9 +3,15 @@ import { JSDOM } from "jsdom";
 import {
   formatNewsToMarkdown,
   formatArticleToMarkdown,
+  formatNewsWithSourceToMarkdown,
+  formatFeedSectionsToMarkdown,
   type NewsItemWithSource,
 } from "../../../src/services/web/parsers/markdown.js";
-import { mergeAndLimitNews } from "../../../src/services/web/parsers/index.js";
+import {
+  getCacheIdForSite,
+  mergeAndLimitNews,
+} from "../../../src/services/web/parsers/index.js";
+import { NEWS_PARSER_CACHE_VERSION } from "../../../src/services/web/config.js";
 import { tochkaParser } from "../../../src/services/web/parsers/tochka.js";
 import { onlinerParser } from "../../../src/services/web/parsers/onliner.js";
 import { wikidomParser } from "../../../src/services/web/parsers/wikidom.js";
@@ -50,6 +56,100 @@ describe("formatNewsToMarkdown", () => {
 
   it("returns an empty string for no items", () => {
     expect(formatNewsToMarkdown([])).toBe("");
+  });
+
+  it("omits views entirely when they are unknown (no fake 0)", () => {
+    const md = formatNewsToMarkdown([
+      {
+        title: "T",
+        url: "https://n/1",
+        date: "29 октября 2026",
+        views: null,
+        description: "x",
+      },
+    ]);
+    expect(md).not.toContain("Просмотров: 0");
+    expect(md).not.toContain("Просмотров:");
+    expect(md).toContain("29 октября 2026");
+  });
+});
+
+describe("news source health", () => {
+  const healthy: NewsFeedSection = {
+    source: "onliner.by",
+    url: "https://onliner.by/",
+    items: [
+      {
+        title: "Fresh",
+        url: "https://onliner.by/1",
+        date: "today",
+        views: 10,
+        description: "d",
+      },
+    ],
+  };
+  const empty: NewsFeedSection = {
+    source: "tochka.by",
+    url: "https://tochka.by/",
+    items: [],
+    status: "empty",
+  };
+  const failed: NewsFeedSection = {
+    source: "smartpress.by",
+    url: "https://smartpress.by/",
+    items: [],
+    status: "error",
+    error: "HTTP 403",
+  };
+
+  it("shows the Sources block in the merged formatter when some items exist", () => {
+    const merged: NewsItemWithSource[] = [{ ...healthy.items[0]!, source: "onliner.by" }];
+    const md = formatNewsWithSourceToMarkdown(merged, [healthy, empty, failed]);
+
+    expect(md).toContain("## Новости");
+    expect(md).toContain("## Источники");
+    expect(md).toContain("onliner.by: 1 новостей");
+    expect(md).toContain("tochka.by: пусто (парсер вернул 0)");
+    expect(md).toContain("smartpress.by: ошибка — HTTP 403");
+  });
+
+  it("shows the Sources block in the feed formatter too", () => {
+    const md = formatFeedSectionsToMarkdown([healthy, empty, failed]);
+    expect(md).toContain("Ошибка: HTTP 403");
+    expect(md).toContain("## Источники");
+    expect(md).toContain("tochka.by: пусто (парсер вернул 0)");
+  });
+
+  it("derives status from error/fallback/items when no explicit status is set", () => {
+    const derived = formatFeedSectionsToMarkdown([
+      { ...failed, status: undefined },
+      { ...empty, status: undefined },
+      { source: "wikidom.by", url: "https://wikidom.by/", items: [], fallbackMarkdown: "# page" },
+    ]);
+    expect(derived).toContain("smartpress.by: ошибка — HTTP 403");
+    expect(derived).toContain("tochka.by: пусто (парсер вернул 0)");
+    expect(derived).toContain("wikidom.by: fallback (markdown страницы)");
+  });
+});
+
+describe("getCacheIdForSite", () => {
+  it("does not collide for two different URLs on the same host", () => {
+    const a = getCacheIdForSite("https://example.test/news?page=1");
+    const b = getCacheIdForSite("https://example.test/news?page=2");
+    expect(a).not.toBe(b);
+  });
+
+  it("includes the parser cache version (parser fixes invalidate old entries)", () => {
+    expect(getCacheIdForSite("onliner.by")).toContain(`v${NEWS_PARSER_CACHE_VERSION}`);
+    expect(getCacheIdForSite("https://example.test/feed")).toContain(
+      `v${NEWS_PARSER_CACHE_VERSION}`,
+    );
+  });
+
+  it("normalises query parameter order before hashing", () => {
+    expect(getCacheIdForSite("https://example.test/x?b=2&a=1")).toBe(
+      getCacheIdForSite("https://example.test/x?a=1&b=2"),
+    );
   });
 });
 

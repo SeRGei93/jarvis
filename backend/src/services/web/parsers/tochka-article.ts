@@ -90,7 +90,6 @@ export function parseTochkaArticle(html: string, url: string): NewsArticle | nul
     url,
     date,
     timestamp,
-    views: 0,
     description: "",
     body,
     tags: tags.length > 0 ? tags : undefined,

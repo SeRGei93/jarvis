@@ -176,7 +176,7 @@ export function parseRealtArticle(html: string, url: string): NewsArticle | null
   // Дата и просмотры из .header-of-news
   let date = "";
   let timestamp: number | undefined;
-  let views = 0;
+  let views: number | undefined;
 
   // Предпочитаем машиночитаемую дату из <meta>
   const publishedMeta = doc.querySelector('meta[name="mediator_published_time"]');
