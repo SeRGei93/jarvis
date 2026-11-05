@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Personalized AI assistant for Telegram (TypeScript + Mastra). Port of avocado-ai (Go).",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -31,6 +31,7 @@
     "@hono/node-server": "^1.19.14",
     "@mastra/core": "^1.79.0",
     "@mastra/libsql": "^1.27.0",
+    "@mastra/mcp": "^2.8.0",
     "@mastra/memory": "^1.39.0",
     "@mozilla/readability": "^0.6.0",
     "@openrouter/ai-sdk-provider": "^2.9.1",
