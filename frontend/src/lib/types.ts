@@ -156,6 +156,59 @@ export interface CronTask {
   user: { id: number; name: string; displayName: string };
 }
 
+// ── MCP servers (settings: mcp_servers) ────────────────────────────────────
+// Admin-managed HTTP MCP servers. The raw config is stored as-is (with `${VAR}`
+// placeholders), so header secrets can stay in `.env` on the server.
+export interface McpServerConfig {
+  /** Transport discriminator; only "http" (Streamable HTTP) is supported. */
+  type?: "http";
+  url: string;
+  headers?: Record<string, string>;
+  /** false = stored but not connected. */
+  enabled?: boolean;
+  /** Per-tool-call timeout in ms (backend default 60000). */
+  timeoutMs?: number;
+  /** Optional SDK host allowlist. */
+  allowedHosts?: string[];
+}
+
+export interface McpConfig {
+  mcpServers: Record<string, McpServerConfig>;
+}
+
+/** One server row from a live refresh or a `/mcp/test` probe. */
+export interface McpServerStatus {
+  name: string;
+  enabled: boolean;
+  connected: boolean;
+  toolCount: number;
+  /** Namespaced tool names (`<server>_<tool>`). */
+  tools: string[];
+  error?: string;
+  durationMs?: number;
+}
+
+/** GET /admin/api/mcp */
+export interface McpStatusResponse {
+  config: McpConfig;
+  ready: boolean;
+  refreshing: boolean;
+  status: McpServerStatus[];
+}
+
+/** PUT /admin/api/mcp */
+export interface McpSaveResponse extends McpStatusResponse {
+  ok: boolean;
+  warnings: string[];
+}
+
+/** POST /admin/api/mcp/test */
+export interface McpTestResponse {
+  ok: boolean;
+  status: McpServerStatus[];
+  warnings: string[];
+}
+
 /** Mutation envelope returned by admin write endpoints: { ok: true, value? }. */
 export interface MutationResult<T = unknown> {
   ok: boolean;

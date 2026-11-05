@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { settings } from "../../db/schema.js";
 import { SettingKey } from "../../config/settings-keys.js";
 import { parseGoDuration } from "../../config/settings.js";
 import { logger } from "../../pkg/logger.js";
 import type { AdminEnv } from "./deps.js";
+import { upsertSetting } from "./setting-write.js";
 
 const log = logger.child({ mod: "admin-settings" });
 
@@ -30,19 +30,6 @@ const agentSchema = z.object({
 /** Flatten zod issues to a single human-readable string (never echoes secret values). */
 function zodError(err: z.ZodError): string {
   return err.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ");
-}
-
-/** Upsert a settings row (insert or replace value) — bumps updatedAt for hot-reload. */
-async function upsertSetting(
-  db: AdminEnv["Variables"]["deps"]["db"],
-  key: string,
-  value: unknown,
-): Promise<void> {
-  const now = new Date();
-  await db
-    .insert(settings)
-    .values({ key, value, updatedAt: now })
-    .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: now } });
 }
 
 /**
