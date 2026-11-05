@@ -59,6 +59,7 @@ All routers live in `backend/src/admin/api/` and are mounted under `/admin/api` 
 | **users** | `GET /users`, `GET/PATCH /users/:id`, `GET/PUT /users/allowlist`, `PUT /users/access-mode`, `GET /users/requests`, `POST /users/requests/:id/approve\|reject` |
 | **plans** | `GET/POST /plans`, `PATCH/DELETE /plans/:id`, `PUT /plans/assign` |
 | **usage** | `GET /usage`, `GET /usage/user/:id`, `DELETE /usage/ratelimit/:userId` |
+| **mcp** | `GET/PUT /mcp`, `POST /mcp/test`, `POST /mcp/refresh` |
 
 **Models have no registry.** There is no `models` table and no CRUD: `GET /models/catalog` proxies OpenRouter's public catalog (trimmed, cached 6 h, `stale` flag when the last refresh failed) and the curated System One list; the Mini App searches by model name on the client. `PUT /models/roles` accepts free-form `provider:model` refs — `openrouter:` refs are checked against the catalog (unknown → warning, not a 400; unreachable catalog → accepted), `decision` against the curated list, other providers by shape only.
 
@@ -68,7 +69,13 @@ All routers live in `backend/src/admin/api/` and are mounted under `/admin/api` 
 
 ## Frontend
 
-`frontend/` is a self-contained Vite + React 18 + [Mantine](https://mantine.dev) package using `@twa-dev/sdk` (HashRouter). `src/lib/api.ts` attaches `Authorization: tma <WebApp.initData>` to every call; `src/nav.tsx` is the single source of truth for the section list. Screens: Skills (with test-run), Models (6 role slots + catalog browser with client-side name search), Settings, Prompts, Plans, Users (+ allowlist, access mode, access requests), Usage, Tasks.
+`frontend/` is a self-contained Vite + React 18 + [Mantine](https://mantine.dev) package using `@twa-dev/sdk` (HashRouter). `src/lib/api.ts` attaches `Authorization: tma <WebApp.initData>` to every call; `src/nav.tsx` is the single source of truth for the section list. Screens: Skills (with test-run), Models (6 role slots + catalog browser with client-side name search), MCP, Settings, Prompts, Plans, Users (+ allowlist, access mode, access requests), Usage, Tasks.
+
+## MCP servers
+
+The **MCP** screen manages remote HTTP MCP servers from a JSON editor (Claude-Desktop-style `{ "mcpServers": { … } }`). «Проверить» probes the textarea contents without saving (`POST /mcp/test`, ephemeral client, live state untouched); «Сохранить» stores the `mcp_servers` setting, invalidates the cache and force-refreshes (`PUT /mcp`); «Обновить статус» re-discovers the saved config. The screen shows per-server badges (подключён / выключен / ошибка), tool counts (tooltip with the namespaced names), error text, and an env-expansion warning block. Headers are stored in plaintext — use `${VAR}` placeholders backed by `.env`.
+
+Full format, lifecycle, security notes and troubleshooting: [MCP](mcp.md).
 
 ## Access requests
 

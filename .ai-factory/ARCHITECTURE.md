@@ -11,12 +11,13 @@ jarvis/
       config/    env (zod, secrets, + SKILLS_DIR/PROMPTS_DIR), settings (DB cache + hot-reload), settings-keys
       content/   file-backed skill/prompt store: paths, store (populate-if-empty + atomicWrite + parseFrontmatter), skill-repository, prompt-repository
       db/        schema (drizzle, 12 tables — skills/prompts dropped), migrations, client, migrate, seed (code seed), seed-data
-      domain/    entities (zod + invariant constants), memory-classifier, sensitivity-filter
+      domain/    entities (zod + invariant constants), mcp-config (HTTP-only MCP schema + ${ENV} expansion), memory-classifier, sensitivity-filter
       mastra/    models (provider:model factory), llm (stream/watchdog/cost/retries/fallback),
                  strip-leaked-tools, speech,
                  agents/ (orchestrator, primary-skill, prompt-builder, skill-agent, loop-guard),
                  memory/ (memory-service, rolling-summary, fact-extractor, dedup (decision→LLM composite), profile-extractor, history+message I/O),
                  decisions/ (types, service — DecisionService over Mastra Classifier → OpenRouter System One),
+                 mcp/ (manager — admin-managed HTTP MCP: config → SDK client → discovery, per-server status),
                  tools/ (web bucket, load-skill, memory-tools, currency, tasks, profile-tools, skill-ref, registry),
                  workflows/ (chat),
                  index.ts (Mastra instance: storage)
@@ -28,7 +29,7 @@ jarvis/
       scheduler/ schedule (pure due/notify rules), executor (poll due cron_tasks → chat pipeline → notify),
                  scheduler (node-cron driver: 60s/5s polls), wiring (ChatService+Notifier → Scheduler)
       admin/     app (Hono: /health + webhook + /admin/api + static Mini App), auth (initData HMAC + ADMIN_USER_IDS),
-                 api/ (settings, models (catalog + roles), skills, prompts, users, plans, usage, tasks)
+                 api/ (settings, models (catalog + roles), skills, prompts, users, plans, usage, tasks, mcp)
       server.ts  single-process entry (Hono via @hono/node-server: health + webhook + admin API + static)
                  + best-effort ChatService init + grammY bot + cron scheduler
     skills/      repo-bundled skill defaults (<name>/SKILL.md) — populated into SKILLS_DIR on first run
@@ -57,8 +58,9 @@ jarvis/
 - **ESM/NodeNext** — relative imports carry `.js` extensions; dev via `tsx`, prod via `node dist`.
 - **Admin Mini App, one origin (M8)** — the Hono admin API (`/admin/api`) and the built React Mini App share the single backend HTTP server (`@hono/node-server`); auth = Telegram `initData` HMAC-SHA256 + `ADMIN_USER_IDS` (deny-by-default, distinct from the in-DB chat allowlist). Admin writes call `SettingsService`/`SkillService` `invalidate()` for hot-reload.
 - **Bot access gate (M17)** — `telegram_access_mode` (`open`|`approval`) controls who may chat. `open` keeps the legacy allowlist (empty = everyone); `approval` admits only `telegram_allowed_users` and turns an unknown user's message into a pending `access_requests` row (one-time reply) instead of dropping it. The admin reviews them in the Mini App (Users → «Заявки»); approving adds the id to the allowlist (via `AccessRequestService`) and DMs the user. `ensureAccessControlDefaults()` opts in once on startup, merging existing Telegram users into the allowlist so nobody is locked out. Routers are mounted from `admin/api/index.ts`; handlers read deps + `adminUserId` from Hono context.
+- **MCP is admin-managed and HTTP-only** — the `mcp_servers` setting stores a Claude-Desktop-style JSON map (`url` + `headers` + `enabled`/`timeoutMs`/`allowedHosts`); `${VAR}` is expanded from `process.env` at refresh time, so secrets stay in `.env`. `McpManager` (`mastra/mcp/`) builds one SDK `MCPClient` per config generation (generation-scoped id; the old client is retired after a short grace), discovers with a single `listToolsetsWithErrors`, and exposes `<server>_<tool>` tools that the orchestrator keeps always active (built-ins win collisions; MCP `load_skill` dropped). stdio/`command`/`args`/`env`, OAuth, resources and prompts are rejected/out of scope (no-`exec` stance). Admin: `GET/PUT /admin/api/mcp`, `POST /test`, `POST /refresh`; shutdown awaits `ChatService.close()` → `McpManager.close()` before libSQL closes.
 
 ## Parity Constants (verified against Go)
 permanent cap `50` · onboarding `@4` msgs · max_history `50` (was 15, M14) · watchdog `30s` · llm_request `300s` · orchestrator maxSteps `50` · maxRetries `3` · admin skill-test loop cap `2`@`5min` · sub-agent model `skill.model || roles.default` · cron poll `60s`/`5s` · task watchdog `llm_request+30s`.
 
-**Diverged from Go:** single dynamic orchestrator `Agent` with progressive `load_skill` tool-gating replaces the router → skills → synthesizer pipeline (mastra-adoption; `maxSteps 50`). No vector/RAG/embeddings — dedup is an LLM check, not cosine `0.92` (M13). Web search/scraping is the native `web` tool bucket, not MCP (M11). Memory extraction is opportunistic (`agent.auto_memory`) on top of `remember` + onboarding (M14). `exec` tool not ported.
+**Diverged from Go:** single dynamic orchestrator `Agent` with progressive `load_skill` tool-gating replaces the router → skills → synthesizer pipeline (mastra-adoption; `maxSteps 50`). No vector/RAG/embeddings — dedup is an LLM check, not cosine `0.92` (M13). Web search/scraping is the native `web` tool bucket, not MCP (M11); MCP returns only as an admin-managed **HTTP** client for external servers (no stdio). Memory extraction is opportunistic (`agent.auto_memory`) on top of `remember` + onboarding (M14). `exec` tool not ported.

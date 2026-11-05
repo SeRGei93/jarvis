@@ -6,7 +6,7 @@
 Telegram AI assistant — a TypeScript + Mastra rewrite of avocado-ai (Go). Monorepo: `backend/` (Node service) + `frontend/` (admin Mini App — React + Vite + Mantine). Migration **milestones 0–8, 11–15, 17, 19 done**; next — M18 (structured news with media).
 
 ## Tech Stack
-Node 22 · TS5 ESM · `@mastra/core` 1.79 · `@mastra/libsql` (LibSQLStore, no vector) · `drizzle-orm` 0.45 · Vercel AI SDK v6 (+ `@ai-sdk/typesafe-ai` for decision models) · zod v4 · grammY 1.44 (polling + opt. webhook; Bot API 10.1 rich messages) · node-cron (M7) · Hono (M8) · pino · vitest.
+Node 22 · TS5 ESM · `@mastra/core` 1.79 · `@mastra/mcp` 2.8 (admin-managed HTTP MCP) · `@mastra/libsql` (LibSQLStore, no vector) · `drizzle-orm` 0.45 · Vercel AI SDK v6 (+ `@ai-sdk/typesafe-ai` for decision models) · zod v4 · grammY 1.44 (polling + opt. webhook; Bot API 10.1 rich messages) · node-cron (M7) · Hono (M8) · pino · vitest.
 
 ## Structure (`backend/src/`)
 | Dir | Contents |
@@ -15,13 +15,13 @@ Node 22 · TS5 ESM · `@mastra/core` 1.79 · `@mastra/libsql` (LibSQLStore, no v
 | `content/` | file-backed skill/prompt store: `paths`, `store` (populate + atomic write + frontmatter), `skill-repository`, `prompt-repository` |
 | `services/models-catalog.ts` | live OpenRouter catalog (6 h cache) + curated decision-model list — feeds the admin model picker and role validation |
 | `db/` | `schema` (13 tables — incl. `pending_confirmations`/`access_requests`, no `skills`/`prompts`/`models`), `migrations/`, `client`, `migrate`, `seed` (code seed), `seed-data` |
-| `domain/` | `entities` (+ constants), `memory-classifier`, `sensitivity-filter` |
-| `mastra/` | `models`, `llm`, `strip-leaked-tools`, `speech`, `agents/{primary-skill,orchestrator,prompt-builder,skill-agent,loop-guard}`, `decisions/{service,types}` (Classifier→OpenRouter System One), `confirmations/confirmation-service`, `memory/{memory-service,dedup,profile-extractor,history,…}`, `tools/{load-skill,memory-tools,registry,…}`, `workflows/chat`, `index` |
+| `domain/` | `entities` (+ constants), `mcp-config` (HTTP-only MCP schema + `${ENV}`), `memory-classifier`, `sensitivity-filter` |
+| `mastra/` | `models`, `llm`, `strip-leaked-tools`, `speech`, `agents/{primary-skill,orchestrator,prompt-builder,skill-agent,loop-guard}`, `decisions/{service,types}` (Classifier→OpenRouter System One), `confirmations/confirmation-service`, `mcp/{manager}` (admin-managed HTTP MCP), `memory/{memory-service,dedup,profile-extractor,history,…}`, `tools/{load-skill,memory-tools,registry,…}`, `workflows/chat`, `index` |
 | `services/` | `skill-service` (file-backed via content repos), `conversation-context`, `rate-limit`, `usage`, `web/` (native web tools; Serper search/news, local Readability + replaceable page-content providers, Firecrawl fallback) |
 | `scripts/` | dev harnesses run via `tsx`: `news-compare` (`search_news` vs `serper_news`, writes `.ai-factory/references/news-serper-comparison.md`) |
 | `telegram/` | `bot`, `stream`, `format`, `voice`, `messenger`, `identity`, `commands`, `errors` (grammY transport, M6) |
 | `scheduler/` | `schedule`, `executor`, `scheduler` (node-cron), `wiring` — due cron tasks → chat pipeline → notify (M7) |
-| `admin/` | `app` (Hono), `auth` (Telegram `initData` HMAC + `ADMIN_USER_IDS`), `api/{settings,models,skills,prompts,users,plans,usage,tasks}` (M8) |
+| `admin/` | `app` (Hono), `auth` (Telegram `initData` HMAC + `ADMIN_USER_IDS`), `api/{settings,models,skills,prompts,users,plans,usage,tasks,mcp}` (M8) |
 | `pkg/` | `logger`, `promptguard`, `bootstrap-env`, `timeout-fetch` |
 | `app.ts` | composition root — `createChatService()` → `handleUserMessage()` |
 | `server.ts` | single-process entry (Hono via `@hono/node-server`: `/health` + webhook + `/admin/api` + static Mini App; + ChatService + grammY bot + cron scheduler) |
@@ -29,7 +29,7 @@ Node 22 · TS5 ESM · `@mastra/core` 1.79 · `@mastra/libsql` (LibSQLStore, no v
 | `test/` | vitest (unit + libSQL integration); `helpers/libsql.ts` harness |
 
 ## Structure (`frontend/src/`)
-Vite + React 18 + Mantine 7 + `@twa-dev/sdk`, HashRouter. `lib/api` (typed client, sends `Authorization: tma <initData>`), `lib/types`, `lib/theme` (Telegram themeParams), `nav` (section registry — single source of truth), `components/{Layout,AuthGate,AccessDenied}`, `screens/` (Skills/Models/Settings/Prompts/Plans/Users/Usage/Tasks). Dev proxies `/admin/api`→:8080; `npm run build` → `dist/`, served by the backend (single origin).
+Vite + React 18 + Mantine 7 + `@twa-dev/sdk`, HashRouter. `lib/api` (typed client, sends `Authorization: tma <initData>`), `lib/types`, `lib/theme` (Telegram themeParams), `nav` (section registry — single source of truth), `components/{Layout,AuthGate,AccessDenied}`, `screens/` (Skills/Models/MCP/Settings/Prompts/Plans/Users/Usage/Tasks). Dev proxies `/admin/api`→:8080; `npm run build` → `dist/`, served by the backend (single origin).
 
 ## Commands (run in `backend/`)
 | Command | Purpose |
@@ -62,6 +62,7 @@ Vite + React 18 + Mantine 7 + `@twa-dev/sdk`, HashRouter. `lib/api` (typed clien
 | Web Search | `docs/web-search.md` | native web bucket: Serper search/news, fetch budget, SSRF, caching, credit policy |
 | Telegram Bot | `docs/telegram.md` | grammY transport, streaming, voice, commands, allowlist |
 | Cron Scheduler | `docs/scheduler.md` | node-cron polls, due tasks → chat pipeline → notify |
+| MCP | `docs/mcp.md` | admin-managed HTTP MCP servers: JSON config, `${ENV}`, statuses, security |
 | Configuration | `docs/configuration.md` | `.env` secrets and DB-backed settings |
 | Admin Mini App | `docs/admin.md` | Hono admin API, `initData` auth, React Mini App (M8) |
 | Deployment | `docs/deployment.md` | Docker + external Caddy (TLS) on shared `edge` net, deploy.sh, Makefile (M9) |

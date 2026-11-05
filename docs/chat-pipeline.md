@@ -48,7 +48,8 @@ text ─▶ promptguard ─▶ loadContext ─▶ rate-limit ─▶ history + me
 
 `src/mastra/agents/orchestrator.ts` builds ONE standalone `@mastra/core` `Agent` (not registered on a `Mastra` instance) whose `instructions`/`model`/`tools` are **functions of a per-request `RequestContext`** — values are assembled in `run()` from `SettingsService`/`SkillService`, preserving DI and DB-backed config. History/memories/summary are passed as messages we build ourselves (no `Agent.memory`).
 
-- **Progressive skills (`load_skill`).** ALL skill tools are registered up front (AI SDK can't add tools mid-generation). The live set is gated per step via `prepareStep → activeTools`: only `load_skill` plus the loaded skills' `allowed-tools` are exposed. Calling `load_skill(name)` returns that skill's full `SKILL.md` instructions + reference list and adds it to the turn's loaded set, so the next step widens the active tools. The pre-pass's primary skill starts pre-loaded. Mirrors Claude Code's progressive skill model — Mastra's native `Workspace` skills were evaluated and not adopted (they load instructions but don't gate tools).
+- **Progressive skills (`load_skill`).** ALL skill tools are registered up front (AI SDK can't add tools mid-generation). The live set is gated per step via `prepareStep → activeTools`: only `load_skill`, the loaded skills' `allowed-tools`, and the always-active MCP tools are exposed. Calling `load_skill(name)` returns that skill's full `SKILL.md` instructions + reference list and adds it to the turn's loaded set, so the next step widens the active tools. The pre-pass's primary skill starts pre-loaded. Mirrors Claude Code's progressive skill model — Mastra's native `Workspace` skills were evaluated and not adopted (they load instructions but don't gate tools).
+- **MCP tools.** The admin-managed HTTP MCP snapshot (`McpManager.getTools()`) is taken **once per turn** and merged into the registered set last (a built-in wins a name collision; MCP `load_skill` is dropped). MCP tool names are passed to `activeToolNames` as always-active extras, so they are callable from step 0 without loading a skill. See [MCP](mcp.md).
 - **Streaming.** The loop drives off `agent.stream(...).fullStream`, branching on `text-delta` (→ `onText`), `tool-call` (→ `onTool.onStart`), and `tool-result` (→ `onTool.onFinish`). The watchdog resets on every chunk.
 - **Watchdog / limits.** An `AbortSignal` idle watchdog (`timeouts.llm_activity`) + overall timeout (`timeouts.llm_request`) wrap the stream — Mastra has no built-in timeout. `maxSteps = 50` (an orchestrated turn does more tool steps than the old per-skill cap of 30); `maxRetries = 3`.
 - **Leak cleanup.** `stripLeakedToolCalls` runs post-stream on the accumulated text (some models leak tool-call syntax into prose).
@@ -95,6 +96,7 @@ Destructive tools (`forget`, `task_delete`) don't act directly — they record a
 | `decisions/` | `DecisionService` over Mastra `Classifier` → OpenRouter System One: `choose` / `judge` helpers, null-on-any-failure, 10 s timeout, 20 k state cap |
 | `agents/orchestrator` | the single dynamic `Agent`; assembles the per-request prompt/model/tools, gates tools via `prepareStep`, streams `fullStream`, keeps the AbortSignal watchdog + post-stream strip |
 | `tools/load-skill` | `load_skill(name)` tool + `activeToolNames`/`buildSkillToolMap` for the per-step gate |
+| `mcp/manager` | admin-managed HTTP MCP servers: config → SDK client → discovery + per-server status |
 | `confirmations/confirmation-service` | confirm-before-execute for risky tools (create / listPending / resolve) |
 | `agents/skill-agent`, `agents/loop-guard` | retained for the admin skill test-run only (not the chat path) |
 
@@ -110,4 +112,5 @@ Destructive tools (`forget`, `task_delete`) don't act directly — they record a
 
 - [Architecture](architecture.md) — where each module sits in the layering
 - [Tools](tools.md) — every tool, `load_skill`, and tool approval
+- [MCP](mcp.md) — admin-managed HTTP MCP servers
 - [Configuration](configuration.md) — model roles and agent params that drive the pre-pass/orchestrator

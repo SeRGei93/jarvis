@@ -2,20 +2,21 @@
 
 # Tools
 
-What a skill can *do* beyond generating text. A skill row lists `allowed-tools` (space-delimited). The registry exposes built-in tools (memory, currency, cron tasks, profile, skill references) plus a **native web bucket** (search / fetch / Belarus marketplaces / weather) — there is no external MCP server.
+What a skill can *do* beyond generating text. A skill row lists `allowed-tools` (space-delimited). The registry exposes built-in tools (memory, currency, cron tasks, profile, skill references), a **native web bucket** (search / fetch / Belarus marketplaces / weather), and — when the admin configured any — **admin-managed MCP tools** (see [MCP](mcp.md)).
 
 ## How tools become available
 
 The **chat orchestrator** registers *every* tool up front (`resolveAllTools(ctx)`) plus `load_skill`, then gates the live set per step (AI SDK can't add tools mid-generation):
 
 ```
-all buckets ─▶ resolveAllTools(ctx) + load_skill ─▶ registered on the agent
+all buckets + MCP snapshot ─▶ resolveAllTools(ctx) + load_skill ─▶ registered on the agent
                                                           │ prepareStep → activeTools
                               load_skill(name) widens the active set to that skill's allowed-tools
 ```
 
 - `load_skill(name)` returns a skill's `SKILL.md` + reference list and adds it to the turn's loaded set; the next step exposes that skill's `allowed-tools` (intersected with the registered tools). The pre-pass's primary skill starts loaded. See [Chat Pipeline](chat-pipeline.md#the-orchestrator).
-- The **admin skill test-run** instead uses `resolveTools(allowedTools, ctx)` — buckets tried in order, first match wins, unknown names logged at `WARN` and skipped, built lazily (`once()` per call).
+- **MCP tools are always active** — they are not listed in any skill's `allowed-tools` and are added to `activeTools` on every step. A built-in tool wins a name collision; an MCP tool named `load_skill` is dropped. See [MCP](mcp.md#how-tools-reach-the-model).
+- The **admin skill test-run** instead uses `resolveTools(allowedTools, ctx)` — buckets tried in order, first match wins, unknown names logged at `WARN` and skipped, built lazily (`once()` per call). It does **not** see MCP tools.
 - Each bucket's `build*` factory receives the `ToolContext`; the web/currency buckets accept an injectable `fetchFn` (defaults to the global `fetch`) so tests run without a network, and forward the tool-execution `AbortSignal` into HTTP so a watchdog abort cancels in-flight requests.
 
 ### ToolContext
@@ -31,6 +32,7 @@ Every tool's `execute` receives what it needs through the `ToolContext` threaded
 | `mem` | `MemoryService` (memory tools) |
 | `skillsRoot?` | filesystem root for `read_skill_reference` (defaults to the seeded skills dir) |
 | `confirmations?` | `ConfirmationService`; when set, risky tools record a confirmation instead of acting (see [Tool approval](#tool-approval)) |
+| `mcpTools?` | per-turn snapshot of admin-managed MCP tools (`<server>_<tool>`), merged last by `resolveAllTools` |
 
 ## Built-in tools
 
@@ -100,6 +102,18 @@ Search/news specifics:
 - `search_news` is the **local Belarus feed** (5 sources, 0 Serper/Firecrawl credits). Its result always ends with a `## Источники` health block (`ok` / `пусто` / `ошибка` / `fallback`), so a degraded source is visible even when other items merged; in digest mode the line also says how many items made it into the merged list (`51 новостей (15 в дайджесте)`).
 - `fetch_url` takes an optional `maxChars` (default 35 000, range 1 000–100 000). The full text stays in the fetch cache; long output ends with `[truncated: показано X из Y символов]`.
 
+## MCP tools (admin-managed)
+
+Remote MCP servers configured in the admin Mini App contribute tools named `<server>_<tool>`. `McpManager` (`mastra/mcp/`) discovers them once with `listToolsetsWithErrors`, flattens the grouping into that namespaced map, and the orchestrator snapshots it at the start of each turn.
+
+- They are **always active** — independent of `allowed-tools`; the model can call them at any step, including step 0.
+- Built-in names win collisions; an MCP `load_skill` is dropped.
+- Discovery is per server: one failing server reports `connected: false` + an error while the rest stay usable. A total failure empties the snapshot (never stale tools).
+- Tool output is **untrusted** model input; `forwardInstructions` is off, but only connect servers you trust.
+- The admin skill test-run (`resolveTools`) does not receive MCP tools.
+
+Full config format, `${ENV}` substitution, statuses and security notes: [MCP](mcp.md).
+
 ## Tool approval
 
 Destructive tools require **confirm-before-execute** (C1). When `ctx.confirmations` is wired (the chat path), `forget` and `task_delete` do **not** act — they record a row in `pending_confirmations` and return "awaiting confirmation". The turn surfaces the request in `ChatResult.confirmations`; Telegram renders ✅ Подтвердить / ❌ Отменить inline buttons (`cfm:a|d:<id>`). A tap calls `ConfirmationService.resolve(userId, id, approved)`, which runs the recorded action on approval (scoped by `userId`, idempotent).
@@ -111,5 +125,6 @@ Destructive tools require **confirm-before-execute** (C1). When `ctx.confirmatio
 ## See Also
 
 - [Web Search](web-search.md) — the full native web bucket: tools, Serper setup, SSRF guard, caching
+- [MCP](mcp.md) — admin-managed HTTP MCP servers and their tools
 - [Chat Pipeline](chat-pipeline.md) — where tool resolution sits in a turn
 - [Configuration](configuration.md) — `SERPER_API_KEY`/`WEB_CACHE_DIR`, timeouts, and plan limits that drive these tools

@@ -43,8 +43,9 @@ Seeded from a typed code module (`src/db/seed-data.ts`) into the `settings` tabl
 | `agent` | `{ max_history, default_temperature, auto_memory }` | defaults `50` / `0.4` / `true` |
 | `telegram_allowed_users` | `number[]` | bot chat allowlist; in `open` mode empty = everyone, in `approval` mode it is the gate |
 | `telegram_access_mode` | `"open" \| "approval"` | default `open` (absent key). `approval` = only allowlisted ids chat; unknown users create an access request. Bootstrapped to `approval` once on first run (existing users merged into the allowlist first) |
+| `mcp_servers` | `{ mcpServers: { <name>: { url, headers?, enabled?, timeoutMs?, allowedHosts?, type? } } }` | admin-managed HTTP MCP servers ([MCP](mcp.md)). Absent = none. `${VAR}` placeholders in `url`/`headers`/`allowedHosts` are resolved from `process.env`; the raw config (with placeholders) is what gets stored |
 
-The `timeouts.http_client` value is the per-request timeout for the `currency_rates` tool and the native [web bucket](web-search.md) (search + fetch + verticals). Web-search infrastructure (the Serper key, cache dir) is configured via `.env` runtime flags, not DB settings.
+The `timeouts.http_client` value is the per-request timeout for the `currency_rates` tool and the native [web bucket](web-search.md) (search + fetch + verticals). Web-search infrastructure (the Serper key, cache dir) is configured via `.env` runtime flags, not DB settings. MCP secrets follow the same rule: any `${VAR}` referenced by `mcp_servers` must exist in the backend env — nothing MCP-specific is hard-coded.
 
 ### How settings drive the chat pipeline
 

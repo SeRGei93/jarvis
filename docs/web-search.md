@@ -4,7 +4,7 @@
 
 ## Summary
 
-The `web` tool bucket gives skills live access to the internet — general web search, page fetch, Belarus news, and a set of Belarus marketplace / weather / health verticals — **entirely in-process**. It replaces the external MCP `search` server that the Go project shelled out to: all of that plumbing (`@mastra/mcp`, the `mcp_servers` setting, the admin `/mcp` page, the per-request rate limiter and per-user web-usage accounting) is gone.
+The `web` tool bucket gives skills live access to the internet — general web search, page fetch, Belarus news, and a set of Belarus marketplace / weather / health verticals — **entirely in-process**. It replaces the external MCP `search` server that the Go project shelled out to: that server's plumbing (the search tool set, the per-request rate limiter in that path, per-user web-usage accounting) is gone. The `@mastra/mcp` dependency does return in a **different** role — an admin-managed client for remote HTTP MCP servers (see [MCP](mcp.md)); the web bucket does not use it.
 
 - Web search goes to **Serper.dev** (`POST https://google.serper.dev/search`) — real Google SERP results, one API key, no self-hosted engine. The `region` parameter maps to Google's `gl`/`hl`, so regionality is by construction.
 - News has **two paths**: `serper_news` (query-based Google News, raw JSON, 1 credit/query) for country/city/topic/world requests, and `search_news` (fixed Belarus feed, 0 credits) for the general BY digest and the weather/real-estate verticals. The comparison behind this split is in [`.ai-factory/references/news-serper-comparison.md`](../.ai-factory/references/news-serper-comparison.md).
