@@ -108,4 +108,12 @@ describe("activeToolNames", () => {
     expect(active).toContain("web_search");
     expect(active).not.toContain("ghost_tool");
   });
+
+  it("adds always-active extras (admin MCP tools) only when registered", () => {
+    const active = activeToolNames(new Set(), skillTools, registered, [
+      "web_search",
+      "github_create_issue", // not registered → ignored
+    ]);
+    expect(active.sort()).toEqual([LOAD_SKILL_TOOL_NAME, "web_search"].sort());
+  });
 });

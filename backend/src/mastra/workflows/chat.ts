@@ -18,6 +18,7 @@ import { RateLimitService } from "../../services/rate-limit.js";
 import { UsageService } from "../../services/usage.js";
 import { AccessRequestService } from "../../services/access-request-service.js";
 import type { ModelsCatalog } from "../../services/models-catalog.js";
+import type { McpManager } from "../mcp/manager.js";
 import {
   ensureThread,
   saveUserMessage,
@@ -67,6 +68,11 @@ export interface ChatDeps {
   accessRequests: AccessRequestService;
   /** OpenRouter + decision model catalogs (admin model picker, role validation). */
   modelsCatalog: ModelsCatalog;
+  /**
+   * Admin-managed HTTP MCP servers (settings `mcp_servers`). The orchestrator
+   * reads its tool snapshot once per turn; the admin API drives refresh/test.
+   */
+  mcp: McpManager;
   /**
    * Best-effort Telegram sender for out-of-band notifications (e.g. "access
    * granted ✅" on approval). Wired by the server after the bot starts; undefined

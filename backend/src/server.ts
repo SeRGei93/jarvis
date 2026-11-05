@@ -196,14 +196,20 @@ function main(): void {
     log.info({ signal }, "graceful shutdown");
     scheduler?.stop(); // stop cron ticks before tearing down the DB
     void bot?.stop().catch(() => {}); // stop polling / webhook intake
-    server.close(() => {
-      void chatService?.close().catch(() => {}); // best-effort resource release
+    server.close(async () => {
+      // Await resource release (MCP disconnect) BEFORE closing libSQL / exiting,
+      // otherwise in-flight disconnects are cut off mid-flight.
+      try {
+        await chatService?.close();
+      } catch (err) {
+        log.warn({ reason: err instanceof Error ? err.message : String(err) }, "chat service close failed");
+      }
       libsql.close();
       log.info("shutdown complete");
       process.exit(0);
     });
-    // Safety net if connections don't drain in time.
-    setTimeout(() => process.exit(1), 5000).unref();
+    // Safety net if connections don't drain in time (MCP disconnect included).
+    setTimeout(() => process.exit(1), 10_000).unref();
   };
 
   process.on("SIGINT", () => shutdown("SIGINT"));

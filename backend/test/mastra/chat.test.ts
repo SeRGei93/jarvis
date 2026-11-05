@@ -127,6 +127,7 @@ function makeDeps(
     usage: new UsageService(t.db),
     confirmations: new ConfirmationService(t.db, new MemoryService(t.db, dedup)),
     accessRequests: new AccessRequestService(t.db, settingsLocal),
+    mcp: {} as unknown as ChatDeps["mcp"],
   };
   return { deps, orch, summaryCalls, factCalls };
 }

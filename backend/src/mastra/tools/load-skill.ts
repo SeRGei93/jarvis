@@ -89,19 +89,24 @@ export function buildSkillToolMap(skills: Skill[]): Map<string, string[]> {
 
 /**
  * Tool names to expose for the current step: `load_skill` (always) plus the
- * `allowed-tools` of every loaded skill, intersected with what's actually
- * registered on the orchestrator. Drives `prepareStep -> activeTools`.
+ * `allowed-tools` of every loaded skill, plus always-active extras (admin MCP
+ * tools), intersected with what's actually registered on the orchestrator.
+ * Drives `prepareStep -> activeTools`.
  */
 export function activeToolNames(
   loadedSkills: ReadonlySet<string>,
   skillTools: ReadonlyMap<string, readonly string[]>,
   registered: ReadonlySet<string>,
+  extraActive: Iterable<string> = [],
 ): string[] {
   const out = new Set<string>([LOAD_SKILL_TOOL_NAME]);
   for (const skill of loadedSkills) {
     for (const t of skillTools.get(skill) ?? []) {
       if (registered.has(t)) out.add(t);
     }
+  }
+  for (const t of extraActive) {
+    if (registered.has(t)) out.add(t);
   }
   return [...out];
 }

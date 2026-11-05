@@ -54,6 +54,12 @@ export interface OrchestratorDeps {
   skills: SkillService;
   settings: SettingsService;
   factory: ModelFactory;
+  /**
+   * Admin-managed MCP tools. Optional: without it the orchestrator behaves as
+   * before (built-in tools only). `getTools()` is a synchronous snapshot taken
+   * once per turn.
+   */
+  mcp?: { getTools(): ToolsInput };
 }
 
 /** Everything one orchestrated turn needs from the surrounding conversation. */
@@ -139,8 +145,10 @@ export class Orchestrator {
     ]);
     const wd = startWatchdog(controller, activityMs);
 
-    // Register ALL tools up front: load_skill + every bucket. The live set is
-    // gated per step below; AI SDK can't add tools mid-generation (A2).
+    // Register ALL tools up front: load_skill + every bucket + admin MCP tools.
+    // The live set is gated per step below; AI SDK can't add tools mid-generation (A2).
+    // `load_skill` is placed LAST so an MCP server can never shadow it.
+    const mcpTools = this.deps.mcp?.getTools() ?? {};
     const toolCtx: ToolContext = {
       mem: ctx.mem,
       userId: ctx.userId,
@@ -150,10 +158,12 @@ export class Orchestrator {
       settings: ctx.settings,
       skillsRoot: ctx.skillsRoot,
       confirmations: ctx.confirmations,
+      mcpTools,
     };
     const loadSkill = buildLoadSkillTool({ skills: this.deps.skills, skillsRoot: ctx.skillsRoot });
-    const tools: ToolsInput = { [LOAD_SKILL_TOOL_NAME]: loadSkill, ...resolveAllTools(toolCtx) };
+    const tools: ToolsInput = { ...resolveAllTools(toolCtx), [LOAD_SKILL_TOOL_NAME]: loadSkill };
     const registered = new Set(Object.keys(tools));
+    const mcpToolNames = Object.keys(mcpTools).filter((name) => name !== LOAD_SKILL_TOOL_NAME);
 
     // Skill→tools map for gating; loaded set seeded with the primary skill.
     const allSkills = await this.deps.skills.getAllSkills();
@@ -206,8 +216,11 @@ export class Orchestrator {
         maxSteps: MAX_STEPS,
         modelSettings: { temperature: ctx.temperature },
         ...(providerOptions ? { providerOptions } : {}),
-        // Gate the live tool set: load_skill + the loaded skills' tools (A2/decision #2).
-        prepareStep: () => ({ activeTools: activeToolNames(loadedSkills, skillToolMap, registered) }),
+        // Gate the live tool set: load_skill + the loaded skills' tools + always-on
+        // admin MCP tools (A2/decision #2).
+        prepareStep: () => ({
+          activeTools: activeToolNames(loadedSkills, skillToolMap, registered, mcpToolNames),
+        }),
       });
 
       // Drive the loop off fullStream (B2): reset the watchdog on EVERY chunk (incl.

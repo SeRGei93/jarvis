@@ -1,4 +1,5 @@
 import type { ToolSet } from "ai";
+import type { ToolsInput } from "@mastra/core/agent";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "../../db/schema.js";
 import { MemoryService } from "../memory/memory-service.js";
@@ -10,6 +11,7 @@ import { buildWebTools, WEB_TOOL_NAMES } from "./web.js";
 import { buildTaskTools, TASK_TOOL_NAMES } from "./tasks.js";
 import { buildProfileTools, PROFILE_TOOL_NAMES } from "./profile-tools.js";
 import { buildSkillRefTools, SKILLREF_TOOL_NAMES } from "./skill-ref.js";
+import { LOAD_SKILL_TOOL_NAME } from "./load-skill.js";
 import { logger } from "../../pkg/logger.js";
 
 const log = logger.child({ mod: "tool-registry" });
@@ -34,6 +36,12 @@ export interface ToolContext {
    * skill test-run, where tools execute directly.
    */
   confirmations?: ConfirmationService;
+  /**
+   * Admin-managed MCP tools (already namespaced `<server>_<tool>`), snapshotted
+   * once per turn by the orchestrator. Always active — they are not gated by a
+   * skill's `allowed-tools`.
+   */
+  mcpTools?: ToolsInput;
 }
 
 interface Bucket {
@@ -87,9 +95,12 @@ export function resolveTools(allowedTools: string[], ctx: ToolContext): ToolSet 
  * tools up front (decision #2 / A2: AI SDK can't add tools mid-generation), then
  * gates the live set per step via `prepareStep -> activeTools`. `load_skill` is
  * added separately by the orchestrator, not here.
+ *
+ * Admin-managed MCP tools are merged last, so a built-in tool always wins a name
+ * collision (and an MCP `load_skill` can never shadow the real one).
  */
-export function resolveAllTools(ctx: ToolContext): ToolSet {
-  const out: ToolSet = {
+export function resolveAllTools(ctx: ToolContext): ToolsInput {
+  const builtins: ToolSet = {
     ...buildMemoryTools(ctx),
     ...buildCurrencyTools(ctx),
     ...buildWebTools(ctx),
@@ -97,6 +108,25 @@ export function resolveAllTools(ctx: ToolContext): ToolSet {
     ...buildProfileTools(ctx),
     ...buildSkillRefTools(ctx),
   };
-  log.debug({ count: Object.keys(out).length }, "resolved all tools");
+  // AI SDK tools are accepted by Mastra's Agent at runtime; the two bundled
+  // `Tool` declarations differ, so bridge them once here.
+  const out = builtins as unknown as ToolsInput;
+
+  const mcp = ctx.mcpTools ?? {};
+  let mcpRegistered = 0;
+  for (const [name, tool] of Object.entries(mcp)) {
+    if (name === LOAD_SKILL_TOOL_NAME) {
+      log.warn({ tool: name }, "MCP tool would shadow load_skill; skipped");
+      continue;
+    }
+    if (Object.hasOwn(out, name)) {
+      log.warn({ tool: name }, "MCP tool collides with a built-in tool; built-in wins");
+      continue;
+    }
+    out[name] = tool;
+    mcpRegistered++;
+  }
+
+  log.debug({ count: Object.keys(out).length, mcp: mcpRegistered }, "resolved all tools");
   return out;
 }

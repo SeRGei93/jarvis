@@ -19,6 +19,7 @@ import { RateLimitService } from "./services/rate-limit.js";
 import { UsageService } from "./services/usage.js";
 import { AccessRequestService } from "./services/access-request-service.js";
 import { ModelsCatalog } from "./services/models-catalog.js";
+import { McpManager } from "./mastra/mcp/manager.js";
 import { runChat, type ChatDeps, type ChatResult } from "./mastra/workflows/chat.js";
 import { logger } from "./pkg/logger.js";
 
@@ -80,7 +81,11 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
     undefined,
     (state, instructions, criteria) => decisions.choose(state, instructions, criteria),
   );
-  const orchestrator = new Orchestrator({ skills, settings, factory });
+  // Admin-managed HTTP MCP servers. Booting must not block on remote servers:
+  // the first discovery runs in the background and tools appear once it lands.
+  const mcp = new McpManager({ settings });
+  void mcp.refresh({ force: true });
+  const orchestrator = new Orchestrator({ skills, settings, factory, mcp });
   // Used only by the admin skill test-run (admin reuses ChatDeps), not the chat path.
   const llm = new LlmService(factory, settings);
   const confirmations = new ConfirmationService(opts.db, memoryService);
@@ -107,6 +112,7 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
     confirmations,
     accessRequests,
     modelsCatalog,
+    mcp,
   };
 
   const routableCount = (await skills.getRoutableSkills()).length;
@@ -122,6 +128,9 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
     deps,
     handleUserMessage: (userId, chatId, text, onText, onTool) =>
       runChat(deps, { userId, chatId, text }, onText, onTool),
-    close: async () => {},
+    close: async () => {
+      // Disconnect MCP clients before the DB handle goes away (server.ts awaits this).
+      await mcp.close();
+    },
   };
 }
