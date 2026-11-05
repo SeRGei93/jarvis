@@ -10,6 +10,7 @@ import {
   type AccessMode,
 } from "./settings-keys.js";
 import { logger } from "../pkg/logger.js";
+import { parseMcpConfig, type McpConfig } from "../domain/mcp-config.js";
 
 const log = logger.child({ mod: "settings" });
 
@@ -44,6 +45,38 @@ function defaultTimeouts(): TimeoutsConfig {
 function defaultAgent(): AgentConfig {
   return { max_history: 50, default_temperature: 0.4, auto_memory: true };
 }
+
+/** An empty, valid MCP config (also the default when the setting is absent). */
+function emptyMcpConfig(): McpConfig {
+  return { mcpServers: {} };
+}
+
+/**
+ * Validate the stored `mcp_servers` value. Accepts the JSON object drizzle
+ * returns plus a raw JSON string (defensive: hand-edited rows). Never throws and
+ * never logs the value — only the key.
+ */
+function parseStoredMcpConfig(raw: unknown): McpConfig {
+  if (raw == null) return emptyMcpConfig();
+
+  let value: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      log.warn({ key: SettingKey.McpServers }, "stored MCP config is not valid JSON; using empty config");
+      return emptyMcpConfig();
+    }
+  }
+
+  const parsed = parseMcpConfig(value);
+  if (!parsed.ok) {
+    log.warn({ key: SettingKey.McpServers }, "stored MCP config is invalid; using empty config");
+    return emptyMcpConfig();
+  }
+  return parsed.config;
+}
+
 function epochSeconds(d: Date | number | null | undefined): number {
   if (d == null) return 0;
   return d instanceof Date ? Math.floor(d.getTime() / 1000) : Number(d);
@@ -117,6 +150,17 @@ export class SettingsService {
    */
   async getAccessMode(): Promise<AccessMode> {
     return ((await this.ensure()).get(SettingKey.TelegramAccessMode) ?? "open") as AccessMode;
+  }
+
+  /**
+   * Admin-managed MCP server config (HTTP only). Absent = no servers; a value
+   * that no longer validates (hand-edited DB, older schema) is a WARN + empty
+   * config rather than a boot failure — chat keeps working without MCP tools.
+   * Values are never logged: the raw config may contain literal header secrets.
+   */
+  async getMcpServers(): Promise<McpConfig> {
+    const raw = (await this.ensure()).get(SettingKey.McpServers);
+    return parseStoredMcpConfig(raw);
   }
 
   /** Warn (parity with Go) if http_client < llm_request — HTTP would abort first. */

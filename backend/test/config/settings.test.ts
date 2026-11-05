@@ -71,4 +71,47 @@ describe("SettingsService", () => {
     svc.invalidate();
     expect((await svc.getAgent()).max_history).toBe(99);
   });
+
+  describe("getMcpServers", () => {
+    it("defaults to an empty config when the key is absent", async () => {
+      t = await createTestDb();
+      await runSeed(t.db);
+      const svc = new SettingsService(t.db);
+      expect(await svc.getMcpServers()).toEqual({ mcpServers: {} });
+    });
+
+    it("round-trips a valid stored config", async () => {
+      t = await createTestDb();
+      await runSeed(t.db);
+      const config = {
+        mcpServers: {
+          github: { url: "https://mcp.example.com/mcp", headers: { Authorization: "Bearer ${TOKEN}" } },
+        },
+      };
+      await t.db.insert(settings).values({ key: SettingKey.McpServers, value: config });
+      const svc = new SettingsService(t.db);
+      expect(await svc.getMcpServers()).toEqual(config);
+    });
+
+    it("falls back to an empty config when the stored value is invalid", async () => {
+      t = await createTestDb();
+      await runSeed(t.db);
+      await t.db
+        .insert(settings)
+        .values({ key: SettingKey.McpServers, value: { mcpServers: { bad: { command: "npx" } } } });
+      const svc = new SettingsService(t.db);
+      expect(await svc.getMcpServers()).toEqual({ mcpServers: {} });
+    });
+
+    it("parses a JSON string value (hand-edited row)", async () => {
+      t = await createTestDb();
+      await runSeed(t.db);
+      await t.db.insert(settings).values({
+        key: SettingKey.McpServers,
+        value: JSON.stringify({ mcpServers: { s: { url: "https://x.dev/mcp" } } }),
+      });
+      const svc = new SettingsService(t.db);
+      expect(await svc.getMcpServers()).toEqual({ mcpServers: { s: { url: "https://x.dev/mcp" } } });
+    });
+  });
 });

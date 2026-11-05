@@ -7,6 +7,7 @@ export const SettingKey = {
   Agent: "agent",
   TelegramAllowedUsers: "telegram_allowed_users",
   TelegramAccessMode: "telegram_access_mode",
+  McpServers: "mcp_servers",
 } as const;
 export type SettingKey = (typeof SettingKey)[keyof typeof SettingKey];
 
