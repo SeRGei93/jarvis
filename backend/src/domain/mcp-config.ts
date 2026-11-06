@@ -23,6 +23,8 @@ export const MCP_TOOL_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
 export const MCP_MAX_TOOL_NAME_LENGTH = 64;
 /** Default per-tool-call timeout when the server entry omits `timeoutMs`. */
 export const DEFAULT_MCP_TIMEOUT_MS = 60_000;
+/** `${VAR}` placeholders resolved from `process.env` (or an injected env). */
+const ENV_PLACEHOLDER_RE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
 /** stdio-style keys that identify a command-spawning MCP server (rejected). */
 const STDIO_KEYS = ["command", "args", "env", "inheritDefaultEnv", "stderr", "cwd"] as const;
@@ -97,8 +99,7 @@ function formatIssues(err: z.ZodError): string {
  * matters because WHATWG URL treats `https:///mcp` as host `mcp` (an empty
  * `${HOST}` would otherwise slip through as "valid").
  */
-export function isHttpServerUrl(value: string): boolean {
-  if (value.includes("${")) return false;
+function isHttpUrlWithHost(value: string): boolean {
   if (!/^https?:\/\/[^\s/]/i.test(value)) return false;
   try {
     const u = new URL(value);
@@ -106,6 +107,17 @@ export function isHttpServerUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * True for an already-expanded http(s) URL with a real host. Raw admin input may
+ * still contain `${VAR}` placeholders; `parseServer()` validates a substituted
+ * copy instead (see {@link parseServer}), and `expandMcpConfig()` checks the
+ * real URL after substitution.
+ */
+export function isHttpServerUrl(value: string): boolean {
+  if (value.includes("${")) return false;
+  return isHttpUrlWithHost(value);
 }
 
 /** RFC 7230 token — the only characters a header name may use. */
@@ -140,17 +152,22 @@ function parseServer(value: unknown): { ok: true; config: McpServerConfig } | { 
 
   // URL: parseable, http(s), a real host, and without embedded credentials
   // (headers only). WHATWG URL accepts `https:///x` as host `x`, hence the
-  // explicit scheme+host shape check.
+  // explicit scheme+host shape check. A raw admin URL may contain `${VAR}`
+  // placeholders (expanded at refresh time), so validate a substituted copy:
+  // placeholders become `1`, which keeps host/port checks meaningful while
+  // still rejecting a placeholder scheme and URL-embedded credentials. The
+  // post-expansion URL is validated again by `expandMcpConfig()`.
+  const urlForValidation = s.url.includes("${") ? s.url.replace(ENV_PLACEHOLDER_RE, "1") : s.url;
   let u: URL;
   try {
-    u = new URL(s.url);
+    u = new URL(urlForValidation);
   } catch {
     return { ok: false, error: `url is not a valid URL` };
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") {
     return { ok: false, error: `url must use http or https` };
   }
-  if (!isHttpServerUrl(s.url)) {
+  if (!isHttpUrlWithHost(urlForValidation)) {
     return { ok: false, error: `url must include a host` };
   }
   if (u.username || u.password) {
@@ -204,9 +221,6 @@ export function parseMcpConfig(raw: unknown): ParseMcpConfigResult {
 
   return { ok: true, config };
 }
-
-/** `${VAR}` placeholders resolved from `process.env` (or an injected env). */
-const ENV_PLACEHOLDER_RE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
 /** Expand `${VAR}` in one string; a missing variable is a warning + empty string. */
 function expandValue(
@@ -263,7 +277,9 @@ export function expandMcpConfig(
       headers,
       enabled: server.enabled !== false,
       timeoutMs: server.timeoutMs ?? DEFAULT_MCP_TIMEOUT_MS,
-      ...(allowedHosts && allowedHosts.length > 0 ? { allowedHosts } : {}),
+      // Preserve an explicitly configured empty array: the SDK treats it as
+      // "deny every host", while omitting the field means "no restriction".
+      ...(allowedHosts !== undefined ? { allowedHosts } : {}),
     });
   }
 

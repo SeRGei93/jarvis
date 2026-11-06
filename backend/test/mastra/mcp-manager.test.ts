@@ -115,6 +115,18 @@ describe("McpManager — config mapping", () => {
     expect(clients[0]!.timeout).toBe(60_000);
   });
 
+  it("preserves an explicitly empty allowedHosts list (deny every host)", async () => {
+    const settings = fakeSettings({
+      mcpServers: { s: { url: "https://a.dev/mcp", allowedHosts: [] } },
+    });
+    const { factory, clients } = makeFactory();
+    const mcp = makeManager(settings.svc, factory);
+
+    await mcp.refresh({ force: true });
+
+    expect((clients[0]!.servers.s as Record<string, unknown>).allowedHosts).toEqual([]);
+  });
+
   it("omits requestInit/allowedHosts when absent and connects only enabled servers", async () => {
     const settings = fakeSettings({
       mcpServers: {
@@ -220,6 +232,25 @@ describe("McpManager — discovery", () => {
     const error = mcp.getStatus().servers[0]!.error!;
     expect(error.length).toBeLessThanOrEqual(501);
     expect(error.endsWith("…")).toBe(true);
+  });
+
+  it("redacts the configured url from per-server error text", async () => {
+    const settings = fakeSettings({
+      mcpServers: { s: { url: "https://mcp.example.com/mcp?token=SUPERSECRET" } },
+    });
+    const { factory } = makeFactory(() => ({
+      toolsets: {},
+      errors: {
+        s: "connect failed: https://mcp.example.com/mcp?token=SUPERSECRET",
+      },
+    }));
+    const mcp = makeManager(settings.svc, factory);
+
+    await mcp.refresh({ force: true });
+
+    const error = mcp.getStatus().servers[0]!.error!;
+    expect(error).not.toContain("SUPERSECRET");
+    expect(error).toContain("[redacted-url]");
   });
 
   it("reports an invalid URL (bad env expansion) as a per-server error", async () => {

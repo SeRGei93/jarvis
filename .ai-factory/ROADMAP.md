@@ -96,7 +96,7 @@
 | EmbeddingService | HTTP-клиент к OpenRouter `/embeddings` (батч), §6.1 |
 | SpeechRecognizer | мультимодальная модель через AI SDK (media part) |
 | Tools registry (встроенные: currency/tasks/remember/forget/memory_search/profile/skill-ref) | Mastra Tools (zod-схемы); `exec` НЕ переносим |
-| MCP client | `@mastra/mcp` MCPClient — только сервер `search` (web_search/web_fetch/avby_search/read_resource/weather) |
+| MCP client | `@mastra/mcp` MCPClient — исторически только сервер `search`; с 2026-11 — admin-managed HTTP-серверы (`mcp_servers`, `docs/mcp.md`) |
 | Telegram (go-telegram/bot) | grammY |
 | Cron (robfig/cron) | node-cron + воркфлоу исполнения задачи |
 | sessionstorage (зашифрованные файлы) | сообщения в Mastra Memory (libSQL), без шифрования |
@@ -140,7 +140,7 @@ jarvis/
         profile-extractor.ts  # извлечение профиля при онбординге (авто-извлечения фактов нет — паритет с Go)
       tools/
         currency.ts  tasks.ts  memory-tools.ts  profile-tools.ts  skill-ref.ts
-      mcp.ts             # MCPClient — только сервер search
+      mcp.ts             # исторически MCPClient для search; сейчас mcp/manager.ts — admin-managed HTTP
       speech.ts          # транскрипция
     services/
       skill-service.ts   # загрузка скилов из БД, фильтр routable
@@ -185,7 +185,7 @@ jarvis/
 - `message_rate_limits` (user_id, window_start, count, PK(user_id, window_start))
 
 ### Новые таблицы для конфигурации
-- `settings` (key TEXT PK, value JSON) — глобальный конфиг: роли моделей (default/router/embedding/error_correction/speech/synthesizer), `timeouts.*`, `agent.*` (max_history, default_temperature, rag.top_k — в Go захардкожено =10, теперь настраивается), `telegram.allowed_users`, `mcp_servers` (только `search`).
+- `settings` (key TEXT PK, value JSON) — глобальный конфиг: роли моделей (default/router/embedding/error_correction/speech/synthesizer), `timeouts.*`, `agent.*` (max_history, default_temperature, rag.top_k — в Go захардкожено =10, теперь настраивается), `telegram.allowed_users`, `mcp_servers` (исторически только `search`; сейчас admin-managed HTTP-серверы).
 - `models` (id, ref `provider:model`, provider, enabled, label, supports_tools, supports_reasoning, notes) — список доступных моделей для UI и валидации ролей.
 - `skills` (name PK, description, allowed_tools JSON, model, temperature, reasoning, routable, prompt TEXT, metadata JSON, updated_at).
 - `prompts` (key PK, body TEXT, updated_at) — SOUL/FORMAT/INTEGRITY/SYNTHESIZER/WELCOME/MONITORING.
@@ -279,7 +279,7 @@ ADMIN_USER_IDS=123,456                     # bootstrap-админы миниап
 - **Планы:** free/pro/admin (hourly_limit, max_tasks), назначение плана пользователю.
 - **Пользователи:** список, план, usage.
 - **Usage:** суточная стоимость и число запросов.
-- **MCP-серверы:** список, вкл/выкл, URL.
+- **MCP-серверы:** JSON HTTP-конфиг, вкл/выкл, проверка/refresh, per-server статусы.
 - **Auth:** валидация `initData` (HMAC по bot token) + белый список `ADMIN_USER_IDS`.
 
 ---

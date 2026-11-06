@@ -99,7 +99,18 @@ export function resolveTools(allowedTools: string[], ctx: ToolContext): ToolSet 
  * Admin-managed MCP tools are merged last, so a built-in tool always wins a name
  * collision (and an MCP `load_skill` can never shadow the real one).
  */
-export function resolveAllTools(ctx: ToolContext): ToolsInput {
+export interface ResolvedTools {
+  tools: ToolsInput;
+  /**
+   * MCP tool names that actually made it into `tools`. Colliding names and an
+   * MCP `load_skill` are excluded — the orchestrator must not mark a skipped
+   * MCP name as always-active (that would activate the built-in it collided
+   * with and bypass skill gating).
+   */
+  mcpToolNames: string[];
+}
+
+export function resolveAllToolsWithMcp(ctx: ToolContext): ResolvedTools {
   const builtins: ToolSet = {
     ...buildMemoryTools(ctx),
     ...buildCurrencyTools(ctx),
@@ -113,7 +124,7 @@ export function resolveAllTools(ctx: ToolContext): ToolsInput {
   const out = builtins as unknown as ToolsInput;
 
   const mcp = ctx.mcpTools ?? {};
-  let mcpRegistered = 0;
+  const mcpToolNames: string[] = [];
   for (const [name, tool] of Object.entries(mcp)) {
     if (name === LOAD_SKILL_TOOL_NAME) {
       log.warn({ tool: name }, "MCP tool would shadow load_skill; skipped");
@@ -124,9 +135,14 @@ export function resolveAllTools(ctx: ToolContext): ToolsInput {
       continue;
     }
     out[name] = tool;
-    mcpRegistered++;
+    mcpToolNames.push(name);
   }
 
-  log.debug({ count: Object.keys(out).length, mcp: mcpRegistered }, "resolved all tools");
-  return out;
+  log.debug({ count: Object.keys(out).length, mcp: mcpToolNames.length }, "resolved all tools");
+  return { tools: out, mcpToolNames };
+}
+
+/** Backwards-compatible wrapper that returns only the merged tool map. */
+export function resolveAllTools(ctx: ToolContext): ToolsInput {
+  return resolveAllToolsWithMcp(ctx).tools;
 }

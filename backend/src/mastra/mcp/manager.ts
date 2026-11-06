@@ -99,8 +99,39 @@ function defaultFactory(options: McpClientFactoryOptions): McpClientLike {
   return client as unknown as McpClientLike;
 }
 
-function errorText(err: unknown): string {
-  const text = err instanceof Error ? err.message : String(err);
+function rawErrorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Remove the configured server URL (and its origin) from SDK error text. The
+ * URL may contain query-string secrets, and the status/error text is both
+ * returned to the admin UI and logged — so redact before either.
+ */
+function redactServerUrls(text: string, servers: readonly ResolvedMcpServer[]): string {
+  const variants = new Set<string>();
+  for (const server of servers) {
+    variants.add(server.url);
+    try {
+      const u = new URL(server.url);
+      variants.add(u.href);
+      variants.add(u.origin);
+    } catch {
+      // Invalid URLs are reported earlier; nothing to redact.
+    }
+  }
+
+  let out = text;
+  // Longest first so one server's URL can never partially mask a longer URL
+  // that happens to share its prefix.
+  for (const value of [...variants].sort((a, b) => b.length - a.length)) {
+    if (value.length > 0) out = out.split(value).join("[redacted-url]");
+  }
+  return out;
+}
+
+function errorText(err: unknown, servers: readonly ResolvedMcpServer[] = []): string {
+  const text = redactServerUrls(rawErrorText(err), servers);
   return text.length > MAX_ERROR_LENGTH ? `${text.slice(0, MAX_ERROR_LENGTH)}…` : text;
 }
 
@@ -218,7 +249,9 @@ export class McpManager {
     } finally {
       await client
         .disconnect()
-        .catch((err) => log.warn({ reason: errorText(err) }, "MCP test client disconnect failed"));
+        .catch((err) =>
+          log.warn({ reason: errorText(err, expanded.servers) }, "MCP test client disconnect failed"),
+        );
     }
   }
 
@@ -246,7 +279,6 @@ export class McpManager {
     }
 
     await Promise.allSettled(clients.map((c) => c.disconnect()));
-    log.debug({ clients: clients.length }, "MCP manager closed");
   }
 
   // ── internals ────────────────────────────────────────────────────────────
@@ -299,7 +331,6 @@ export class McpManager {
 
     // Skip-if-unchanged: no client churn, no discovery, no status reset.
     if (!force && this.ready && key === this.configKey) {
-      log.debug("MCP config unchanged; skipping refresh");
       return;
     }
 
@@ -307,13 +338,12 @@ export class McpManager {
 
     // Nothing enabled (or every enabled URL is unusable): drop the live client.
     if (Object.keys(definitions).length === 0) {
-      this.retire(this.client, "no enabled servers");
+      this.retire(this.client);
       this.client = null;
       this.configKey = key;
       this.tools = {};
       this.statuses = this.buildSnapshot(expanded.servers, definitionErrors, {}).statuses;
       this.ready = true;
-      log.debug({ servers: expanded.servers.length }, "MCP refresh with no enabled servers");
       return;
     }
 
@@ -326,7 +356,7 @@ export class McpManager {
         servers: definitions,
         timeout: DEFAULT_TOOL_TIMEOUT_MS,
       });
-      this.retire(this.client, "config changed");
+      this.retire(this.client);
       this.client = client;
       this.configKey = key;
     }
@@ -339,10 +369,6 @@ export class McpManager {
     this.tools = tools;
     this.statuses = statuses;
     this.ready = true;
-    log.debug(
-      { servers: statuses.filter((s) => s.enabled).length, tools: Object.keys(tools).length },
-      "MCP refresh complete",
-    );
   }
 
   /** Map resolved servers → SDK definitions; unparseable URLs become per-server errors. */
@@ -371,9 +397,8 @@ export class McpManager {
           connectTimeout: this.connectTimeoutMs,
           enableServerLogs: false,
           forwardInstructions: false,
-          ...(server.allowedHosts && server.allowedHosts.length > 0
-            ? { allowedHosts: server.allowedHosts }
-            : {}),
+          // An explicitly empty list is meaningful: the SDK denies every host.
+          ...(server.allowedHosts !== undefined ? { allowedHosts: server.allowedHosts } : {}),
         };
       } catch {
         // No URL in the message: it may carry query-string secrets.
@@ -401,7 +426,7 @@ export class McpManager {
     try {
       return await this.discover(client);
     } catch (err) {
-      log.warn({ reason: errorText(err) }, "MCP discovery failed");
+      log.warn({ reason: errorText(err, servers) }, "MCP discovery failed");
       const errors: Record<string, string> = {};
       for (const server of servers) if (server.enabled) errors[server.name] = "discovery failed";
       return { toolsets: {}, errors, durations: {} };
@@ -447,12 +472,12 @@ export class McpManager {
         connected: !error,
         toolCount: names.length,
         tools: names,
-        ...(error ? { error: errorText(error) } : {}),
+        ...(error ? { error: errorText(error, [server]) } : {}),
         ...(discovered.durations?.[server.name] != null
           ? { durationMs: discovered.durations[server.name] }
           : {}),
       });
-      if (error) log.warn({ server: server.name, reason: errorText(error) }, "MCP server unavailable");
+      if (error) log.warn({ server: server.name, reason: errorText(error, [server]) }, "MCP server unavailable");
     }
 
     return { tools, statuses };
@@ -462,7 +487,7 @@ export class McpManager {
    * Retire a replaced client: keep it alive briefly (unref'd timer) so in-flight
    * tool calls finish, then disconnect. Grace 0 disconnects immediately.
    */
-  private retire(client: McpClientLike | null, reason: string): void {
+  private retire(client: McpClientLike | null): void {
     if (!client) return;
 
     if (this.disposeGraceMs <= 0) {
@@ -480,6 +505,5 @@ export class McpManager {
     }, this.disposeGraceMs);
     timer.unref?.();
     this.retiring.set(client, timer);
-    log.debug({ reason, graceMs: this.disposeGraceMs }, "MCP client retired");
   }
 }

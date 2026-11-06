@@ -32,6 +32,34 @@ describe("parseMcpConfig", () => {
     if (r.ok) expect(r.config.mcpServers["deep-wiki"]).toMatchObject({ enabled: false, timeoutMs: 15_000 });
   });
 
+  it("accepts ${VAR} placeholders in the url and preserves the raw value", () => {
+    const raw = {
+      mcpServers: {
+        s: { url: "https://${MCP_TEST_HOST}:${MCP_TEST_PORT}/mcp" },
+      },
+    };
+    const r = parseMcpConfig(raw);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.config).toEqual(raw);
+  });
+
+  it("rejects an env placeholder in url userinfo (credentials must use headers)", () => {
+    const r = parseMcpConfig({
+      mcpServers: { bad: { url: "https://${MCP_USER}:${MCP_PASS}@example.com/mcp" } },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toContain("must not embed credentials");
+      expect(r.error).not.toContain("MCP_PASS");
+    }
+  });
+
+  it("rejects an env placeholder in the url scheme", () => {
+    const r = parseMcpConfig({ mcpServers: { bad: { url: "${MCP_SCHEME}://example.com/mcp" } } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/http or https|not a valid URL/);
+  });
+
   it("rejects a non-object payload", () => {
     expect(parseMcpConfig(null)).toEqual({ ok: false, error: "config must be an object with a \"mcpServers\" map" });
     expect(parseMcpConfig("{}").ok).toBe(false);
@@ -172,6 +200,14 @@ describe("expandMcpConfig", () => {
 
   it("returns an empty list for an empty config", () => {
     expect(expandMcpConfig({ mcpServers: {} }, {})).toEqual({ servers: [], warnings: [] });
+  });
+
+  it("preserves an explicitly empty allowedHosts list (deny every host)", () => {
+    const r = expandMcpConfig(
+      { mcpServers: { s: { url: "https://x.dev/mcp", allowedHosts: [] } } },
+      {},
+    );
+    expect(r.servers[0]!.allowedHosts).toEqual([]);
   });
 });
 

@@ -30,7 +30,7 @@ The MCP section of the Mini App edits the `mcp_servers` **setting** (a libSQL ro
 | `headers` | no | `{}` | Static request headers sent on every call |
 | `enabled` | no | `true` | `false` keeps the entry stored but never connects |
 | `timeoutMs` | no | `60000` | Per-tool-call timeout |
-| `allowedHosts` | no | unset | SDK-level host allowlist (defense in depth); exact `host[:port]`, no wildcards |
+| `allowedHosts` | no | unset | SDK-level host allowlist (defense in depth); exact `host[:port]`, no wildcards; an explicit `[]` denies every host |
 | `type` | no | `"http"` | Only `"http"` is accepted (`"sse"` → validation error) |
 
 Server **names** are `[A-Za-z0-9][A-Za-z0-9-]{0,39}` — **no underscores**. Tool names are namespaced `<server>_<tool>` (the SDK convention), so an underscore in the server name would make the namespace ambiguous.
@@ -96,7 +96,7 @@ All routes sit behind the standard admin auth (`initData` HMAC + `ADMIN_USER_IDS
 - **Trust boundary:** only an admin can add a server, and the URL may point at an internal host. That is intentional (the admin already controls the deployment), but it means the MCP endpoint list is as sensitive as the admin allowlist.
 - **Headers are plaintext in the DB.** Use `${VAR}` placeholders. Headers and config values are never logged (only server names + error text).
 - **No stdio, no OAuth (v1).** `command`/`args`/`env` are rejected with an explicit error; a server that answers `401` shows up as a failed connection.
-- **Error text** is truncated to 500 chars and never contains headers or URLs.
+- **Error text** is truncated to 500 chars and never contains headers or config values; the configured server URL (which may carry query secrets) is redacted from SDK error text before it is logged or returned.
 - MCP tools are **not** available to the admin skill test-run (`resolveTools`, AI SDK path) — they live in the Mastra orchestrator only.
 
 ## Troubleshooting

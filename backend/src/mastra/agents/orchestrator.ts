@@ -17,7 +17,7 @@ import {
   type StreamCallback,
   type ToolEvents,
 } from "../llm.js";
-import { resolveAllTools, type ToolContext } from "../tools/registry.js";
+import { resolveAllToolsWithMcp, type ToolContext } from "../tools/registry.js";
 import type { ConfirmationService } from "../confirmations/confirmation-service.js";
 import {
   buildLoadSkillTool,
@@ -161,9 +161,12 @@ export class Orchestrator {
       mcpTools,
     };
     const loadSkill = buildLoadSkillTool({ skills: this.deps.skills, skillsRoot: ctx.skillsRoot });
-    const tools: ToolsInput = { ...resolveAllTools(toolCtx), [LOAD_SKILL_TOOL_NAME]: loadSkill };
+    const resolved = resolveAllToolsWithMcp(toolCtx);
+    const tools: ToolsInput = { ...resolved.tools, [LOAD_SKILL_TOOL_NAME]: loadSkill };
     const registered = new Set(Object.keys(tools));
-    const mcpToolNames = Object.keys(mcpTools).filter((name) => name !== LOAD_SKILL_TOOL_NAME);
+    // Only names that were actually registered: a collided MCP name must not
+    // mark the built-in it lost to as always-active.
+    const mcpToolNames = resolved.mcpToolNames;
 
     // Skill→tools map for gating; loaded set seeded with the primary skill.
     const allSkills = await this.deps.skills.getAllSkills();

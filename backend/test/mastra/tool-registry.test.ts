@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import type { ToolsInput } from "@mastra/core/agent";
-import { resolveAllTools, resolveTools, type ToolContext } from "../../src/mastra/tools/registry.js";
+import {
+  resolveAllTools,
+  resolveAllToolsWithMcp,
+  resolveTools,
+  type ToolContext,
+} from "../../src/mastra/tools/registry.js";
 import type { MemoryService } from "../../src/mastra/memory/memory-service.js";
 import type { SettingsService } from "../../src/config/settings.js";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
@@ -66,5 +71,13 @@ describe("resolveAllTools — MCP merge", () => {
     const tools = resolveAllTools(ctx);
     expect(tools.github_create_issue).toBeUndefined();
     expect(tools.web_search).toBeDefined();
+  });
+
+  it("reports only MCP names that were actually registered", () => {
+    const { tools, mcpToolNames } = resolveAllToolsWithMcp({ ...ctx, mcpTools });
+    expect(mcpToolNames).toEqual(["github_create_issue"]);
+    expect(tools.github_create_issue).toBeDefined();
+    expect(mcpToolNames).not.toContain("remember"); // collision
+    expect(mcpToolNames).not.toContain("load_skill"); // reserved
   });
 });

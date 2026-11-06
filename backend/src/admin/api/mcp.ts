@@ -34,7 +34,6 @@ export function mcpRoutes(): Hono<AdminEnv> {
   r.get("/", async (c) => {
     const { settings, mcp } = c.var.deps;
     const config = await settings.getMcpServers();
-    log.debug({ adminUserId: c.var.adminUserId }, "read MCP config");
     return c.json({ config, ...statusPayload(mcp.getStatus()) });
   });
 
@@ -54,10 +53,6 @@ export function mcpRoutes(): Hono<AdminEnv> {
 
     const expanded = expandMcpConfig(parsed.config);
     const warnings = [...expanded.warnings, ...(expanded.error ? [expanded.error] : [])];
-    log.info(
-      { adminUserId: c.var.adminUserId, servers: Object.keys(parsed.config.mcpServers).length },
-      "MCP config saved",
-    );
     return c.json({
       ok: true,
       config: parsed.config,
@@ -77,10 +72,6 @@ export function mcpRoutes(): Hono<AdminEnv> {
     }
 
     const { servers, warnings } = await mcp.test(parsed.config);
-    log.info(
-      { adminUserId: c.var.adminUserId, servers: servers.filter((s) => s.enabled).length },
-      "MCP test completed",
-    );
     return c.json({ ok: true, status: servers, warnings });
   });
 
@@ -88,7 +79,6 @@ export function mcpRoutes(): Hono<AdminEnv> {
   r.post("/refresh", async (c) => {
     const { mcp } = c.var.deps;
     await mcp.refresh({ force: true });
-    log.info({ adminUserId: c.var.adminUserId }, "MCP forced refresh");
     return c.json({ ok: true, ...statusPayload(mcp.getStatus()) });
   });
 

@@ -151,6 +151,19 @@ describe("mcpRoutes — PUT", () => {
     expect(body.warnings[0]).toContain("MCP_TEST_TOKEN");
   });
 
+  it("accepts ${VAR} placeholders in a server url", async () => {
+    const { app, settings } = await makeApp();
+    const config = {
+      mcpServers: { gh: { url: "https://${MCP_TEST_VERIFY_HOST}/mcp" } },
+    };
+
+    const res = await send(app, "PUT", "/", config);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.config).toEqual(config);
+    expect(await settings.getMcpServers()).toEqual(config);
+  });
+
   it("never echoes secrets from an invalid entry", async () => {
     const { app } = await makeApp();
     const res = await send(app, "PUT", "/", {

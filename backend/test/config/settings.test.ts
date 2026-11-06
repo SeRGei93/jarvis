@@ -93,6 +93,19 @@ describe("SettingsService", () => {
       expect(await svc.getMcpServers()).toEqual(config);
     });
 
+    it("preserves ${VAR} placeholders in stored urls", async () => {
+      t = await createTestDb();
+      await runSeed(t.db);
+      const config = {
+        mcpServers: {
+          s: { url: "https://${MCP_TEST_HOST}/mcp", headers: { Authorization: "Bearer ${MCP_TOKEN}" } },
+        },
+      };
+      await t.db.insert(settings).values({ key: SettingKey.McpServers, value: config });
+      const svc = new SettingsService(t.db);
+      expect(await svc.getMcpServers()).toEqual(config);
+    });
+
     it("falls back to an empty config when the stored value is invalid", async () => {
       t = await createTestDb();
       await runSeed(t.db);
