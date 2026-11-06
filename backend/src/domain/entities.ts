@@ -151,11 +151,25 @@ export const SubscriptionPlan = z.object({
 });
 export type SubscriptionPlan = z.infer<typeof SubscriptionPlan>;
 
+/**
+ * Reference to an image stored on disk (bytes never live in the DB).
+ * `id` is `<sha256>.<ext>`; the file lives under `MEDIA_DIR/<id[0..2]>/<id>`.
+ */
+export const StoredImageRef = z.object({
+  id: z.string().min(1),
+  mediaType: z.string().min(1),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+});
+export type StoredImageRef = z.infer<typeof StoredImageRef>;
+
 /** A conversation message. `skill` tags which skill produced an assistant reply. */
 export const Message = z.object({
   role: MessageRole,
   content: z.string(),
   skill: z.string().nullable().optional(),
+  /** Images attached to this message (user messages only, in practice). */
+  images: z.array(StoredImageRef).optional(),
   createdAt: z.date().optional(),
 });
 export type Message = z.infer<typeof Message>;

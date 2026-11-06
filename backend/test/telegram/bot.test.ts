@@ -6,8 +6,11 @@ import {
   isAuthorized,
   processText,
   processVoice,
+  processImage,
+  UNSUPPORTED_REPLY,
   type BotRuntime,
 } from "../../src/telegram/bot.js";
+import { UNSUPPORTED_IMAGE_REPLY } from "../../src/telegram/image.js";
 import { TelegramReplyError } from "../../src/telegram/errors.js";
 import type { ChatHandler, CommandDeps } from "../../src/telegram/commands.js";
 import type { FetchLike } from "../../src/telegram/voice.js";
@@ -21,6 +24,10 @@ interface Call {
 
 class FakeApi {
   calls: Call[] = [];
+  constructor(
+    private readonly filePath = "voice/f.ogg",
+    private readonly getFileError: Error | null = null,
+  ) {}
   async sendRichMessageDraft(_c: number, _draftId: number, richMessage: { markdown: string }) {
     this.calls.push({ op: "draft", text: richMessage.markdown, rich: true });
     return {};
@@ -39,7 +46,8 @@ class FakeApi {
   }
   async getFile(_fileId: string) {
     this.calls.push({ op: "getFile" });
-    return { file_path: "voice/f.ogg" };
+    if (this.getFileError) throw this.getFileError;
+    return { file_path: this.filePath };
   }
 }
 
@@ -50,8 +58,8 @@ function makeRuntime(
   chat: ChatHandler,
   speechText = "распознанный текст",
   adminUserIds: number[] = [],
+  api: FakeApi = new FakeApi(),
 ): { rt: BotRuntime; api: FakeApi } {
-  const api = new FakeApi();
   const rt: BotRuntime = {
     api,
     db: t.db,
@@ -196,5 +204,133 @@ describe("processVoice", () => {
     const chat: ChatHandler = { handleUserMessage: async () => ({ text: "x", skills: [], rejected: false }) };
     const { rt } = makeRuntime(t, chat);
     await expect(processVoice(rt, { id: 8 }, 21, "file-1", 31, 4)).rejects.toBeInstanceOf(TelegramReplyError);
+  });
+});
+
+describe("processImage", () => {
+  function capturingChat() {
+    const received: { text: string; images?: { data: Uint8Array; mediaType: string }[] } = { text: "" };
+    const chat: ChatHandler = {
+      handleUserMessage: async (_u, _c, text, _onText, _onTool, images) => {
+        received.text = text;
+        received.images = images;
+        return { text: "ответ", skills: [], rejected: false };
+      },
+    };
+    return { chat, received };
+  }
+
+  const photoSizes = [
+    { file_id: "small", width: 90, height: 90, file_size: 1_000 },
+    { file_id: "large", width: 800, height: 800, file_size: 9_000 },
+  ];
+
+  it("downloads the largest photo and feeds bytes + caption into the chat pipeline", async () => {
+    t = await createTestDb();
+    const { chat, received } = capturingChat();
+    const api = new FakeApi("photos/f.jpg");
+    const { rt } = makeRuntime(t, chat, undefined, [], api);
+
+    const res = await processImage(rt, { id: 555, name: "S" }, 42, { kind: "photo", sizes: photoSizes }, "  что здесь?  ", 7);
+
+    expect(res.rejected).toBe(false);
+    expect(received.text).toBe("что здесь?");
+    expect(received.images).toHaveLength(1);
+    expect(received.images![0]!.mediaType).toBe("image/jpeg");
+    expect(received.images![0]!.data).toBeInstanceOf(Uint8Array);
+    expect(api.calls.filter((c) => c.op === "getFile")).toHaveLength(1);
+  });
+
+  it("passes an empty caption through for a photo without text", async () => {
+    t = await createTestDb();
+    const { chat, received } = capturingChat();
+    const { rt } = makeRuntime(t, chat, undefined, [], new FakeApi("photos/f.jpg"));
+
+    await processImage(rt, { id: 555 }, 42, { kind: "photo", sizes: photoSizes }, "", 7);
+
+    expect(received.text).toBe("");
+    expect(received.images).toHaveLength(1);
+  });
+
+  it("accepts an image document using its MIME hint", async () => {
+    t = await createTestDb();
+    const { chat, received } = capturingChat();
+    const { rt } = makeRuntime(t, chat, undefined, [], new FakeApi("documents/f"));
+
+    await processImage(
+      rt,
+      { id: 555 },
+      42,
+      { kind: "document", fileId: "fid", mimeType: "image/png", fileName: "pic.png", fileSize: 1_000 },
+      "подпись",
+      7,
+    );
+
+    expect(received.images![0]!.mediaType).toBe("image/png");
+  });
+
+  it("refuses a PDF without downloading", async () => {
+    t = await createTestDb();
+    const { chat } = capturingChat();
+    const { rt, api } = makeRuntime(t, chat);
+
+    const res = await processImage(
+      rt,
+      { id: 555 },
+      42,
+      { kind: "document", fileId: "fid", mimeType: "application/pdf", fileName: "a.pdf", fileSize: 1_000 },
+      "",
+      7,
+    );
+
+    expect(res).toEqual({ text: UNSUPPORTED_REPLY, skills: [], rejected: true });
+    expect(api.calls.some((c) => c.op === "getFile")).toBe(false);
+    expect(api.calls.some((c) => c.text === UNSUPPORTED_REPLY)).toBe(true);
+  });
+
+  it("refuses HEIC without downloading", async () => {
+    t = await createTestDb();
+    const { chat } = capturingChat();
+    const { rt, api } = makeRuntime(t, chat);
+
+    const res = await processImage(
+      rt,
+      { id: 555 },
+      42,
+      { kind: "document", fileId: "fid", mimeType: "image/heic", fileName: "a.heic", fileSize: 1_000 },
+      "",
+      7,
+    );
+
+    expect(res).toEqual({ text: UNSUPPORTED_IMAGE_REPLY, skills: [], rejected: true });
+    expect(api.calls.some((c) => c.op === "getFile")).toBe(false);
+  });
+
+  it("refuses an oversized document before downloading", async () => {
+    t = await createTestDb();
+    const { chat } = capturingChat();
+    const { rt, api } = makeRuntime(t, chat);
+
+    const res = await processImage(
+      rt,
+      { id: 555 },
+      42,
+      { kind: "document", fileId: "fid", mimeType: "image/png", fileName: "big.png", fileSize: 11 * 1024 * 1024 },
+      "",
+      7,
+    );
+
+    expect(res.rejected).toBe(true);
+    expect(api.calls.some((c) => c.op === "getFile")).toBe(false);
+  });
+
+  it("surfaces a getFile failure as TelegramReplyError", async () => {
+    t = await createTestDb();
+    const { chat } = capturingChat();
+    const { rt } = makeRuntime(t, chat, undefined, [], new FakeApi("photos/f.jpg", new Error("telegram down")));
+
+    await expect(
+      processImage(rt, { id: 555 }, 42, { kind: "photo", sizes: photoSizes }, "", 7),
+    ).rejects.toBeInstanceOf(TelegramReplyError);
   });
 });

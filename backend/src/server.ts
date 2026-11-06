@@ -18,6 +18,7 @@ import { createBot, applyBotCommands } from "./telegram/bot.js";
 import type { CommandDeps } from "./telegram/commands.js";
 import { Messenger } from "./telegram/messenger.js";
 import { ensureAccessControlDefaults } from "./services/access-request-service.js";
+import { MEDIA_RETENTION_DAYS, MEDIA_PRUNE_INTERVAL_MS } from "./services/media-service.js";
 import { buildCronScheduler } from "./scheduler/wiring.js";
 import type { Scheduler } from "./scheduler/scheduler.js";
 import { buildAdminApp, type HonoWebhookHandler } from "./admin/app.js";
@@ -177,6 +178,24 @@ function main(): void {
         return undefined;
       });
       startScheduler(svc);
+      // Best-effort media retention: delete images older than MEDIA_RETENTION_DAYS
+      // at startup and every 24 h. Never blocks startup; a failure only means the
+      // disk keeps old files until the next run. `unref` keeps the timer from
+      // pinning the process open during shutdown.
+      const pruneMedia = (): void => {
+        void svc.deps.media.prune().catch((err) =>
+          log.warn(
+            { reason: err instanceof Error ? err.message : String(err) },
+            "media prune failed (continuing)",
+          ),
+        );
+      };
+      log.info(
+        { dir: env.MEDIA_DIR, retentionDays: MEDIA_RETENTION_DAYS, intervalMs: MEDIA_PRUNE_INTERVAL_MS },
+        "media prune scheduled (best-effort)",
+      );
+      pruneMedia();
+      setInterval(pruneMedia, MEDIA_PRUNE_INTERVAL_MS).unref();
     })
     .catch((err) => {
       log.warn(

@@ -49,6 +49,7 @@ describe("toCatalogRow", () => {
       pricingOut: 10,
       supportsTools: true,
       supportsReasoning: true,
+      supportsVision: false,
     });
   });
 
@@ -62,7 +63,17 @@ describe("toCatalogRow", () => {
       pricingOut: null,
       supportsTools: false,
       supportsReasoning: false,
+      supportsVision: false,
     });
+  });
+
+  it("detects vision capability from architecture.input_modalities", () => {
+    expect(toCatalogRow(raw("v/multi", { architecture: { input_modalities: ["text", "image"] } }))?.supportsVision).toBe(
+      true,
+    );
+    expect(toCatalogRow(raw("v/text", { architecture: { input_modalities: ["text"] } }))?.supportsVision).toBe(false);
+    expect(toCatalogRow(raw("v/none", { architecture: null }))?.supportsVision).toBe(false);
+    expect(toCatalogRow(raw("v/junk", { architecture: { input_modalities: "image" } }))?.supportsVision).toBe(false);
   });
 
   it("drops rows without an id or with a non-object shape", () => {
@@ -92,6 +103,7 @@ describe("ModelsCatalog — OpenRouter", () => {
       "ref",
       "supportsReasoning",
       "supportsTools",
+      "supportsVision",
     ]);
   });
 
@@ -165,6 +177,53 @@ describe("ModelsCatalog — OpenRouter", () => {
 
     const offline = new ModelsCatalog({ fetchFn: failFetch(500) });
     expect(await offline.isKnownOpenRouterRef("openrouter:a/one")).toBeUndefined();
+  });
+
+  it("supportsVision is cache-only: cold cache → undefined without a network call", async () => {
+    const calls = { n: 0 };
+    const cat = new ModelsCatalog({ fetchFn: okFetch([raw("a/one")], calls) });
+
+    expect(await cat.supportsVision("openrouter:a/one")).toBeUndefined();
+    expect(calls.n).toBe(0);
+    expect(cat.peekOpenRouterCatalog()).toBeNull();
+  });
+
+  it("supportsVision reads the cached catalog and normalizes refs", async () => {
+    const cat = new ModelsCatalog({
+      fetchFn: okFetch([
+        raw("v/multi", { architecture: { input_modalities: ["text", "image"] } }),
+        raw("v/text", { architecture: { input_modalities: ["text"] } }),
+      ]),
+    });
+    await cat.getOpenRouterCatalog();
+
+    expect(await cat.supportsVision("openrouter:v/multi")).toBe(true);
+    expect(await cat.supportsVision("v/multi")).toBe(true);
+    expect(await cat.supportsVision("openrouter:v/text")).toBe(false);
+    expect(await cat.supportsVision("openrouter:v/unknown")).toBeUndefined();
+    expect(await cat.supportsVision("openai:gpt-4o")).toBeUndefined();
+  });
+
+  it("supportsVision falls back to the id without a variant suffix", async () => {
+    const cat = new ModelsCatalog({
+      fetchFn: okFetch([raw("v/multi", { architecture: { input_modalities: ["image"] } })]),
+    });
+    await cat.getOpenRouterCatalog();
+
+    expect(await cat.supportsVision("openrouter:v/multi:nitro")).toBe(true);
+    expect(await cat.supportsVision("openrouter:v/text:nitro")).toBeUndefined();
+  });
+
+  it("supportsVision treats an expired cache as unknown", async () => {
+    let now = 1_000_000;
+    const cat = new ModelsCatalog({
+      fetchFn: okFetch([raw("v/multi", { architecture: { input_modalities: ["image"] } })]),
+      now: () => now,
+    });
+    await cat.getOpenRouterCatalog();
+    now += CATALOG_TTL_MS + 1;
+
+    expect(await cat.supportsVision("openrouter:v/multi")).toBeUndefined();
   });
 });
 

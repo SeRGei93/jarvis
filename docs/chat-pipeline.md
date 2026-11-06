@@ -15,10 +15,11 @@ handleUserMessage(
   text: string,
   onText?: (acc: string) => void,
   onTool?: { onStart?(name): void; onFinish?(name): void },
+  images?: { data: Uint8Array; mediaType: string; width?: number; height?: number }[],
 ): Promise<{ text: string; skills: string[]; rejected: boolean; confirmations?: {...}[] }>
 ```
 
-`onText` receives the accumulated answer on every token, so the Telegram layer can throttle its streaming draft. `onTool` surfaces live tool activity ("🔎 searching…"). `rejected: true` means promptguard blocked the message and no model was called. `confirmations` lists any risky-tool approvals the turn requested (see [Tool approval](#tool-approval-risky-tools)).
+`onText` receives the accumulated answer on every token, so the Telegram layer can throttle its streaming draft. `onTool` surfaces live tool activity ("🔎 searching…"). `rejected: true` means promptguard (or the vision-capability gate) blocked the message and no model was called. `confirmations` lists any risky-tool approvals the turn requested (see [Tool approval](#tool-approval-risky-tools)). `images` carries the current turn's image bytes (Telegram photos/documents) — see [Images (vision)](#images-vision).
 
 ## The turn, step by step
 
@@ -30,12 +31,12 @@ text ─▶ promptguard ─▶ loadContext ─▶ rate-limit ─▶ history + me
                                         onboarding auto-complete
 ```
 
-1. **promptguard** — `validateUserMessage(text)` normalizes the text (Unicode NFKC + strip zero-width/control chars) then checks length + injection. On failure the workflow returns the canned `userMessage` and stops (no model call). See [Security](#guardrails).
+1. **promptguard** — `validateUserMessage(text)` normalizes the text (Unicode NFKC + strip zero-width/control chars) then checks length + injection. On failure the workflow returns the canned `userMessage` and stops (no model call). See [Security](#guardrails). Image-only messages (no caption) skip this text check; empty text **without** images is still rejected.
 2. **conversation-context** — `loadContext(...)` loads the `User`, gets-or-creates the `Session`, loads the optional `BotIdentity`, and resolves the Mastra thread / resource ids.
 3. **rate-limit** — `RateLimitService.checkAndConsume(userId)` enforces the hourly plan window. Un-onboarded users are bypassed; over the limit the turn is rejected. See [Configuration](configuration.md#plans-rate-limit-and-usage).
-4. **history + previousSkills** — `getRecentMessages(...)` reads the last `agent.max_history` messages; `derivePreviousSkills(...)` collects skill tags from prior assistant turns (newest-first). The current user message is then persisted.
+4. **history + previousSkills** — `getRecentMessages(...)` reads the last `agent.max_history` messages; `derivePreviousSkills(...)` collects skill tags from prior assistant turns (newest-first). `MediaService.hydrate(recent)` re-attaches a bounded set of historical images as bytes, so a text-only follow-up ("что было на фото?") still counts as a multimodal turn for model selection. The current user message is persisted **after** the turn model resolves (so a vision-capability refusal leaves no history row), storing only image refs (`{id, mediaType}`) plus the text.
 5. **memories + prompts** — `MemoryService.loadRelevant(userId)` returns the user's long-term facts (capped at 50, loaded whole — no vector/RAG, M13); the SOUL/FORMAT/INTEGRITY bodies load from the file-backed prompt store via `SkillService`.
-6. **pre-pass** — `PrimarySkillSelector.selectPrimary(...)` picks ONE primary skill. With a `model_roles.decision` model configured it first asks the **decision layer** (`DecisionService.choose`) — one typed System One call over the routable catalog, argmax over probabilities, ~$0.000003 and no generation. Anything unusable (role empty, non-OpenRouter ref, refusal, error, unknown skill id) falls through to the cheap `roles.router` `generateObject` classification. If the user is not onboarded, `onboarding` is forced (no model call). `resolveTurnConfig(...)` then resolves the turn's model (session override → primary skill's model → `roles.default`), temperature, and reasoning.
+6. **pre-pass** — `PrimarySkillSelector.selectPrimary(...)` picks ONE primary skill. With a `model_roles.decision` model configured it first asks the **decision layer** (`DecisionService.choose`) — one typed System One call over the routable catalog, argmax over probabilities, ~$0.000003 and no generation. Anything unusable (role empty, non-OpenRouter ref, refusal, error, unknown skill id) falls through to the cheap `roles.router` `generateObject` classification. If the user is not onboarded, `onboarding` is forced (no model call). `resolveTurnConfig(...)` then resolves the turn's model (session override → primary skill's model → `roles.default`; turns carrying images — current **or** hydrated from history — prefer `model_roles.vision` when set), temperature, and reasoning. For image-bearing turns a cache-only capability check (`ModelsCatalog.supportsVision`) refuses a message with new images when the catalog positively says the model cannot take images; a text-only follow-up with history images instead drops those historical parts, so a non-vision turn model keeps working. An unknown (cold/expired) catalog never blocks.
 7. **orchestrator** — `Orchestrator.run(...)` streams one agent turn (see [The orchestrator](#the-orchestrator)). Any failure degrades to a user-facing fallback instead of throwing.
 8. **record usage** — `UsageService.recordUsage(userId, cost)` accumulates the turn's cost + request count.
 9. **persist** — the assistant reply is saved to Mastra Memory, tagged with the primary skill.
@@ -43,6 +44,24 @@ text ─▶ promptguard ─▶ loadContext ─▶ rate-limit ─▶ history + me
 11. **opportunistic memory** — best-effort, onboarded users only, gated by `agent.auto_memory`: `FactExtractor` saves durable facts mentioned in passing, routed through `MemoryService.save`.
 12. **onboarding auto-complete** — once the message count reaches `4`, `ProfileExtractor.applyOnboarding(...)` fills empty user fields, marks the user onboarded, and upserts the bot identity.
 13. **confirmations** — pending risky-tool confirmations created this turn are returned in `confirmations` for the UI to render approve/decline buttons (see [Tool approval](#tool-approval-risky-tools)).
+
+## Images (vision)
+
+An incoming Telegram photo or image document becomes a normal multimodal turn — there is **no separate vision agent**:
+
+```
+bytes ─▶ MediaService.saveMany ─▶ refs in content.metadata.images
+      └▶ orchestrator (current user message: image parts + text)
+history refs ─▶ MediaService.hydrate ─▶ orchestrator (image parts, bounded)
+```
+
+- **Bytes on disk, refs in history.** `MediaService` (`src/services/media-service.ts`) writes content-addressed files (`MEDIA_DIR/<sha256[0..2]>/<sha256>.<ext>`, deduplicated by hash, atomic write) and returns `{ id, mediaType, width?, height? }`. Mastra Memory stores only those refs — never base64 — because `getRecentMessages` reads the whole thread on every turn.
+- **Bounded re-attach.** Follow-ups like "а что на фото?" work because `hydrate` re-attaches images from the **last 2 user messages**, at most **4 images** and **12 MB** per turn. `stat` is checked before reading, so an oversized file never costs a full read. Because those parts ride along on later turns, a text-only follow-up is routed to the `vision` role too; if the resolved model positively cannot take images, the historical parts are dropped (logged) instead of failing the request.
+- **Current turn.** The bytes go to the orchestrator directly (`userImages`), not re-read from disk. The orchestrator builds AI SDK image parts (`{ type: "image", image: Uint8Array, mediaType }`, images first, text last); Mastra converts them to file parts with data URIs for the provider. A turn is capped at 4 images for both storage and the model request.
+- **Model choice.** Image-bearing turns (current message or hydrated history) use `model_roles.vision` when set, else the normal chain (session override → skill model → `roles.default`). `ModelsCatalog.supportsVision(ref)` is **cache-only**: `false` (positively text-only) → friendly refusal before storing/calling for a message with new images, or drop history images on a text follow-up; `undefined` (cold/expired catalog, non-OpenRouter ref, unknown id) → proceed.
+- **Image-only messages.** An empty caption becomes the internal placeholder `[изображение]` for the pre-pass, summary, onboarding and history. `FactExtractor` is skipped (the placeholder is not a fact).
+- **Limits & retention.** 10 MB per image, 4 images per turn, MIME whitelist `image/jpeg|png|webp` (GIF is deliberately unsupported); files older than 7 days are pruned best-effort on startup and every 24 h. Only files owned by the store (content-addressed images and their `*.tmp` writes) are ever deleted — a misconfigured `MEDIA_DIR` cannot turn retention into a recursive delete. A media-store failure is logged and the turn continues (the current bytes still reach the model).
+- **Security.** Image pixels are not scanned: text inside a picture can be a prompt-injection vector. The bot is a trusted personal assistant, so no OCR filter is applied — treat model output derived from images as untrusted like any other model output. `file_id`/token-bearing URLs are never logged.
 
 ## The orchestrator
 
@@ -105,8 +124,8 @@ Destructive tools (`forget`, `task_delete`) don't act directly — they record a
 `mastra/memory/history.ts` stores conversation turns in Mastra Memory (`mastra_threads` / `mastra_messages`):
 
 - `ensureThread(...)` — create the thread if missing.
-- `saveUserMessage` / `saveAssistant(..., skill)` — persist a turn; the assistant's primary skill is stored in message metadata.
-- `getRecentMessages(..., limit)` — read back the last `limit` turns as domain `Message[]` (feeds `derivePreviousSkills`).
+- `saveUserMessage(..., text, images?)` / `saveAssistant(..., skill)` — persist a turn; the assistant's primary skill is stored in message metadata, a user turn's image refs in `content.metadata.images`.
+- `getRecentMessages(..., limit)` — read back the last `limit` turns as domain `Message[]` (feeds `derivePreviousSkills` and `MediaService.hydrate`). Malformed image metadata is ignored, never fatal.
 
 ## See Also
 

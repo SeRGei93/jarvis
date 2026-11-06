@@ -35,6 +35,8 @@ export interface CatalogRow {
   pricingOut: number | null;
   supportsTools: boolean;
   supportsReasoning: boolean;
+  /** True when the model accepts image input. */
+  supportsVision: boolean;
   /** Decision list only: the id is an alias tracking the current release. */
   aliased?: boolean;
   /** Decision list only: UI hint. */
@@ -50,6 +52,8 @@ export interface CatalogResponse {
 // ── model roles (settings: model_roles) ─────────────────────────────────────
 export interface ModelRoles {
   default: string;
+  /** Model for image turns. Empty/absent = fall back to the turn model. */
+  vision?: string;
   router: string;
   error_correction: string;
   speech: string;

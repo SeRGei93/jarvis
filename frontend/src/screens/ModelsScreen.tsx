@@ -25,6 +25,11 @@ import { errorMessage, handleError, notifySaved } from "./_configCommon.js";
 
 const ROLE_FIELDS: { key: keyof ModelRoles; label: string; description?: string }[] = [
   { key: "default", label: "По умолчанию (default)" },
+  {
+    key: "vision",
+    label: "Изображения (vision)",
+    description: "Модель для ходов с картинками; пусто = модель хода.",
+  },
   { key: "router", label: "Маршрутизатор (router)" },
   { key: "error_correction", label: "Исправление ошибок (error_correction)" },
   { key: "speech", label: "Речь (speech)" },
@@ -39,6 +44,7 @@ const ROLE_FIELDS: { key: keyof ModelRoles; label: string; description?: string 
 
 const EMPTY_ROLES: ModelRoles = {
   default: "",
+  vision: "",
   router: "",
   error_correction: "",
   speech: "",
@@ -51,7 +57,7 @@ const decisionProvider = (key: keyof ModelRoles): CatalogProvider =>
   key === "decision" ? "decision" : "openrouter";
 
 /**
- * Models admin: model roles (6 slots) + a read-only browser over the live
+ * Models admin: model roles (7 slots) + a read-only browser over the live
  * OpenRouter catalog. There is no registry any more — a role is a free-form ref,
  * and the picker searches the catalog by name on the client.
  */
@@ -229,6 +235,7 @@ export function ModelsScreen() {
                     <Table.Th>$ / 1M (in / out)</Table.Th>
                     <Table.Th>Tools</Table.Th>
                     <Table.Th>Reasoning</Table.Th>
+                    <Table.Th>Vision</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -264,6 +271,7 @@ export function ModelsScreen() {
                       </Table.Td>
                       <Table.Td>{row.supportsTools ? <BoolYes /> : <BoolNo />}</Table.Td>
                       <Table.Td>{row.supportsReasoning ? <BoolYes /> : <BoolNo />}</Table.Td>
+                      <Table.Td>{row.supportsVision ? <BoolYes /> : <BoolNo />}</Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>

@@ -22,6 +22,8 @@ function openRouterPayload(ids: string[]) {
       context_length: 128000,
       pricing: { prompt: "0.000001", completion: "0.000002" },
       supported_parameters: ["tools", "reasoning"],
+      // Gemini stands in for a multimodal model; everything else is text-only.
+      architecture: { input_modalities: id.includes("gemini") ? ["text", "image"] : ["text"] },
     })),
   };
 }
@@ -113,8 +115,9 @@ describe("modelsRoutes — roles", () => {
     const { app } = await makeApp();
     const res = await app.request("/roles");
     expect(res.status).toBe(200);
-    const roles = (await res.json()) as { default: string; decision: string };
+    const roles = (await res.json()) as { default: string; decision: string; vision: string };
     expect(roles.default).toBe("openrouter:deepseek/deepseek-v4.1-flash");
+    expect(roles.vision).toBe("openrouter:google/gemini-3-flash-preview");
     expect(roles.decision).toBe("openrouter:~perplexity/pplx-decider-latest");
   });
 
@@ -174,5 +177,25 @@ describe("modelsRoutes — roles", () => {
     const res = await app.request("/roles", json({ default: "openrouter:does/not-exist" }, "PUT"));
     expect(res.status).toBe(200);
     expect(((await res.json()) as { warnings: string[] }).warnings).toHaveLength(0);
+  });
+
+  it("PUT /roles warns when the vision role cannot accept images", async () => {
+    const { app } = await makeApp();
+    const res = await app.request("/roles", json({ vision: "openrouter:openai/gpt-oss-120b" }, "PUT"));
+    expect(res.status).toBe(200);
+    const out = (await res.json()) as { warnings: string[] };
+    expect(out.warnings.join(" ")).toContain("не принимает изображения");
+  });
+
+  it("PUT /roles accepts a multimodal vision role without a capability warning", async () => {
+    const { app } = await makeApp();
+    const res = await app.request(
+      "/roles",
+      json({ vision: "openrouter:google/gemini-3-flash-preview" }, "PUT"),
+    );
+    expect(res.status).toBe(200);
+    const out = (await res.json()) as { warnings: string[]; value: { vision: string } };
+    expect(out.value.vision).toBe("openrouter:google/gemini-3-flash-preview");
+    expect(out.warnings.join(" ")).not.toContain("не принимает изображения");
   });
 });

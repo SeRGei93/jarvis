@@ -24,6 +24,7 @@ describe("runSeed (code seed -> settings/plans)", () => {
     const roles = s.find((r) => r.key === SettingKey.ModelRoles)?.value as Record<string, string>;
     expect(roles.default).toBe("openrouter:deepseek/deepseek-v4.1-flash");
     expect(roles.router).toContain("gpt-oss-120b");
+    expect(roles.vision).toBe("openrouter:google/gemini-3-flash-preview");
     expect(roles.decision).toBe("openrouter:~perplexity/pplx-decider-latest");
 
     const agent = s.find((r) => r.key === SettingKey.Agent)?.value as Record<string, number>;

@@ -13,7 +13,8 @@ domain (pure) ← config / services ← mastra adapters ← app.ts / server.ts (
 - `domain/*` imports nothing from config/db/mastra — pure zod types + business rules.
 - `config/` + `services/` depend only on `domain` + `db`.
 - `content/` is the file-backed skill/prompt store (`SKILLS_DIR`/`PROMPTS_DIR`); `SkillService` wraps `SkillRepository`/`PromptRepository`, both taking a dir so tests point them at temp dirs.
-- `mastra/*` are adapters over the AI SDK / Mastra Memory; depend on `domain` + `config`.
+- `mastra/*` are adapters over the AI SDK / Mastra Memory; depend on `domain` + `config`. `mastra/workflows/chat` also depends on `services/media-service` (image refs in history, bounded hydrate for the orchestrator).
+- `telegram/*` depends on `services` (media store, access requests) and the `ChatHandler` contract; it never imports `mastra/*` directly — the composition root passes the chat service in.
 - `app.ts` is the composition root (wires the factory, settings, services into `handleUserMessage`).
 - External calls are injectable (`ModelFactory`, `SettingsService`, `RouteModelFn`, `ExtractFn`, `DedupChecker`, `Summarizer`, `LoopGuard`'s clock, `DecisionClient`) → tests run with zero network.
 
@@ -21,7 +22,7 @@ domain (pure) ← config / services ← mastra adapters ← app.ts / server.ts (
 
 | Dir | Contents |
 |-----|----------|
-| `config/` | `env` (zod secrets, + `SKILLS_DIR`/`PROMPTS_DIR`), `settings` (DB cache + hot-reload), `settings-keys` |
+| `config/` | `env` (zod secrets, + `SKILLS_DIR`/`PROMPTS_DIR`/`MEDIA_DIR`), `settings` (DB cache + hot-reload), `settings-keys` |
 | `content/` | file-backed skill/prompt store: `paths`, `store` (populate + atomic write + frontmatter), `skill-repository`, `prompt-repository` |
 | `db/` | `schema` (13 tables — incl. `pending_confirmations`, no `skills`/`prompts`), `migrations/`, `client`, `migrate`, `seed` (code seed), `seed-data` |
 | `domain/` | `entities` (zod + invariant constants), `mcp-config` (HTTP-only MCP schema + `${ENV}` expansion), `memory-classifier`, `sensitivity-filter` |
@@ -33,7 +34,7 @@ domain (pure) ← config / services ← mastra adapters ← app.ts / server.ts (
 | `mastra/mcp/` | `manager` (`McpManager`: config → SDK client → discovery, per-server status, serialized refresh, generation-scoped clients) |
 | `mastra/tools/` | `registry` (`resolveTools`/`resolveAllTools`), `load-skill`, `memory-tools`, `currency`, `web` (native web bucket), `tasks`, `profile-tools`, `skill-ref` |
 | `mastra/workflows/` | `chat` (pre-pass → orchestrator agent) |
-| `services/` | `skill-service`, `conversation-context`, `web/` (Serper/Google search, browser-free fetch + SSRF guard, parsers + Belarus verticals) |
+| `services/` | `skill-service`, `conversation-context`, `media-service` (content-addressed inbound image store: save/load/hydrate/prune), `web/` (Serper/Google search, browser-free fetch + SSRF guard, parsers + Belarus verticals) |
 | `pkg/` | `logger` (pino + redact), `promptguard`, `bootstrap-env` |
 | `app.ts` | composition root — `createChatService()` → `handleUserMessage()` |
 | `server.ts` | single-process entry point (health server + best-effort ChatService init) |

@@ -52,6 +52,10 @@ const EnvSchema = z.object({
   SKILLS_DIR: z.string().min(1).default("./data/skills"),
   PROMPTS_DIR: z.string().min(1).default("./data/prompts"),
 
+  // Inbound image store (Telegram photos/documents). Content-addressed files with
+  // a 7-day retention; container overrides to /data/media via compose.
+  MEDIA_DIR: z.string().min(1).default("./data/media"),
+
   // Admin (Mini App bootstrap): comma-separated Telegram user ids
   ADMIN_USER_IDS: z.string().default(""),
 

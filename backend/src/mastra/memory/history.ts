@@ -6,7 +6,7 @@ import { eq, sql } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "../../db/schema.js";
 import { sessions } from "../../db/schema.js";
-import type { Message, MessageRole } from "../../domain/entities.js";
+import type { Message, MessageRole, StoredImageRef } from "../../domain/entities.js";
 import { logger } from "../../pkg/logger.js";
 
 const log = logger.child({ mod: "history" });
@@ -115,7 +115,11 @@ function buildDbMessage(
   threadId: string,
   resourceId: string,
   skill?: string | null,
+  images?: StoredImageRef[],
 ): MastraDBMessage {
+  const metadata: Record<string, unknown> = {};
+  if (skill) metadata.skill = skill;
+  if (images?.length) metadata.images = images;
   return {
     id: randomUUID(),
     role,
@@ -126,20 +130,24 @@ function buildDbMessage(
       format: 2,
       parts: [{ type: "text", text }],
       content: text,
-      ...(skill ? { metadata: { skill } } : {}),
+      ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
     },
   };
 }
 
-/** Persist a user turn. */
+/**
+ * Persist a user turn. `images` stores only disk refs (`{id, mediaType, …}`) in
+ * `content.metadata.images` — bytes stay on disk (see MediaService).
+ */
 export async function saveUserMessage(
   memory: Memory,
   threadId: string,
   resourceId: string,
   text: string,
+  images?: StoredImageRef[],
 ): Promise<void> {
-  await memory.saveMessages({ messages: [buildDbMessage("user", text, threadId, resourceId)] });
-  log.debug({ threadId, role: "user" }, "message saved");
+  await memory.saveMessages({ messages: [buildDbMessage("user", text, threadId, resourceId, undefined, images)] });
+  log.debug({ threadId, role: "user", images: images?.length ?? 0 }, "message saved");
 }
 
 /** Persist an assistant turn, tagging the producing skill in metadata. */
@@ -164,8 +172,35 @@ function extractText(content: MastraDBMessage["content"]): string {
 }
 
 /**
+ * Read image refs from `content.metadata.images`, validating each entry. Garbage
+ * (non-array metadata, non-string ids) is ignored rather than breaking history.
+ */
+function extractImages(content: MastraDBMessage["content"]): StoredImageRef[] | undefined {
+  const raw = content.metadata?.images;
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) {
+    log.warn({ type: typeof raw }, "malformed image metadata ignored");
+    return undefined;
+  }
+  const refs: StoredImageRef[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const { id, mediaType, width, height } = item as Record<string, unknown>;
+    if (typeof id !== "string" || typeof mediaType !== "string") continue;
+    refs.push({
+      id,
+      mediaType,
+      ...(typeof width === "number" ? { width } : {}),
+      ...(typeof height === "number" ? { height } : {}),
+    });
+  }
+  return refs.length > 0 ? refs : undefined;
+}
+
+/**
  * Read the most recent `limit` messages of a thread as domain Messages, in
- * chronological order, with `skill` populated from assistant metadata.
+ * chronological order, with `skill` populated from assistant metadata and
+ * `images` from stored disk refs.
  */
 export async function getRecentMessages(
   memory: Memory,
@@ -182,12 +217,16 @@ export async function getRecentMessages(
   const { messages } = await memory.recall({ threadId, resourceId, perPage: false });
   const mapped: Message[] = messages
     .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
-    .map((m) => ({
-      role: m.role as MessageRole,
-      content: extractText(m.content),
-      skill: (m.content.metadata?.skill as string | undefined) ?? null,
-      createdAt: m.createdAt,
-    }));
+    .map((m) => {
+      const images = extractImages(m.content);
+      return {
+        role: m.role as MessageRole,
+        content: extractText(m.content),
+        skill: (m.content.metadata?.skill as string | undefined) ?? null,
+        ...(images ? { images } : {}),
+        createdAt: m.createdAt,
+      };
+    });
   const recent = limit > 0 ? mapped.slice(-limit) : mapped;
   log.debug({ threadId, total: mapped.length, returned: recent.length }, "recent messages read");
   return recent;

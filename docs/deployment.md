@@ -59,6 +59,7 @@ All persistent state is bind-mounted under the host-visible **`./data/`** direct
 ```
 ./data/db/avocado.db        libSQL database (only the app writes it)
 ./data/db/web-cache/        web fetch/search file cache (app mounts ./data/db → /data, WEB_CACHE_DIR=/data/web-cache)
+./data/db/media/            inbound images from Telegram (MEDIA_DIR=/data/media, pruned after 7 days)
 ```
 
 (TLS certificates are owned by the external Caddy, not stored under `./data`.)
@@ -161,9 +162,9 @@ Notes:
 - The service must stay at **one replica** (single polling process + a
   file-based libSQL database).
 - All state lives in the named volume `jarvis-data` (sqlite, web cache,
-  skills/prompts); migrating from the Caddy setup means copying `./data/db`
-  contents into that volume. Back it up — recreating the volume wipes the
-  bot's memory.
+  skills/prompts, inbound media); migrating from the Caddy setup means copying
+  `./data/db` contents into that volume. Back it up — recreating the volume wipes
+  the bot's memory.
 - Migrations + seed run on every start (idempotent); after the first deploy,
   set model roles (and the `decision` role) in the admin Mini App — see the
   M19 upgrade notes in [Updating](#updating).
@@ -231,6 +232,7 @@ Deploy-specific keys:
 | `DOMAIN` | public domain the external Caddy serves / the Mini App origin (informational for the app; the Caddyfile is what binds it) |
 | `ADMIN_USER_IDS` | Telegram ids allowed into the admin (deny-by-default) |
 | `LIBSQL_URL` | `file:/data/avocado.db` (volume) or a Turso URL |
+| `MEDIA_DIR` | inbound image store (compose sets `/data/media`; 7-day retention) |
 | `SERPER_API_KEY` | serper.dev key for `web_search` (optional; empty = search is disabled, everything else works) |
 
 ## Updating

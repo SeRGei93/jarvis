@@ -26,6 +26,11 @@ export interface ModelRoles {
   speech: string;
   synthesizer: string;
   /**
+   * Model for turns that carry images. Empty/absent = fall back to the turn
+   * model (session override → skill model → default).
+   */
+  vision?: string;
+  /**
    * Fast typed-decision model (System One via OpenRouter). Empty/absent = the
    * decision layer is off and every consumer falls back to its LLM path.
    */

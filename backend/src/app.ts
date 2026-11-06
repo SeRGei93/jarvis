@@ -19,8 +19,10 @@ import { RateLimitService } from "./services/rate-limit.js";
 import { UsageService } from "./services/usage.js";
 import { AccessRequestService } from "./services/access-request-service.js";
 import { ModelsCatalog } from "./services/models-catalog.js";
+import { MediaService } from "./services/media-service.js";
 import { McpManager } from "./mastra/mcp/manager.js";
 import { runChat, type ChatDeps, type ChatResult } from "./mastra/workflows/chat.js";
+import type { ImageInput } from "./services/media-service.js";
 import { logger } from "./pkg/logger.js";
 
 const log = logger.child({ mod: "app" });
@@ -45,6 +47,7 @@ export interface ChatService {
     text: string,
     onText?: StreamCallback,
     onTool?: ToolEvents,
+    images?: ImageInput[],
   ): Promise<ChatResult>;
   deps: ChatDeps;
   /** Release external resources on shutdown. */
@@ -94,6 +97,7 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
   const usage = new UsageService(opts.db);
   const accessRequests = new AccessRequestService(opts.db, settings);
   const modelsCatalog = new ModelsCatalog();
+  const media = new MediaService();
 
   const deps: ChatDeps = {
     db: opts.db,
@@ -112,6 +116,7 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
     confirmations,
     accessRequests,
     modelsCatalog,
+    media,
     mcp,
   };
 
@@ -126,8 +131,8 @@ export async function createChatService(opts: ChatServiceOptions): Promise<ChatS
 
   return {
     deps,
-    handleUserMessage: (userId, chatId, text, onText, onTool) =>
-      runChat(deps, { userId, chatId, text }, onText, onTool),
+    handleUserMessage: (userId, chatId, text, onText, onTool, images) =>
+      runChat(deps, { userId, chatId, text, images }, onText, onTool),
     close: async () => {
       // Disconnect MCP clients before the DB handle goes away (server.ts awaits this).
       await mcp.close();

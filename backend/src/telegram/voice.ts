@@ -1,4 +1,5 @@
 import { TelegramReplyError } from "./errors.js";
+import { fetchTelegramFile, type FetchLike } from "./files.js";
 import { logger } from "../pkg/logger.js";
 
 const log = logger.child({ mod: "tg-voice" });
@@ -10,6 +11,8 @@ export const VOICE_DOWNLOAD_TIMEOUT_MS = 60_000;
 /** Telegram voice notes are OGG/Opus (parity with Go hardcoded mime). */
 export const VOICE_MIME = "audio/ogg";
 
+export type { FetchLike } from "./files.js";
+
 /** Minimal grammY `Api` surface — `api.getFile` returns a `File` with `file_path`. */
 export interface VoiceApi {
   getFile(fileId: string): Promise<{ file_path?: string }>;
@@ -19,13 +22,6 @@ export interface VoiceApi {
 export interface VoiceTranscriber {
   transcribe(audio: Uint8Array, mimeType: string): Promise<string>;
 }
-
-interface FetchResponseLike {
-  ok: boolean;
-  status: number;
-  arrayBuffer(): Promise<ArrayBuffer>;
-}
-export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<FetchResponseLike>;
 
 /**
  * Download a Telegram voice file and transcribe it to text. Guards duration,
@@ -48,27 +44,20 @@ export async function transcribeVoice(
     throw new TelegramReplyError("Голосовое сообщение слишком длинное. Максимум — 30 секунд.");
   }
 
-  const file = await api.getFile(fileId);
-  if (!file.file_path) {
-    log.warn("voice getFile returned no file_path");
-    throw new TelegramReplyError("Не удалось получить голосовое сообщение. Попробуйте позже.");
-  }
+  const { data } = await fetchTelegramFile(api, token, fileId, {
+    fetchFn,
+    timeoutMs: VOICE_DOWNLOAD_TIMEOUT_MS,
+    kind: "voice",
+    messages: {
+      missingPath: "Не удалось получить голосовое сообщение. Попробуйте позже.",
+      download: "Не удалось загрузить голосовое сообщение. Попробуйте позже.",
+    },
+  });
 
-  const url = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
-  let buf: Uint8Array;
-  try {
-    const res = await fetchFn(url, { signal: AbortSignal.timeout(VOICE_DOWNLOAD_TIMEOUT_MS) });
-    if (!res.ok) throw new Error(`download status ${res.status}`);
-    buf = new Uint8Array(await res.arrayBuffer());
-  } catch (err) {
-    log.warn({ reason: err instanceof Error ? err.message : String(err) }, "voice download failed");
-    throw new TelegramReplyError("Не удалось загрузить голосовое сообщение. Попробуйте позже.");
-  }
-
-  log.debug({ duration, bytes: buf.byteLength }, "voice downloaded; transcribing");
+  log.debug({ duration, bytes: data.byteLength }, "voice downloaded; transcribing");
   let text: string;
   try {
-    text = (await speech.transcribe(buf, VOICE_MIME)).trim();
+    text = (await speech.transcribe(data, VOICE_MIME)).trim();
   } catch (err) {
     log.warn({ reason: err instanceof Error ? err.message : String(err) }, "voice transcription failed");
     throw new TelegramReplyError("Не удалось распознать голосовое сообщение.");

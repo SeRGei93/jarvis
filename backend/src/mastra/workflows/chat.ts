@@ -1,7 +1,7 @@
 import type { Memory } from "@mastra/memory";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "../../db/schema.js";
-import type { Message } from "../../domain/entities.js";
+import type { Message, StoredImageRef } from "../../domain/entities.js";
 import { shouldAutoCompleteOnboarding } from "../../domain/entities.js";
 import { SettingsService } from "../../config/settings.js";
 import { SkillService, derivePreviousSkills } from "../../services/skill-service.js";
@@ -17,6 +17,7 @@ import { ProfileExtractor } from "../memory/profile-extractor.js";
 import { RateLimitService } from "../../services/rate-limit.js";
 import { UsageService } from "../../services/usage.js";
 import { AccessRequestService } from "../../services/access-request-service.js";
+import { MediaService, MAX_IMAGES_PER_TURN, type ImageInput } from "../../services/media-service.js";
 import type { ModelsCatalog } from "../../services/models-catalog.js";
 import type { McpManager } from "../mcp/manager.js";
 import {
@@ -35,6 +36,11 @@ type Db = LibSQLDatabase<typeof schema>;
 const FALLBACK_REPLY = "Не удалось сформировать ответ. Попробуйте переформулировать запрос.";
 /** Shown to the user when the hourly message rate limit is exceeded. */
 const RATE_LIMIT_REPLY = "Слишком много сообщений за последний час. Попробуйте чуть позже.";
+/** Internal stand-in text for an image-only message (pre-pass, history, summary). */
+export const IMAGE_PLACEHOLDER = "[изображение]";
+/** Shown when the resolved turn model cannot accept images (known from the catalog). */
+export const VISION_UNSUPPORTED_REPLY =
+  "Не могу обработать изображение: выбранная модель не поддерживает картинки. Напишите текстом или укажите vision-модель в настройках.";
 
 /** All collaborators the chat workflow orchestrates (wired by the composition root). */
 export interface ChatDeps {
@@ -68,6 +74,8 @@ export interface ChatDeps {
   accessRequests: AccessRequestService;
   /** OpenRouter + decision model catalogs (admin model picker, role validation). */
   modelsCatalog: ModelsCatalog;
+  /** File-backed inbound image store (bytes on disk, refs in history). */
+  media: MediaService;
   /**
    * Admin-managed HTTP MCP servers (settings `mcp_servers`). The orchestrator
    * reads its tool snapshot once per turn; the admin API drives refresh/test.
@@ -85,6 +93,8 @@ export interface ChatInput {
   userId: number;
   chatId: number;
   text: string;
+  /** Inbound images for this turn (Telegram photos/documents). */
+  images?: ImageInput[];
 }
 
 export interface ChatResult {
@@ -114,12 +124,21 @@ export async function runChat(
   onTool?: ToolEvents,
 ): Promise<ChatResult> {
   const { userId, chatId, text } = input;
+  const hasImages = !!input.images?.length;
+  const trimmed = text.trim();
+  // Image-only messages still need a text stand-in for the pre-pass, summary,
+  // onboarding and history (promptguard is skipped for them below).
+  const textForModel = trimmed || (hasImages ? IMAGE_PLACEHOLDER : text);
+  log.info({ userId, hasImages, images: input.images?.length ?? 0 }, "chat turn started");
 
-  // 1. promptguard — reject before any model call.
-  const guard = validateUserMessage(text);
-  if (!guard.ok) {
-    log.warn({ userId, reason: guard.reason }, "message rejected by promptguard");
-    return { text: guard.userMessage, skills: [], rejected: true };
+  // 1. promptguard — reject before any model call. Image-only messages have no
+  //    text to validate; empty text without images is still rejected as before.
+  if (trimmed || !hasImages) {
+    const guard = validateUserMessage(text);
+    if (!guard.ok) {
+      log.warn({ userId, reason: guard.reason }, "message rejected by promptguard");
+      return { text: guard.userMessage, skills: [], rejected: true };
+    }
   }
 
   // 2. conversation context (user / session / identity / thread).
@@ -133,13 +152,19 @@ export async function runChat(
     return { text: RATE_LIMIT_REPLY, skills: [], rejected: true };
   }
 
-  // 3. history BEFORE the current turn + previousSkills.
+  // 3. history BEFORE the current turn + previousSkills. Image refs are hydrated
+  //    into bytes here (bounded re-attach: last user messages / image count / bytes).
   const agentCfg = await deps.settings.getAgent();
   const recent = await getRecentMessages(deps.memory, ctx.threadId, ctx.resourceId, agentCfg.max_history);
   const previousSkills = derivePreviousSkills(recent);
-
-  // Persist the user turn (durable even if generation later fails).
-  await saveUserMessage(deps.memory, ctx.threadId, ctx.resourceId, text);
+  const hydrated = await deps.media.hydrate(recent);
+  // A text-only follow-up ("what was on that photo?") still carries images from
+  // history. Count both sources so the vision role and the capability gate below
+  // stay in charge of EVERY image part sent to the provider.
+  const historyImageCount = hydrated.reduce((n, m) => n + (m.images?.length ?? 0), 0);
+  const currentImages = input.images?.slice(0, MAX_IMAGES_PER_TURN) ?? [];
+  const hasCurrentImages = currentImages.length > 0;
+  const turnHasImages = hasCurrentImages || historyImageCount > 0;
 
   // 4. relevant long-term memories + core prompt bodies + model roles.
   const [memories, prompts, roles] = await Promise.all([
@@ -155,7 +180,7 @@ export async function runChat(
   const primarySkill = await deps.primarySelector.selectPrimary({
     skills: routable,
     recentMessages: recent,
-    userMessage: text,
+    userMessage: textForModel,
     previousSkills,
     onboarded: ctx.user.onboarded,
   });
@@ -164,8 +189,62 @@ export async function runChat(
     sessionModel: ctx.session.model,
     defaultModel: roles.default,
     defaultTemperature: agentCfg.default_temperature,
+    visionModel: roles.vision,
+    hasImages: turnHasImages,
   });
+  if (turn.model !== turn.baseModel) {
+    log.info(
+      {
+        requested: turn.baseModel,
+        effective: turn.model,
+        role: "vision",
+        currentImages: currentImages.length,
+        historyImages: historyImageCount,
+      },
+      "vision model override",
+    );
+  }
   log.debug({ userId, primarySkill: turn.skill, model: turn.model, onboarded: ctx.user.onboarded }, "pre-pass");
+
+  // 5a. capability gate: a catalog that positively says "no image input" refuses
+  //     an image message BEFORE it is stored or the model is called. A cold/expired
+  //     catalog (undefined) never blocks the turn. History images count too: when a
+  //     text-only follow-up resolves to a non-vision model, the historical image
+  //     parts are dropped instead of failing the request.
+  let history = hydrated;
+  if (turnHasImages) {
+    const capable = await deps.modelsCatalog.supportsVision(turn.model);
+    if (capable === false && hasCurrentImages) {
+      log.warn({ userId, model: turn.model }, "turn model does not accept images; refusing");
+      return { text: VISION_UNSUPPORTED_REPLY, skills: [], rejected: true };
+    }
+    if (capable === false) {
+      history = hydrated.map((m) => (m.images ? { role: m.role, text: m.text } : m));
+      log.info(
+        { userId, model: turn.model, droppedImages: historyImageCount },
+        "turn model does not accept images; dropping history images",
+      );
+    }
+    log.debug(
+      { userId, model: turn.model, capable, currentImages: currentImages.length, historyImages: historyImageCount },
+      "vision capability checked",
+    );
+  }
+
+  // 5b. Persist the user turn AFTER the turn model resolved: a capability refusal
+  //     (Task 7) must not leave a placeholder-only message in history. Bytes are
+  //     stored first (best-effort); a storage failure must not abort the turn.
+  let imageRefs: StoredImageRef[] = [];
+  if (hasCurrentImages) {
+    try {
+      imageRefs = await deps.media.saveMany(currentImages);
+    } catch (err) {
+      log.warn({ userId, reason: err instanceof Error ? err.message : String(err) }, "image save failed; continuing");
+      imageRefs = [];
+    }
+    log.debug({ userId, saved: imageRefs.length, provided: currentImages.length }, "turn images stored");
+  }
+  await saveUserMessage(deps.memory, ctx.threadId, ctx.resourceId, textForModel, imageRefs);
 
   // Snapshot pending confirmations so we can surface only the ones created THIS
   // turn (a risky tool may record one mid-turn instead of acting — C1).
@@ -182,9 +261,10 @@ export async function runChat(
         identity: ctx.identity,
         memories,
         prompts: { soul: prompts.soul, format: prompts.format, integrity: prompts.integrity },
-        history: recent,
+        history,
         summary: ctx.session.summary ?? null,
-        userMessage: text,
+        userMessage: textForModel,
+        userImages: currentImages,
         primarySkill: turn.skill,
         model: turn.model,
         temperature: turn.temperature,
@@ -237,15 +317,16 @@ export async function runChat(
   }
 
   // 7b. opportunistic long-term memory: capture durable facts the user stated in
-  //     passing. Onboarded users only (onboarding owns first-contact extraction),
+  //     passing. Skipped for image-only messages (the placeholder is not a fact).
+  //     Onboarded users only (onboarding owns first-contact extraction),
   //     gated by agent.auto_memory (undefined = on). Best-effort: a cheap extra
   //     LLM call on the default model, routed through memoryService.save (which
   //     applies sensitivity/dedup/cap); its cost is not metered. A failure never
   //     breaks the turn.
-  if (ctx.user.onboarded && (agentCfg.auto_memory ?? true)) {
+  if (trimmed !== "" && ctx.user.onboarded && (agentCfg.auto_memory ?? true)) {
     try {
       const { facts } = await deps.factExtractor.extract([
-        { role: "user", content: text },
+        { role: "user", content: textForModel },
         { role: "assistant", content: answer },
       ]);
       let saved = 0;
@@ -262,7 +343,7 @@ export async function runChat(
   // 8. onboarding auto-complete (msgCount includes the just-saved user + assistant turns).
   const allMessages: Message[] = [
     ...recent,
-    { role: "user", content: text },
+    { role: "user", content: textForModel, ...(imageRefs.length ? { images: imageRefs } : {}) },
     { role: "assistant", content: answer, skill: skillTag },
   ];
   if (shouldAutoCompleteOnboarding(ctx.user.onboarded, allMessages.length)) {

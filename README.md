@@ -23,7 +23,7 @@ npm run dev                 # start the single-process service
 - **Tools** — skills get built-in tools (currency, cron tasks, profile, skill references); destructive tools (`forget`, `task_delete`) require Telegram approve/decline confirmation. See [Tools](docs/tools.md).
 - **Native web tools** — in-process web search, page fetch, Belarus marketplaces (kufar/av.by/rabota/transport/relax/103) and weather, backed by Serper (Google SERP; no external search MCP server, no self-hosted search engine, no rate limiter). See [Web Search](docs/web-search.md).
 - **MCP servers** — connect remote HTTP MCP servers from the admin Mini App (JSON config, `${ENV}` substitution, per-server status). Their tools are namespaced `<server>_<tool>` and always active for the orchestrator. No stdio/`exec`. See [MCP](docs/mcp.md).
-- **Telegram bot** — a grammY bot (polling, or optional webhook) with throttled `editMessageText` streaming, markdown→MarkdownV2, voice→speech, commands, and an allowlist. See [Telegram Bot](docs/telegram.md).
+- **Telegram bot** — a grammY bot (polling, or optional webhook) with throttled `editMessageText` streaming, markdown→MarkdownV2, voice→speech, **inbound photos and image documents (vision)**, commands, and an allowlist. See [Telegram Bot](docs/telegram.md).
 - **Cron scheduler** — `node-cron` polls run due `cron_tasks` through the chat pipeline and deliver the result to Telegram (`now` / `once` / recurring). See [Cron Scheduler](docs/scheduler.md).
 - **Admin Mini App** — a Telegram Mini App (React + Vite + Mantine) edits the config (file-backed skills/prompts + DB-backed models/settings/plans/users/usage) via a Hono API, gated by `initData` HMAC + `ADMIN_USER_IDS`. See [Admin Mini App](docs/admin.md).
 - **Multi-provider LLM** — Vercel AI SDK v6 (`provider:model` factory) with watchdog, retries/fallback, and cost extraction ported 1:1 from the Go `LLMAdapter`.
@@ -59,7 +59,7 @@ const result = await chat.handleUserMessage(userId, chatId, "what's the weather 
 | [MCP](docs/mcp.md) | admin-managed HTTP MCP servers — JSON config, `${ENV}`, statuses, security |
 | [Eval & Skill Test-Run](docs/eval.md) | deterministic eval gate, `skill:run` CLI, Mini App test-run, nightly judge |
 | [Web Search](docs/web-search.md) | native web bucket — Serper search, fetch, marketplaces, weather |
-| [Telegram Bot](docs/telegram.md) | grammY transport, streaming, voice, commands, allowlist |
+| [Telegram Bot](docs/telegram.md) | grammY transport, streaming, voice, photos/images (vision), commands, allowlist |
 | [Cron Scheduler](docs/scheduler.md) | node-cron polls, due tasks → chat pipeline → notify |
 | [Configuration](docs/configuration.md) | `.env` secrets, DB-backed settings, file-backed skills/prompts |
 | [Admin Mini App](docs/admin.md) | Hono admin API, `initData` auth, the React Mini App |

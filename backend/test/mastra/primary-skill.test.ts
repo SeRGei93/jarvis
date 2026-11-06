@@ -76,6 +76,7 @@ describe("resolveTurnConfig", () => {
     expect(cfg).toEqual({
       skill: "cars",
       model: "openrouter:session",
+      baseModel: "openrouter:session",
       temperature: 0.4,
       reasoning: null,
     });
@@ -84,11 +85,18 @@ describe("resolveTurnConfig", () => {
   it("falls back skill.model then default; carries temperature/reasoning", () => {
     expect(
       resolveTurnConfig(skill({ name: "cars", model: "openrouter:skill", temperature: 0.2, reasoning: true }), opts),
-    ).toEqual({ skill: "cars", model: "openrouter:skill", temperature: 0.2, reasoning: true });
+    ).toEqual({
+      skill: "cars",
+      model: "openrouter:skill",
+      baseModel: "openrouter:skill",
+      temperature: 0.2,
+      reasoning: true,
+    });
 
     expect(resolveTurnConfig(skill({ name: "chat" }), opts)).toEqual({
       skill: "chat",
       model: "openrouter:default",
+      baseModel: "openrouter:default",
       temperature: 0.4,
       reasoning: null,
     });
@@ -102,10 +110,42 @@ describe("resolveTurnConfig", () => {
     expect(cfg.model).toBe("openrouter:skill");
   });
 
+  it("image turns use the vision role when set", () => {
+    const cfg = resolveTurnConfig(skill({ name: "chat", model: "openrouter:skill" }), {
+      ...opts,
+      sessionModel: "openrouter:session",
+      visionModel: "openrouter:vision",
+      hasImages: true,
+    });
+    expect(cfg.model).toBe("openrouter:vision");
+    expect(cfg.baseModel).toBe("openrouter:session");
+  });
+
+  it("image turns fall back to the normal chain when the vision role is empty", () => {
+    const cfg = resolveTurnConfig(skill({ name: "chat", model: "openrouter:skill" }), {
+      ...opts,
+      visionModel: "   ",
+      hasImages: true,
+    });
+    expect(cfg.model).toBe("openrouter:skill");
+    expect(cfg.baseModel).toBe("openrouter:skill");
+
+    expect(resolveTurnConfig(null, { ...opts, hasImages: true }).model).toBe("openrouter:default");
+  });
+
+  it("text turns ignore the vision role", () => {
+    const cfg = resolveTurnConfig(skill({ name: "chat", model: "openrouter:skill" }), {
+      ...opts,
+      visionModel: "openrouter:vision",
+    });
+    expect(cfg.model).toBe("openrouter:skill");
+  });
+
   it("no skill -> empty name and default model", () => {
     expect(resolveTurnConfig(null, opts)).toEqual({
       skill: "",
       model: "openrouter:default",
+      baseModel: "openrouter:default",
       temperature: 0.4,
       reasoning: null,
     });

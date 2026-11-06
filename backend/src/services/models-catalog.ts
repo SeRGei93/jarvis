@@ -41,6 +41,8 @@ export interface CatalogRow {
   pricingOut: number | null;
   supportsTools: boolean;
   supportsReasoning: boolean;
+  /** True when the model accepts image input (`architecture.input_modalities` has "image"). */
+  supportsVision: boolean;
   /** Curated decision list only: the id is an alias that tracks the current release. */
   aliased?: boolean;
   /** Curated decision list only: UI hint (region limits, cost, purpose). */
@@ -73,6 +75,7 @@ export const DECISION_MODELS: readonly CatalogRow[] = [
     pricingOut: null,
     supportsTools: false,
     supportsReasoning: false,
+    supportsVision: false,
     aliased: true,
     note: "Алиас: трекает актуальный релиз pplx-decider (~$0.03/1M входных). Дефолт.",
   },
@@ -85,6 +88,7 @@ export const DECISION_MODELS: readonly CatalogRow[] = [
     pricingOut: null,
     supportsTools: false,
     supportsReasoning: false,
+    supportsVision: false,
     note: "Пиннутая версия — калибровка не сместится при релизе.",
   },
   {
@@ -96,6 +100,7 @@ export const DECISION_MODELS: readonly CatalogRow[] = [
     pricingOut: null,
     supportsTools: false,
     supportsReasoning: false,
+    supportsVision: false,
     note: "Самая дешёвая (~$0.005/1M входных), быстрая.",
   },
   {
@@ -107,6 +112,7 @@ export const DECISION_MODELS: readonly CatalogRow[] = [
     pricingOut: null,
     supportsTools: false,
     supportsReasoning: false,
+    supportsVision: false,
     note: "Полная версия Clef — точнее flash, дороже (~$0.05/1M входных).",
   },
   {
@@ -118,6 +124,7 @@ export const DECISION_MODELS: readonly CatalogRow[] = [
     pricingOut: null,
     supportsTools: false,
     supportsReasoning: false,
+    supportsVision: false,
     aliased: true,
     note: "Недоступна из Беларуси (HTTP 451) — только при деплое в другом регионе.",
   },
@@ -130,6 +137,7 @@ export const DECISION_MODELS: readonly CatalogRow[] = [
     pricingOut: null,
     supportsTools: false,
     supportsReasoning: false,
+    supportsVision: false,
     note: "Пиннутая версия Jev — недоступна из Беларуси (HTTP 451).",
   },
   {
@@ -141,6 +149,7 @@ export const DECISION_MODELS: readonly CatalogRow[] = [
     pricingOut: null,
     supportsTools: false,
     supportsReasoning: false,
+    supportsVision: false,
     note: "Пиннутая версия Jev — недоступна из Беларуси (HTTP 451).",
   },
 ];
@@ -152,6 +161,7 @@ interface OpenRouterModel {
   context_length?: unknown;
   pricing?: { prompt?: unknown; completion?: unknown } | null;
   supported_parameters?: unknown;
+  architecture?: { input_modalities?: unknown } | null;
 }
 
 function asString(v: unknown): string | null {
@@ -178,6 +188,32 @@ function hasParam(model: OpenRouterModel, param: string): boolean {
   return Array.isArray(model.supported_parameters) && model.supported_parameters.includes(param);
 }
 
+/** True when `architecture.input_modalities` lists "image". */
+function acceptsImages(model: OpenRouterModel): boolean {
+  const modalities = model.architecture?.input_modalities;
+  return Array.isArray(modalities) && modalities.includes("image");
+}
+
+/** Normalize a role ref to an OpenRouter model id (bare and `openrouter:x` → `x`). */
+function openRouterIdOf(ref: string): string | null {
+  const trimmed = ref.trim();
+  if (!trimmed) return null;
+  const idx = trimmed.indexOf(":");
+  if (idx === -1) return trimmed;
+  const provider = trimmed.slice(0, idx).trim();
+  if (provider !== "openrouter") return null;
+  const id = trimmed.slice(idx + 1).trim();
+  return id || null;
+}
+
+/** Fallback lookup for variant suffixes such as `:nitro` / `:free`. */
+function findWithoutVariantSuffix(items: CatalogRow[], id: string): CatalogRow | undefined {
+  const idx = id.lastIndexOf(":");
+  if (idx <= 0) return undefined;
+  const base = id.slice(0, idx);
+  return items.find((m) => m.id === base);
+}
+
 /** Trim one OpenRouter entry; `null` for malformed rows (no id). */
 export function toCatalogRow(raw: unknown): CatalogRow | null {
   if (!raw || typeof raw !== "object") return null;
@@ -193,6 +229,7 @@ export function toCatalogRow(raw: unknown): CatalogRow | null {
     pricingOut: perMillion(m.pricing?.completion),
     supportsTools: hasParam(m, "tools"),
     supportsReasoning: hasParam(m, "reasoning"),
+    supportsVision: acceptsImages(m),
   };
 }
 
@@ -262,6 +299,42 @@ export class ModelsCatalog {
   async hasOpenRouterCatalog(): Promise<boolean> {
     const { items } = await this.getOpenRouterCatalog();
     return items.length > 0;
+  }
+
+  /**
+   * Cache-only view of the OpenRouter catalog — never triggers a network request.
+   * `null` on a cold or expired cache so callers can degrade to "unknown".
+   */
+  peekOpenRouterCatalog(): CatalogResponse | null {
+    if (!this.cached) return null;
+    if (this.now() - this.fetchedAt >= this.ttlMs) return null;
+    return { items: this.cached, stale: false };
+  }
+
+  /**
+   * Whether a `provider:model` ref accepts image input.
+   *
+   * Cache-only by design: `undefined` means "unknown" (cold/expired catalog,
+   * non-OpenRouter provider, or an id missing from the list) and must NOT block
+   * a turn. The first image turn after a restart therefore never waits on the
+   * 15s catalog fetch; once the admin has loaded the catalog the gate is exact.
+   */
+  async supportsVision(ref: string): Promise<boolean | undefined> {
+    const id = openRouterIdOf(ref);
+    if (!id) {
+      log.debug({ ref, supported: undefined }, "vision capability: not an OpenRouter ref");
+      return undefined;
+    }
+    const cached = this.peekOpenRouterCatalog();
+    if (!cached) {
+      log.debug({ ref, supported: undefined }, "vision capability unknown (catalog not cached)");
+      return undefined;
+    }
+    const exact = cached.items.find((m) => m.id === id);
+    const row = exact ?? findWithoutVariantSuffix(cached.items, id);
+    const supported = row?.supportsVision;
+    log.debug({ ref, id, supported }, "vision capability checked");
+    return supported;
   }
 
   private async refresh(): Promise<CatalogResponse> {

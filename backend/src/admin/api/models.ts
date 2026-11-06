@@ -10,6 +10,7 @@ const log = logger.child({ mod: "admin-models" });
 /** Role slots, in UI order. `decision` is optional (empty = decision layer off). */
 const ROLE_KEYS = [
   "default",
+  "vision",
   "router",
   "error_correction",
   "speech",
@@ -19,6 +20,7 @@ const ROLE_KEYS = [
 
 const rolesSchema = z.object({
   default: z.string().optional(),
+  vision: z.string().optional(),
   router: z.string().optional(),
   error_correction: z.string().optional(),
   speech: z.string().optional(),
@@ -101,6 +103,7 @@ export function modelsRoutes(): Hono<AdminEnv> {
     // Normalise to the full ModelRoles shape (missing/empty → "").
     const roles: ModelRoles = {
       default: parsed.data.default?.trim() ?? "",
+      vision: parsed.data.vision?.trim() ?? "",
       router: parsed.data.router?.trim() ?? "",
       error_correction: parsed.data.error_correction?.trim() ?? "",
       speech: parsed.data.speech?.trim() ?? "",
@@ -147,6 +150,14 @@ export function modelsRoutes(): Hono<AdminEnv> {
         const known = await modelsCatalog.isKnownOpenRouterRef(ref);
         if (known === false) {
           warnings.push(`${key}: "${modelId}" отсутствует в каталоге OpenRouter (принято как есть)`);
+        }
+        // The vision role must actually accept images. A warning, not an error:
+        // catalog metadata can lag behind a provider's real capabilities.
+        if (key === "vision") {
+          const capable = await modelsCatalog.supportsVision(ref);
+          if (capable === false) {
+            warnings.push(`${key}: "${modelId}" не принимает изображения (image input не заявлен в каталоге)`);
+          }
         }
       }
     }

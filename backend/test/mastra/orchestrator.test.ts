@@ -262,4 +262,66 @@ describe("Orchestrator", () => {
     const lastStep = (model.doStreamCalls.at(-1)?.tools ?? []).map((t) => t.name);
     expect(lastStep).toContain("currency_rates");
   });
+
+  it("attaches current-turn images as image parts before the text part", async () => {
+    const model = mockModel([textChunks("ok")]);
+    const { orch } = orchestrator(model);
+    // Real PNG signature — Mastra validates inline image content before sending.
+    const image = { data: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]), mediaType: "image/png" };
+
+    await orch.run(makeCtx({ userMessage: "what is this?", userImages: [image] }));
+
+    const prompt = model.doStreamCalls.at(-1)!.prompt;
+    const last = prompt.at(-1)!;
+    expect(last.role).toBe("user");
+    expect(Array.isArray(last.content)).toBe(true);
+    const parts = last.content as Array<Record<string, unknown>>;
+    expect(parts).toHaveLength(2);
+    expect(parts[0]).toMatchObject({ type: "file", mediaType: "image/png" });
+    expect(String(parts[0]!.data)).toBe(Buffer.from(image.data).toString("base64"));
+    expect(parts[1]).toMatchObject({ type: "text", text: "what is this?" });
+  });
+
+  it("converts history images into image parts", async () => {
+    const model = mockModel([textChunks("ok")]);
+    const { orch } = orchestrator(model);
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0]);
+
+    await orch.run(
+      makeCtx({
+        history: [
+          {
+            role: "user",
+            text: "earlier",
+            images: [{ data: jpeg, mediaType: "image/jpeg" }],
+          },
+          { role: "assistant", text: "sure" },
+        ],
+        userMessage: "now",
+      }),
+    );
+
+    const prompt = model.doStreamCalls.at(-1)!.prompt;
+    expect(prompt).toHaveLength(4); // system + 3 history/current messages
+    const historyMessage = prompt[1]!;
+    expect(Array.isArray(historyMessage.content)).toBe(true);
+    const historyParts = historyMessage.content as Array<Record<string, unknown>>;
+    expect(historyParts[0]).toMatchObject({ type: "file", mediaType: "image/jpeg" });
+    expect(historyParts[1]).toMatchObject({ type: "text", text: "earlier" });
+    expect(JSON.stringify(prompt[2]!.content)).toContain("sure");
+    expect(JSON.stringify(prompt[3]!.content)).toContain("now");
+  });
+
+  it("keeps text-only turns as plain text content", async () => {
+    const model = mockModel([textChunks("ok")]);
+    const { orch } = orchestrator(model);
+
+    await orch.run(makeCtx({ userMessage: "plain text" }));
+
+    const last = model.doStreamCalls.at(-1)!.prompt.at(-1)!;
+    // Mastra normalizes model messages to content parts; no image/file part appears.
+    expect(JSON.stringify(last.content)).not.toContain('"type":"image"');
+    expect(JSON.stringify(last.content)).not.toContain('"type":"file"');
+    expect(JSON.stringify(last.content)).toContain("plain text");
+  });
 });

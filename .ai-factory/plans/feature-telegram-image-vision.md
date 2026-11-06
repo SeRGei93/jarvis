@@ -44,7 +44,7 @@ Source: `.ai-factory/RESEARCH.md` (Active Summary)
 
 ### Phase 1: Медиа-фундамент
 
-- [ ] **Task 1: `MEDIA_DIR` + `MediaService` (файловый store картинок)**
+- [x] **Task 1: `MEDIA_DIR` + `MediaService` (файловый store картинок)**
   - **Files:** `backend/src/config/env.ts`, `backend/src/domain/entities.ts`, `backend/src/services/media-service.ts` (new), `backend/test/services/media-service.test.ts` (new), `backend/.env.example`.
   - **Что сделать:**
     - В `env.ts` добавить `MEDIA_DIR: z.string().min(1).default("./data/media")` рядом с `SKILLS_DIR`/`PROMPTS_DIR`; в `backend/.env.example` — строку `MEDIA_DIR=./data/media` с комментарием.
@@ -63,7 +63,7 @@ Source: `.ai-factory/RESEARCH.md` (Active Summary)
   - **Tests:** round-trip save→load; dedupe одного sha256; dedupe обновляет `mtime` (старый файл после повторного `save` переживает `prune`); `saveMany` продолжает после ошибки одного файла; отказ `load` на `../../etc/passwd` и на невалидный id; prune удаляет старый файл и не трогает свежий; `hydrate` берёт только последние 2 user-сообщения, соблюдает кап по числу и байтам, не читает файл, превышающий остаток бюджета, сохраняет порядок; `save` не пишет при превышении `MAX_IMAGE_BYTES`.
   - **Acceptance:** `npm test -- media-service` зелёный; временная папка создаётся через `mkdtemp` и чистится в `afterEach`.
 
-- [ ] **Task 2: Telegram-загрузчик изображений + общий `fetchTelegramFile`**
+- [x] **Task 2: Telegram-загрузчик изображений + общий `fetchTelegramFile`**
   - **Files:** `backend/src/telegram/files.ts` (new), `backend/src/telegram/image.ts` (new), `backend/src/telegram/voice.ts`, `backend/test/telegram/image.test.ts` (new), `backend/test/telegram/voice.test.ts`.
   - **Что сделать:**
     - `files.ts`: вынести из `voice.ts` `FetchLike` и `fetchTelegramFile(api, token, fileId, { fetchFn, timeoutMs, maxBytes }) → { data: Uint8Array; filePath: string }`. Внутри: `api.getFile(fileId)` → проверка `file_path` → `https://api.telegram.org/file/bot<token>/<file_path>` → `AbortSignal.timeout` → проверка `res.ok`, `arrayBuffer().byteLength ≤ maxBytes`. URL с токеном не логировать. Ошибки — `TelegramReplyError` с русским текстом.
@@ -80,7 +80,7 @@ Source: `.ai-factory/RESEARCH.md` (Active Summary)
 
 ### Phase 2: Мультимодальный чат-пайплайн
 
-- [ ] **Task 3: Ссылки на изображения в истории**
+- [x] **Task 3: Ссылки на изображения в истории**
   - **Files:** `backend/src/mastra/memory/history.ts`, `backend/test/mastra/history.test.ts`.
   - **Что сделать:**
     - `Message.images` уже объявлен в Task 1; здесь только использовать его в persistence. `history.ts::buildDbMessage` принимает `images?: StoredImageRef[]` и пишет их в `content.metadata.images` (рядом с `skill`), `parts` остаются текстовыми; `content` — текст.
@@ -92,7 +92,7 @@ Source: `.ai-factory/RESEARCH.md` (Active Summary)
   - **Depends on:** Task 1 (тип `StoredImageRef` и поле `Message.images` уже объявлены в `entities.ts`).
   - **Acceptance:** `npm test -- mastra/history` зелёный.
 
-- [ ] **Task 4: Контракт `handleUserMessage(..., images)` и изменения `runChat`**
+- [x] **Task 4: Контракт `handleUserMessage(..., images)` и изменения `runChat`**
   - **Files:** `backend/src/app.ts`, `backend/src/mastra/workflows/chat.ts`, `backend/src/telegram/commands.ts`, `backend/test/mastra/chat.test.ts` (new/extend).
   - **Что сделать:**
     - `ChatService.handleUserMessage(userId, chatId, text, onText?, onTool?, images?: ImageInput[])`; `ChatInput.images?: ImageInput[]`; в `ChatDeps` добавить `media: MediaService`.
@@ -112,7 +112,7 @@ Source: `.ai-factory/RESEARCH.md` (Active Summary)
   - **Depends on:** Tasks 1, 3.
   - **Acceptance:** `npm test -- mastra/chat` зелёный; `makeDeps` использует temp-dir `MediaService`.
 
-- [ ] **Task 5: Мультимодальные `ModelMessage` в оркестраторе**
+- [x] **Task 5: Мультимодальные `ModelMessage` в оркестраторе**
   - **Files:** `backend/src/mastra/agents/orchestrator.ts`, `backend/src/mastra/workflows/chat.ts`, `backend/test/mastra/orchestrator.test.ts`.
   - **Что сделать:**
     - В `OrchestratorRunContext`: `history: AgentMessage[]` (из `services/media-service`), `userImages?: LoadedImage[]`.
@@ -125,7 +125,7 @@ Source: `.ai-factory/RESEARCH.md` (Active Summary)
 
 ### Phase 3: Модель и роль `vision`
 
-- [ ] **Task 6: `supportsVision` в каталоге OpenRouter**
+- [x] **Task 6: `supportsVision` в каталоге OpenRouter**
   - **Files:** `backend/src/services/models-catalog.ts`, `backend/test/services/models-catalog.test.ts`, `frontend/src/lib/types.ts`.
   - **Что сделать:**
     - В `OpenRouterModel` добавить `architecture?: { input_modalities?: unknown }`.
@@ -139,7 +139,7 @@ Source: `.ai-factory/RESEARCH.md` (Active Summary)
   - **Tests:** парсинг `architecture.input_modalities` (`["text","image"]` → true, `["text"]` → false, отсутствует → false); `supportsVision()` возвращает `undefined` на холодном кэше **без сетевого вызова**, `false` для известной текстовой модели, `true` для мультимодальной модели из фикстуры; bare-ref и `:nitro` нормализуются; обновить точные ожидания `toCatalogRow` (`toEqual` с полным объектом и `Object.keys(...).sort()`) — иначе тест сломается на новом поле.
   - **Acceptance:** `npm test -- services/models-catalog` зелёный.
 
-- [ ] **Task 7: Роль модели `vision` и гейт возможностей**
+- [x] **Task 7: Роль модели `vision` и гейт возможностей**
   - **Files:** `backend/src/config/settings-keys.ts`, `backend/src/db/seed-data.ts`, `backend/src/mastra/agents/primary-skill.ts`, `backend/src/mastra/workflows/chat.ts`, `backend/src/admin/api/models.ts`, `frontend/src/lib/types.ts`, `frontend/src/screens/ModelsScreen.tsx`, `backend/test/mastra/primary-skill.test.ts`, `backend/test/db/seed.test.ts`, `backend/test/admin/models.test.ts`.
   - **Что сделать:**
     - `ModelRoles` (backend + frontend): `vision?: string`.
@@ -158,7 +158,7 @@ Source: `.ai-factory/RESEARCH.md` (Active Summary)
 
 ### Phase 4: Telegram-транспорт и wiring
 
-- [ ] **Task 8: Обработчики `message:photo`, `message:document` и `message:animation`**
+- [x] **Task 8: Обработчики `message:photo`, `message:document` и `message:animation`**
   - **Files:** `backend/src/telegram/bot.ts`, `backend/test/telegram/bot.test.ts`, `backend/test/telegram/bot-integration.test.ts`.
   - **Что сделать:**
     - `processImage(rt, tgUser, chatId, source: { kind: "photo"; sizes } | { kind: "document"; fileId; mimeType?; fileName?; fileSize? }, caption, draftId)`:
@@ -174,7 +174,7 @@ Source: `.ai-factory/RESEARCH.md` (Active Summary)
   - **Depends on:** Tasks 2, 4.
   - **Acceptance:** `npm test -- telegram/bot` зелёный.
 
-- [ ] **Task 9: Composition root, boot-prune, деплой-обвязка**
+- [x] **Task 9: Composition root, boot-prune, деплой-обвязка**
   - **Files:** `backend/src/server.ts`, `docker-compose.yaml`, `.env.example`, `backend/.env.example`, `docs/deployment.md`.
   - **Что сделать:**
     - `server.ts`: после инициализации чата вызвать `void media.prune().catch(...)` (или через `ChatService.deps.media`) — best-effort, не блокирует старт; `info` с количеством удалённых файлов.
@@ -188,7 +188,7 @@ Source: `.ai-factory/RESEARCH.md` (Active Summary)
 
 ### Phase 5: Документация
 
-- [ ] **Task 10: Документация (обязательный чекпойнт)**
+- [x] **Task 10: Документация (обязательный чекпойнт)**
   - **Files:** `docs/telegram.md`, `docs/chat-pipeline.md`, `docs/configuration.md`, `docs/architecture.md`, `docs/admin.md`, `AGENTS.md`, `README.md`, `docs/deployment.md` (если не закрыто в Task 9).
   - **Что сделать:**
     - `docs/telegram.md`: в «Message flow» — Photo, Image document и GIF/animation; лимиты (10 MB, mime-список, альбомы = отдельные сообщения); обновить строку «Other» (бот теперь принимает и фото); в «File map» — `image.ts`, `files.ts`, `services/media-service.ts`.

@@ -8,7 +8,7 @@ A single Node service (`backend/`) runs the Telegram bot + cron + admin API toge
 jarvis/
   backend/
     src/
-      config/    env (zod, secrets, + SKILLS_DIR/PROMPTS_DIR), settings (DB cache + hot-reload), settings-keys
+      config/    env (zod, secrets, + SKILLS_DIR/PROMPTS_DIR/MEDIA_DIR), settings (DB cache + hot-reload), settings-keys
       content/   file-backed skill/prompt store: paths, store (populate-if-empty + atomicWrite + parseFrontmatter), skill-repository, prompt-repository
       db/        schema (drizzle, 12 tables — skills/prompts dropped), migrations, client, migrate, seed (code seed), seed-data
       domain/    entities (zod + invariant constants), mcp-config (HTTP-only MCP schema + ${ENV} expansion), memory-classifier, sensitivity-filter
@@ -22,10 +22,12 @@ jarvis/
                  workflows/ (chat),
                  index.ts (Mastra instance: storage)
       pkg/       logger (pino + redact), promptguard, bootstrap-env, timeout-fetch (shared HTTP timeout wrapper)
-      services/  skill-service (file-backed via content repos), models-catalog (live OpenRouter catalog + decision list), conversation-context, rate-limit, usage
+      services/  skill-service (file-backed via content repos), models-catalog (live OpenRouter catalog + decision list + cache-only supportsVision), conversation-context, rate-limit, usage,
+                 media-service (content-addressed inbound image store: save/load/hydrate/prune)
       app.ts     composition root — createChatService() wires handleUserMessage()
       telegram/  bot (grammY wiring), stream (throttled editMessageText), format (md→MarkdownV2 + split),
-                 voice (→speech), messenger (notify), identity (user/channel), commands, errors
+                 voice (→speech), files (shared getFile+download), image (photo size/MIME/download),
+                 messenger (notify), identity (user/channel), commands, errors
       scheduler/ schedule (pure due/notify rules), executor (poll due cron_tasks → chat pipeline → notify),
                  scheduler (node-cron driver: 60s/5s polls), wiring (ChatService+Notifier → Scheduler)
       admin/     app (Hono: /health + webhook + /admin/api + static Mini App), auth (initData HMAC + ADMIN_USER_IDS),
@@ -43,7 +45,8 @@ jarvis/
 - `domain/*` imports nothing from config/db/mastra — pure zod types + business rules.
 - `config/` + `services/` depend on `domain` + `db`. Exception: *coordination* services may reuse mastra memory/id helpers (`conversation-context` → `history` thread/resource ids) and small router contract types (`skill-service` → `RoutableSkill`); type-only or thin helper imports, no import cycle.
 - `content/` is the file-backed skill/prompt store layer (depends on `domain` + `config` env + `pkg`). `SkillService` (services) wraps `SkillRepository`/`PromptRepository`; both take a dir, so tests point them at temp dirs (no DB).
-- `mastra/*` are adapters over AI SDK / Mastra Memory; depend on domain + config (+ services for the `chat` workflow orchestrator). `skill-ref` reads references from `SKILLS_DIR` (the content store).
+- `mastra/*` are adapters over AI SDK / Mastra Memory; depend on domain + config (+ services for the `chat` workflow orchestrator). `skill-ref` reads references from `SKILLS_DIR` (the content store). `workflows/chat` also depends on `services/media-service` (image refs in history + bounded hydrate).
+- `telegram/*` depends on `services` (media store, access requests) and the `ChatHandler` contract; it never imports `mastra/*` directly — the composition root passes the chat service in.
 - `app.ts` is the composition root (`createChatService` → `handleUserMessage`); `server.ts` initializes it at boot.
 - External calls are injectable (`ModelFactory`, `SettingsService`, `fetchFn`, `routeModelFn`, `extractFn`, `DedupChecker`, `Summarizer`, `LoopGuard` clock) → unit tests run with zero network.
 
@@ -59,6 +62,7 @@ jarvis/
 - **Admin Mini App, one origin (M8)** — the Hono admin API (`/admin/api`) and the built React Mini App share the single backend HTTP server (`@hono/node-server`); auth = Telegram `initData` HMAC-SHA256 + `ADMIN_USER_IDS` (deny-by-default, distinct from the in-DB chat allowlist). Admin writes call `SettingsService`/`SkillService` `invalidate()` for hot-reload.
 - **Bot access gate (M17)** — `telegram_access_mode` (`open`|`approval`) controls who may chat. `open` keeps the legacy allowlist (empty = everyone); `approval` admits only `telegram_allowed_users` and turns an unknown user's message into a pending `access_requests` row (one-time reply) instead of dropping it. The admin reviews them in the Mini App (Users → «Заявки»); approving adds the id to the allowlist (via `AccessRequestService`) and DMs the user. `ensureAccessControlDefaults()` opts in once on startup, merging existing Telegram users into the allowlist so nobody is locked out. Routers are mounted from `admin/api/index.ts`; handlers read deps + `adminUserId` from Hono context.
 - **MCP is admin-managed and HTTP-only** — the `mcp_servers` setting stores a Claude-Desktop-style JSON map (`url` + `headers` + `enabled`/`timeoutMs`/`allowedHosts`); `${VAR}` is expanded from `process.env` at refresh time, so secrets stay in `.env`. `McpManager` (`mastra/mcp/`) builds one SDK `MCPClient` per config generation (generation-scoped id; the old client is retired after a short grace), discovers with a single `listToolsetsWithErrors`, and exposes `<server>_<tool>` tools that the orchestrator keeps always active (built-ins win collisions; MCP `load_skill` dropped). stdio/`command`/`args`/`env`, OAuth, resources and prompts are rejected/out of scope (no-`exec` stance). Admin: `GET/PUT /admin/api/mcp`, `POST /test`, `POST /refresh`; shutdown awaits `ChatService.close()` → `McpManager.close()` before libSQL closes.
+- **Inbound images (vision)** — `handleUserMessage(..., images)` carries the current turn's bytes; `MediaService` stores them content-addressed on disk (`MEDIA_DIR/<sha256[0..2]>/<sha256>.<ext>`, deduped, atomic write) and history keeps only `{id, mediaType, width?, height?}` refs in `content.metadata.images` — never base64. `hydrate` re-attaches at most the last 2 user messages / 4 images / 12 MB; the orchestrator builds AI SDK image parts (images first, text last). Turns carrying images — current **or** hydrated from history — use `model_roles.vision` when set; `ModelsCatalog.supportsVision` is cache-only (`false` → friendly refusal for new images / drop history images on a text follow-up, `undefined` → proceed). Limits: 10 MB/image, 4/turn, MIME `jpeg|png|webp` (GIF excluded); the retention prune (startup + daily) drops store-owned files older than 7 days. Albums are not aggregated; no OCR prompt-injection filter (trusted personal bot).
 
 ## Parity Constants (verified against Go)
 permanent cap `50` · onboarding `@4` msgs · max_history `50` (was 15, M14) · watchdog `30s` · llm_request `300s` · orchestrator maxSteps `50` · maxRetries `3` · admin skill-test loop cap `2`@`5min` · sub-agent model `skill.model || roles.default` · cron poll `60s`/`5s` · task watchdog `llm_request+30s`.

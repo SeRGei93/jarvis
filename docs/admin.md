@@ -61,7 +61,7 @@ All routers live in `backend/src/admin/api/` and are mounted under `/admin/api` 
 | **usage** | `GET /usage`, `GET /usage/user/:id`, `DELETE /usage/ratelimit/:userId` |
 | **mcp** | `GET/PUT /mcp`, `POST /mcp/test`, `POST /mcp/refresh` |
 
-**Models have no registry.** There is no `models` table and no CRUD: `GET /models/catalog` proxies OpenRouter's public catalog (trimmed, cached 6 h, `stale` flag when the last refresh failed) and the curated System One list; the Mini App searches by model name on the client. `PUT /models/roles` accepts free-form `provider:model` refs — `openrouter:` refs are checked against the catalog (unknown → warning, not a 400; unreachable catalog → accepted), `decision` against the curated list, other providers by shape only.
+**Models have no registry.** There is no `models` table and no CRUD: `GET /models/catalog` proxies OpenRouter's public catalog (trimmed, cached 6 h, `stale` flag when the last refresh failed) and the curated System One list; the Mini App searches by model name on the client. `PUT /models/roles` accepts free-form `provider:model` refs — `openrouter:` refs are checked against the catalog (unknown → warning, not a 400; unreachable catalog → accepted), `decision` against the curated list, other providers by shape only. The `vision` role additionally warns when the model's `architecture.input_modalities` has no `image` (still accepted — catalog metadata can lag).
 
 **Where writes go.** `settings`/`plans`/`users`/`usage` write libSQL rows and call `SettingsService.invalidate()`. `skills`/`prompts` write **files** in the content store (`SKILLS_DIR`/`PROMPTS_DIR`) — atomically (`*.tmp` + rename) via the repositories, which invalidate their own cache; the name/key is validated against path traversal. The HTTP contract is name/key-addressed (`PUT /skills/:name`, `PUT /prompts/:key`), so the front end is unchanged. The live chat re-reads the new value on its next turn (hot-reload) — see [Configuration](configuration.md).
 
@@ -69,7 +69,7 @@ All routers live in `backend/src/admin/api/` and are mounted under `/admin/api` 
 
 ## Frontend
 
-`frontend/` is a self-contained Vite + React 18 + [Mantine](https://mantine.dev) package using `@twa-dev/sdk` (HashRouter). `src/lib/api.ts` attaches `Authorization: tma <WebApp.initData>` to every call; `src/nav.tsx` is the single source of truth for the section list. Screens: Skills (with test-run), Models (6 role slots + catalog browser with client-side name search), MCP, Settings, Prompts, Plans, Users (+ allowlist, access mode, access requests), Usage, Tasks.
+`frontend/` is a self-contained Vite + React 18 + [Mantine](https://mantine.dev) package using `@twa-dev/sdk` (HashRouter). `src/lib/api.ts` attaches `Authorization: tma <WebApp.initData>` to every call; `src/nav.tsx` is the single source of truth for the section list. Screens: Skills (with test-run), Models (7 role slots — incl. «Изображения (vision)» — + catalog browser with client-side name search and a Vision column), MCP, Settings, Prompts, Plans, Users (+ allowlist, access mode, access requests), Usage, Tasks.
 
 ## MCP servers
 

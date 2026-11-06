@@ -22,7 +22,13 @@ function blockedFetch(): never {
 }
 
 function installStub(): void {
-  globalThis.fetch = (async () => blockedFetch()) as typeof globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    // `data:` URLs are local content, not a network request (Mastra re-reads
+    // inline image attachments through `fetch`). Let the runtime decode them.
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (url.startsWith("data:")) return realFetch(input as RequestInfo, init);
+    return blockedFetch();
+  }) as typeof globalThis.fetch;
 }
 
 installStub();

@@ -5,7 +5,8 @@ import type { MastraModelConfig } from "@mastra/core/llm";
 import type { ModelMessage } from "ai";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "../../db/schema.js";
-import type { Message, User, BotIdentity } from "../../domain/entities.js";
+import type { User, BotIdentity } from "../../domain/entities.js";
+import type { AgentMessage, LoadedImage } from "../../services/media-service.js";
 import { ModelFactory } from "../models.js";
 import { SettingsService, parseGoDuration } from "../../config/settings.js";
 import { SkillService } from "../../services/skill-service.js";
@@ -50,6 +51,23 @@ const SYSTEM_KEY = "orchestrator.system";
 const MODEL_KEY = "orchestrator.model";
 const TOOLS_KEY = "orchestrator.tools";
 
+/** Build AI SDK content parts: image parts first, text last (provider-stable). */
+function imageParts(images: LoadedImage[], text: string) {
+  return [
+    ...images.map((img) => ({ type: "image" as const, image: img.data, mediaType: img.mediaType })),
+    { type: "text" as const, text },
+  ];
+}
+
+/** Map one history entry to a model message, attaching images when present. */
+function toModelMessage(message: AgentMessage): ModelMessage {
+  // Images are user-only by construction (MediaService.hydrate filters roles).
+  if (message.role !== "user" || !message.images?.length) {
+    return { role: message.role, content: message.text } as ModelMessage;
+  }
+  return { role: "user", content: imageParts(message.images, message.text) };
+}
+
 export interface OrchestratorDeps {
   skills: SkillService;
   settings: SettingsService;
@@ -69,10 +87,12 @@ export interface OrchestratorRunContext {
   memories: StoredMemory[];
   prompts: { soul: string; format: string; integrity: string };
   /** Dialogue history BEFORE this turn (the current message is appended internally). */
-  history: Message[];
+  history: AgentMessage[];
   /** Rolling summary of evicted history (null when none). */
   summary?: string | null;
   userMessage: string;
+  /** Image bytes for the current user message (already persisted as refs). */
+  userImages?: LoadedImage[];
   // ── turn config from the pre-pass (A3) ──
   /** Primary skill name to pre-load (its tools start active), or "" for none. */
   primarySkill: string;
@@ -201,14 +221,21 @@ export class Orchestrator {
       [LOADED_SKILLS_KEY, loadedSkills],
     ]);
 
-    const messages = [...ctx.history, { role: "user", content: ctx.userMessage }].map((m) => ({
-      role: m.role,
-      content: m.content,
-    })) as ModelMessage[];
+    const currentUser: ModelMessage = ctx.userImages?.length
+      ? { role: "user", content: imageParts(ctx.userImages, ctx.userMessage) }
+      : { role: "user", content: ctx.userMessage };
+    const messages: ModelMessage[] = [...ctx.history.map(toModelMessage), currentUser];
     const providerOptions = reasoningProviderOptions(ctx.model, ctx.reasoning);
 
     log.debug(
-      { model: ctx.model, primary: ctx.primarySkill, temperature: ctx.temperature, tools: registered.size },
+      {
+        model: ctx.model,
+        primary: ctx.primarySkill,
+        temperature: ctx.temperature,
+        tools: registered.size,
+        imageParts: (ctx.userImages?.length ?? 0) + ctx.history.reduce((n, m) => n + (m.images?.length ?? 0), 0),
+        messages: messages.length,
+      },
       "orchestrator start",
     );
 

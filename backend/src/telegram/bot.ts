@@ -9,6 +9,15 @@ import type { AccessRequestService } from "../services/access-request-service.js
 import { createStreamer, type TelegramSender, type Streamer } from "./stream.js";
 import type { ToolEvents } from "../mastra/llm.js";
 import { transcribeVoice, type VoiceApi, type VoiceTranscriber, type FetchLike } from "./voice.js";
+import {
+  downloadTelegramImage,
+  inferImageMime,
+  pickLargestPhoto,
+  IMAGE_TOO_LARGE_REPLY,
+  UNSUPPORTED_IMAGE_REPLY,
+  type PhotoSize,
+} from "./image.js";
+import { MAX_IMAGE_BYTES, type ImageInput } from "../services/media-service.js";
 import { Messenger } from "./messenger.js";
 import { TelegramReplyError } from "./errors.js";
 import {
@@ -32,9 +41,9 @@ type Db = LibSQLDatabase<typeof schema>;
 
 /** Shown when an unhandled error reaches bot.catch. */
 export const GENERIC_ERROR = "Произошла ошибка при обработке сообщения. Попробуйте позже.";
-/** Shown for content types the bot can't process (photos, stickers, …). */
+/** Shown for content types the bot can't process (stickers, video, …). */
 export const UNSUPPORTED_REPLY =
-  "Я пока не умею обрабатывать этот тип контента. Отправьте текстовое или голосовое сообщение.";
+  "Я пока не умею обрабатывать этот тип контента. Отправьте текстовое сообщение, голосовое или фото.";
 /** Sent once to an unknown user in `approval` mode when their access request is created. */
 export const ACCESS_REQUESTED_REPLY =
   "Заявка на доступ отправлена администратору. Дождитесь одобрения 🙌";
@@ -166,6 +175,7 @@ async function streamReply(
   text: string,
   draftId: number,
   tgUserId: number,
+  images?: ImageInput[],
 ): Promise<ChatResult> {
   const stopTyping = rt.messenger.startTypingLoop(chatId);
   const streamer = createStreamer(rt.api, chatId, draftId, { onFirstChunk: stopTyping });
@@ -173,7 +183,14 @@ async function streamReply(
   // NOT the internal users.id that resolveTelegramUser returns.
   const isAdmin = rt.adminUserIds.includes(tgUserId);
   try {
-    const result = await rt.chat.handleUserMessage(userId, chatId, text, streamer.onText, toolEvents(streamer, isAdmin));
+    const result = await rt.chat.handleUserMessage(
+      userId,
+      chatId,
+      text,
+      streamer.onText,
+      toolEvents(streamer, isAdmin),
+      images,
+    );
     await streamer.finalize(result.text);
     return result;
   } finally {
@@ -261,6 +278,81 @@ export async function processVoice(
   }
   stopTyping(); // streamReply starts its own typing loop
   return streamReply(rt, userId, chatId, text, draftId, tgUser.id);
+}
+
+/** Where an inbound image came from: a photo message or an image document. */
+export type ImageSource =
+  | { kind: "photo"; sizes: PhotoSize[] }
+  | { kind: "document"; fileId: string; mimeType?: string; fileName?: string; fileSize?: number };
+
+/** Send a refusal and return a synthetic rejected result (no LLM call). */
+async function refuseImage(rt: BotRuntime, chatId: number, reply: string): Promise<ChatResult> {
+  await rt.messenger.sendMessage(chatId, reply);
+  return { text: reply, skills: [], rejected: true };
+}
+
+/**
+ * Handle an inbound image: validate (MIME/size) → download (typing shown while it
+ * runs) → feed the bytes into the chat pipeline with the caption as text.
+ *
+ * Documents are validated BEFORE download: HEIC/AVIF and oversized files are
+ * refused without spending a Telegram download.
+ */
+export async function processImage(
+  rt: BotRuntime,
+  tgUser: TelegramUserInfo,
+  chatId: number,
+  source: ImageSource,
+  caption: string,
+  draftId: number,
+): Promise<ChatResult> {
+  const { userId } = await resolveTelegramUser(rt.db, tgUser);
+
+  let fileId: string;
+  let mimeHint: string | undefined;
+  if (source.kind === "photo") {
+    const picked = pickLargestPhoto(source.sizes);
+    if (!picked) {
+      log.warn({ tgUser: tgUser.id }, "photo message has no sizes; refusing");
+      return refuseImage(rt, chatId, UNSUPPORTED_IMAGE_REPLY);
+    }
+    fileId = picked.file_id;
+  } else {
+    fileId = source.fileId;
+    mimeHint = inferImageMime(source.fileName, source.mimeType);
+    if (!mimeHint) {
+      const isImage = (source.mimeType ?? "").toLowerCase().startsWith("image/");
+      const reply = isImage ? UNSUPPORTED_IMAGE_REPLY : UNSUPPORTED_REPLY;
+      log.warn({ tgUser: tgUser.id, mime: source.mimeType ?? null }, "unsupported document type; refusing before download");
+      return refuseImage(rt, chatId, reply);
+    }
+    if (source.fileSize !== undefined && source.fileSize > MAX_IMAGE_BYTES) {
+      log.warn({ tgUser: tgUser.id, bytes: source.fileSize }, "image document too large; refusing before download");
+      return refuseImage(rt, chatId, IMAGE_TOO_LARGE_REPLY);
+    }
+  }
+
+  // Download can take seconds — show typing meanwhile (same pattern as voice).
+  const stopTyping = rt.messenger.startTypingLoop(chatId);
+  let image: { data: Uint8Array; mediaType: string };
+  try {
+    image = await downloadTelegramImage(rt.api, rt.token, fileId, {
+      fetchFn: rt.fetchFn,
+      ...(mimeHint ? { mimeHint } : {}),
+      maxBytes: MAX_IMAGE_BYTES,
+    });
+  } catch (err) {
+    stopTyping();
+    throw err; // TelegramReplyError → bot.catch surfaces the Russian message
+  }
+  stopTyping(); // streamReply starts its own typing loop
+
+  log.info(
+    { tgUser: tgUser.id, kind: source.kind, bytes: image.data.byteLength, mediaType: image.mediaType },
+    "incoming image accepted",
+  );
+  log.debug({ tgUser: tgUser.id, captionLength: caption.length }, "image caption");
+  return streamReply(rt, userId, chatId, caption.trim(), draftId, tgUser.id, [image]);
 }
 
 /** Register the slash-command menu so Telegram shows command hints. */
@@ -404,6 +496,43 @@ export function createBot(opts: BotOptions): Bot {
     );
     await sendConfirmations(bot.api, ctx.chat.id, result.confirmations);
   });
+  bot.on("message:photo", async (ctx) => {
+    const from = senderInfo(ctx.from);
+    if (!from) return;
+    const result = await processImage(
+      rt,
+      from,
+      ctx.chat.id,
+      { kind: "photo", sizes: ctx.message.photo },
+      ctx.message.caption ?? "",
+      ctx.update.update_id,
+    );
+    await sendConfirmations(bot.api, ctx.chat.id, result.confirmations);
+  });
+
+  bot.on("message:document", async (ctx) => {
+    const from = senderInfo(ctx.from);
+    if (!from) return;
+    const doc = ctx.message.document;
+    // `processImage` owns the MIME/size policy and validates BEFORE the download:
+    // supported image → image flow; any other document → a single refusal reply.
+    const result = await processImage(
+      rt,
+      from,
+      ctx.chat.id,
+      {
+        kind: "document",
+        fileId: doc.file_id,
+        mimeType: doc.mime_type,
+        fileName: doc.file_name,
+        fileSize: doc.file_size,
+      },
+      ctx.message.caption ?? "",
+      ctx.update.update_id,
+    );
+    await sendConfirmations(bot.api, ctx.chat.id, result.confirmations);
+  });
+
   bot.on("message", (ctx) => rt.messenger.sendMessage(ctx.chat.id, UNSUPPORTED_REPLY));
 
   bot.catch(async (err) => {

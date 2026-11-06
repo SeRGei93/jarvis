@@ -31,8 +31,10 @@ export interface PrimaryInput {
 export interface TurnConfig {
   /** Primary skill name (preloaded into the orchestrator), or "" when none. */
   skill: string;
-  /** Resolved turn model: session override → primary skill model → roles.default. */
+  /** Resolved turn model: session override → primary skill model → roles.default (or `roles.vision`). */
   model: string;
+  /** Normal-chain model before the vision override (session → skill → default). */
+  baseModel: string;
   temperature: number;
   reasoning: boolean | null;
 }
@@ -92,17 +94,31 @@ export function normalizePrimary(chosen: string, known: ReadonlySet<string>): st
 
 /**
  * Resolve the turn's execution config from the primary skill, honoring a
- * per-session model override (decision #3). session.model wins, then the skill's
- * own model, then roles.default; temperature/reasoning come from the skill.
+ * per-session model override (decision #3) and the `vision` role.
+ *
+ * Image turns: `roles.vision` wins over the session override; when the role is
+ * empty the normal chain applies (session.model → skill model → default).
+ * Text turns ignore `visionModel` entirely.
  */
 export function resolveTurnConfig(
   skill: Skill | null,
-  opts: { sessionModel?: string | null; defaultModel: string; defaultTemperature: number },
+  opts: {
+    sessionModel?: string | null;
+    defaultModel: string;
+    defaultTemperature: number;
+    /** `model_roles.vision` — used only when the turn carries images. */
+    visionModel?: string | null;
+    /** True when the current user message has images attached. */
+    hasImages?: boolean;
+  },
 ): TurnConfig {
   const session = opts.sessionModel?.trim();
+  const vision = opts.visionModel?.trim();
+  const base = session || skill?.model || opts.defaultModel;
   return {
     skill: skill?.name ?? "",
-    model: session || skill?.model || opts.defaultModel,
+    model: opts.hasImages && vision ? vision : base,
+    baseModel: base,
     temperature: skill?.temperature ?? opts.defaultTemperature,
     reasoning: skill?.reasoning ?? null,
   };

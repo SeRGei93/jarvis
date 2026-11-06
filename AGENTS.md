@@ -11,15 +11,15 @@ Node 22 · TS5 ESM · `@mastra/core` 1.79 · `@mastra/mcp` 2.8 (admin-managed HT
 ## Structure (`backend/src/`)
 | Dir | Contents |
 |-----|----------|
-| `config/` | `env` (zod secrets, + `SKILLS_DIR`/`PROMPTS_DIR`), `settings` (DB cache + hot-reload), `settings-keys` |
+| `config/` | `env` (zod secrets, + `SKILLS_DIR`/`PROMPTS_DIR`/`MEDIA_DIR`), `settings` (DB cache + hot-reload), `settings-keys` |
 | `content/` | file-backed skill/prompt store: `paths`, `store` (populate + atomic write + frontmatter), `skill-repository`, `prompt-repository` |
-| `services/models-catalog.ts` | live OpenRouter catalog (6 h cache) + curated decision-model list — feeds the admin model picker and role validation |
+| `services/models-catalog.ts` | live OpenRouter catalog (6 h cache) + curated decision-model list — feeds the admin model picker, role validation and the cache-only `supportsVision` gate |
 | `db/` | `schema` (13 tables — incl. `pending_confirmations`/`access_requests`, no `skills`/`prompts`/`models`), `migrations/`, `client`, `migrate`, `seed` (code seed), `seed-data` |
 | `domain/` | `entities` (+ constants), `mcp-config` (HTTP-only MCP schema + `${ENV}`), `memory-classifier`, `sensitivity-filter` |
 | `mastra/` | `models`, `llm`, `strip-leaked-tools`, `speech`, `agents/{primary-skill,orchestrator,prompt-builder,skill-agent,loop-guard}`, `decisions/{service,types}` (Classifier→OpenRouter System One), `confirmations/confirmation-service`, `mcp/{manager}` (admin-managed HTTP MCP), `memory/{memory-service,dedup,profile-extractor,history,…}`, `tools/{load-skill,memory-tools,registry,…}`, `workflows/chat`, `index` |
-| `services/` | `skill-service` (file-backed via content repos), `conversation-context`, `rate-limit`, `usage`, `web/` (native web tools; Serper search/news, local Readability + replaceable page-content providers, Firecrawl fallback) |
+| `services/` | `skill-service` (file-backed via content repos), `conversation-context`, `rate-limit`, `usage`, `media-service` (content-addressed inbound image store: save/load/hydrate/prune), `web/` (native web tools; Serper search/news, local Readability + replaceable page-content providers, Firecrawl fallback) |
 | `scripts/` | dev harnesses run via `tsx`: `news-compare` (`search_news` vs `serper_news`, writes `.ai-factory/references/news-serper-comparison.md`) |
-| `telegram/` | `bot`, `stream`, `format`, `voice`, `messenger`, `identity`, `commands`, `errors` (grammY transport, M6) |
+| `telegram/` | `bot`, `stream`, `format`, `voice`, `files` (shared `getFile`+download), `image` (photo size/MIME/download), `messenger`, `identity`, `commands`, `errors` (grammY transport, M6) |
 | `scheduler/` | `schedule`, `executor`, `scheduler` (node-cron), `wiring` — due cron tasks → chat pipeline → notify (M7) |
 | `admin/` | `app` (Hono), `auth` (Telegram `initData` HMAC + `ADMIN_USER_IDS`), `api/{settings,models,skills,prompts,users,plans,usage,tasks,mcp}` (M8) |
 | `pkg/` | `logger`, `promptguard`, `bootstrap-env`, `timeout-fetch` |
@@ -57,10 +57,10 @@ Vite + React 18 + Mantine 7 + `@twa-dev/sdk`, HashRouter. `lib/api` (typed clien
 | README | `README.md` | Project landing page |
 | Getting Started | `docs/getting-started.md` | Install, migrate, seed, run, test |
 | Architecture | `docs/architecture.md` | Layering, structure, dependency rules |
-| Chat Pipeline | `docs/chat-pipeline.md` | pre-pass → orchestrator agent, load_skill, guardrails, tool approval, evals |
+| Chat Pipeline | `docs/chat-pipeline.md` | pre-pass → orchestrator agent, load_skill, images (vision), guardrails, tool approval, evals |
 | Tools | `docs/tools.md` | built-in tool buckets (web/currency/memory/tasks), rate limit & usage |
 | Web Search | `docs/web-search.md` | native web bucket: Serper search/news, fetch budget, SSRF, caching, credit policy |
-| Telegram Bot | `docs/telegram.md` | grammY transport, streaming, voice, commands, allowlist |
+| Telegram Bot | `docs/telegram.md` | grammY transport, streaming, voice, photos/images (vision), commands, allowlist |
 | Cron Scheduler | `docs/scheduler.md` | node-cron polls, due tasks → chat pipeline → notify |
 | MCP | `docs/mcp.md` | admin-managed HTTP MCP servers: JSON config, `${ENV}`, statuses, security |
 | Configuration | `docs/configuration.md` | `.env` secrets and DB-backed settings |

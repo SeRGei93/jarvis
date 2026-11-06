@@ -9,6 +9,7 @@ import type { MemoryService } from "../mastra/memory/memory-service.js";
 import { rotateThread } from "../mastra/memory/history.js";
 import type { ChatResult } from "../mastra/workflows/chat.js";
 import type { StreamCallback, ToolEvents } from "../mastra/llm.js";
+import type { ImageInput } from "../services/media-service.js";
 import { logger } from "../pkg/logger.js";
 
 const log = logger.child({ mod: "tg-commands" });
@@ -26,6 +27,7 @@ export interface ChatHandler {
     text: string,
     onText?: StreamCallback,
     onTool?: ToolEvents,
+    images?: ImageInput[],
   ): Promise<ChatResult>;
 }
 

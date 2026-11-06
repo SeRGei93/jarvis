@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { eq } from "drizzle-orm";
 import { LibSQLStore } from "@mastra/libsql";
+import type { MastraDBMessage } from "@mastra/core/agent/message-list";
 import { createTestDb, type TestDb } from "../helpers/libsql.js";
 import {
   resolveThreadId,
@@ -62,6 +63,85 @@ describe("history message I/O", () => {
     expect(msgs.map((m) => m.content)).toEqual(["hello", "hi there"]);
     expect(msgs[0]!.skill).toBeNull();
     expect(msgs[1]!.skill).toBe("chat");
+    expect(msgs[0]!.images).toBeUndefined();
+  });
+
+  it("persists image refs on a user message and reads them back", async () => {
+    t = await createTestDb();
+    const store = new LibSQLStore({ id: "test-history-images", url: t.url });
+    const memory = createConversationMemory(store, 15);
+    const threadId = threadIdForSession(3);
+    const resourceId = resourceIdForUser(3);
+
+    const refs = [
+      { id: `${"a".repeat(64)}.jpg`, mediaType: "image/jpeg", width: 640, height: 480 },
+      { id: `${"b".repeat(64)}.png`, mediaType: "image/png" },
+    ];
+
+    await ensureThread(memory, threadId, resourceId);
+    await saveUserMessage(memory, threadId, resourceId, "[изображение]", refs);
+    await saveAssistant(memory, threadId, resourceId, "вижу кота", "chat");
+
+    const msgs = await getRecentMessages(memory, threadId, resourceId, 15);
+    expect(msgs[0]!.images).toEqual(refs);
+    expect(msgs[1]!.images).toBeUndefined();
+    expect(msgs[1]!.skill).toBe("chat");
+  });
+
+  it("ignores malformed image metadata without breaking history", async () => {
+    t = await createTestDb();
+    const store = new LibSQLStore({ id: "test-history-bad-images", url: t.url });
+    const memory = createConversationMemory(store, 15);
+    const threadId = threadIdForSession(4);
+    const resourceId = resourceIdForUser(4);
+    await ensureThread(memory, threadId, resourceId);
+
+    const malformed = {
+      id: "broken-1",
+      role: "user",
+      createdAt: new Date(),
+      threadId,
+      resourceId,
+      content: {
+        format: 2,
+        parts: [{ type: "text", text: "hi" }],
+        content: "hi",
+        metadata: { images: "not-an-array" },
+      },
+    } as unknown as MastraDBMessage;
+    await memory.saveMessages({ messages: [malformed] });
+
+    const msgs = await getRecentMessages(memory, threadId, resourceId, 15);
+    expect(msgs[0]!.content).toBe("hi");
+    expect(msgs[0]!.images).toBeUndefined();
+  });
+
+  it("drops garbage entries but keeps valid image refs", async () => {
+    t = await createTestDb();
+    const store = new LibSQLStore({ id: "test-history-mixed-images", url: t.url });
+    const memory = createConversationMemory(store, 15);
+    const threadId = threadIdForSession(5);
+    const resourceId = resourceIdForUser(5);
+    await ensureThread(memory, threadId, resourceId);
+
+    const valid = { id: `${"c".repeat(64)}.webp`, mediaType: "image/webp" };
+    const mixed = {
+      id: "mixed-1",
+      role: "user",
+      createdAt: new Date(),
+      threadId,
+      resourceId,
+      content: {
+        format: 2,
+        parts: [{ type: "text", text: "mixed" }],
+        content: "mixed",
+        metadata: { images: [{ id: 42 }, null, valid] },
+      },
+    } as unknown as MastraDBMessage;
+    await memory.saveMessages({ messages: [mixed] });
+
+    const msgs = await getRecentMessages(memory, threadId, resourceId, 15);
+    expect(msgs[0]!.images).toEqual([valid]);
   });
 
   it("ensureThread is idempotent", async () => {

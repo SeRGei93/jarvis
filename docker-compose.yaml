@@ -33,6 +33,9 @@ services:
       # the image's bundled defaults on first run; admin edits persist here.
       SKILLS_DIR: /data/skills
       PROMPTS_DIR: /data/prompts
+      # Inbound image store (Telegram photos/image documents), content-addressed
+      # with a 7-day retention pruned on startup and every 24 h.
+      MEDIA_DIR: /data/media
     volumes:
       - ./data/db:/data
     expose:
@@ -50,4 +53,5 @@ networks:
 # All persistent state lives in the host-visible ./data directory:
 #   ./data/db           libSQL database file (avocado.db)
 #   ./data/db/web-cache web fetch/search cache (app mounts ./data/db → /data, WEB_CACHE_DIR=/data/web-cache)
+#   ./data/db/media     inbound images (app mounts ./data/db → /data, MEDIA_DIR=/data/media, 7-day retention)
 # TLS certificates are owned by the external Caddy — not stored under ./data.

@@ -25,8 +25,15 @@ createChatService → SpeechService(new ModelFactory(), settings)
 |--------|----------|
 | **Text** | `resolveTelegramUser` (get-or-create `users` + `user_channels`) → start typing → stream `handleUserMessage(userId, chatId, text, onText)` → `finalize(reply)` |
 | **Voice** | guard ≤ 30s → download file → `SpeechService.transcribe(bytes, "audio/ogg")` → feed transcript into the same text flow |
-| **Other** | reply "I can't handle this content type — send text or voice" |
+| **Photo** | `processImage`: pick the largest `message.photo` size ≤ 10 MB → download (typing shown meanwhile) → `handleUserMessage(..., images: [{ data, mediaType }])`; the caption is the text (empty caption → the pipeline's `[изображение]` placeholder) |
+| **Image document** | validate `mime_type`/`file_name`/`file_size` **before** downloading: JPEG/PNG/WebP → image flow; HEIC/AVIF/GIF/other `image/*` → "формат не поддерживается" without a download; > 10 MB → size refusal |
+| **GIF / animation** | not processed: `message:animation` and `image/gif` documents are refused with the unsupported-content reply (no download) |
+| **Other** | reply "I can't handle this content type — send text, voice or a photo" |
 | **Command** (`/...`) | resolve user → run handler → send the result via `Messenger` |
+
+Image limits: **10 MB** per image, the MIME whitelist `image/jpeg|png|webp`, and up to **4** images per turn (extras are dropped with a warning). **Albums (media groups) are not aggregated** — each photo in an album is processed as its own turn. HEIC/AVIF, GIF and video are out of scope.
+
+Images are stored by `MediaService` as content-addressed files (`MEDIA_DIR/<sha256[0..2]>/<sha256>.<ext>`, deduplicated by hash); dialogue history keeps only `{ id, mediaType, width?, height? }` refs. Files older than 7 days are pruned best-effort on startup and every 24 h (only files owned by the store are touched). See [Chat Pipeline](chat-pipeline.md#images-vision).
 
 A new Telegram contact is mapped to an internal user by `identity.resolveTelegramUser`: it looks up `user_channels` by `(provider='telegram', external_id=<tg id>)` and creates the `users` + `user_channels` rows on first contact (`loadContext` requires the user to already exist). This is idempotent — repeat contacts return the same id.
 
@@ -95,14 +102,18 @@ Long polling is the default. Setting `TELEGRAM_USE_WEBHOOK=1` and a public `TELE
 
 | File | Responsibility |
 |------|----------------|
-| `bot.ts` | grammY wiring: access gate (allowlist/approval) → commands → text/voice → error handler; `createBot()` |
+| `bot.ts` | grammY wiring: access gate (allowlist/approval) → commands → text/voice/photo/document/animation → error handler; `createBot()` |
 | `stream.ts` | throttled `sendRichMessageDraft` streamer + rich finalize |
 | `format.ts` | `RichContent` type + `splitMessage` (rich-message limit) |
 | `voice.ts` | download + transcribe a voice note |
+| `files.ts` | shared `fetchTelegramFile` (`getFile` → download with timeout + size cap) |
+| `image.ts` | photo-size selection, MIME inference, image download + validation |
 | `commands.ts` | slash-command handlers + `BOT_COMMANDS` menu |
 | `identity.ts` | get-or-create user/channel for a Telegram contact |
 | `messenger.ts` | outbound send + typing loop (cron notifications) |
 | `errors.ts` | `TelegramReplyError` (carries a user-facing message) |
+
+The image store itself lives outside the transport: `backend/src/services/media-service.ts` (save/load/hydrate/prune).
 
 ## See Also
 

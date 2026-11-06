@@ -24,6 +24,7 @@
 | `WEB_CACHE_DIR` | no | `./data/web-cache` | root dir for the web fetch/search file cache (container: `/data/web-cache`) |
 | `SKILLS_DIR` | no | `./data/skills` | file-backed skill store dir (container: `/data/skills`) |
 | `PROMPTS_DIR` | no | `./data/prompts` | file-backed system-prompt store dir (container: `/data/prompts`) |
+| `MEDIA_DIR` | no | `./data/media` | inbound image store dir (container: `/data/media`); content-addressed files, 7-day retention pruned on startup and every 24 h |
 | `NODE_ENV` | no | `development` | `development` \| `production` \| `test` |
 | `LOG_LEVEL` | no | pino default | `debug` for verbose logs; secrets are always redacted |
 | `PORT` | no | `8080` | health/HTTP server port |
@@ -38,7 +39,7 @@ Seeded from a typed code module (`src/db/seed-data.ts`) into the `settings` tabl
 
 | Key | Shape | Notes |
 |-----|-------|-------|
-| `model_roles` | `{ default, router, error_correction, speech, synthesizer, decision? }` | each value is a free-form `provider:model` ref (picked from the live OpenRouter catalog, not a registry). Empty `decision` = decision layer off. A ref may carry a routing suffix (`:nitro`) that is not a catalog id — accepted with a warning |
+| `model_roles` | `{ default, vision?, router, error_correction, speech, synthesizer, decision? }` | each value is a free-form `provider:model` ref (picked from the live OpenRouter catalog, not a registry). Empty `decision` = decision layer off; empty `vision` = image turns use the normal turn model. A ref may carry a routing suffix (`:nitro`) that is not a catalog id — accepted with a warning |
 | `timeouts` | `{ llm_request, http_client, llm_activity }` | Go-style durations (`300s`, `30s`) |
 | `agent` | `{ max_history, default_temperature, auto_memory }` | defaults `50` / `0.4` / `true` |
 | `telegram_allowed_users` | `number[]` | bot chat allowlist; in `open` mode empty = everyone, in `approval` mode it is the gate |
@@ -47,10 +48,17 @@ Seeded from a typed code module (`src/db/seed-data.ts`) into the `settings` tabl
 
 The `timeouts.http_client` value is the per-request timeout for the `currency_rates` tool and the native [web bucket](web-search.md) (search + fetch + verticals). Web-search infrastructure (the Serper key, cache dir) is configured via `.env` runtime flags, not DB settings. MCP secrets follow the same rule: any `${VAR}` referenced by `mcp_servers` must exist in the backend env — nothing MCP-specific is hard-coded.
 
+> **Upgrading an already-seeded DB (new `vision` role):** `runSeed` inserts settings with `onConflictDoNothing`, so a database seeded before the `vision` role existed will not gain it automatically. Either set it once in the admin (Models → «Изображения (vision)»; empty means "use the turn model"), or reset the row manually:
+> ```bash
+> # in the admin Mini App: Models → fill the vision role → Save
+> ```
+> Image turns still work without it (the turn model is used); the role only overrides the model for images.
+
 ### How settings drive the chat pipeline
 
 - `model_roles.router` → the model the [primary-skill pre-pass](chat-pipeline.md#the-turn-step-by-step) calls to classify the turn.
 - `model_roles.default` → fallback model when a skill doesn't pin its own; also the new-session model and the orchestrator's default.
+- `model_roles.vision` → model for turns that carry images (the current Telegram photo/image document **or** images hydrated from the last user messages, e.g. "что было на фото?"). Empty = fall back to the normal turn model (session override → skill model → default). The admin warns if the picked model's `architecture.input_modalities` has no `image`. See [Images (vision)](chat-pipeline.md#images-vision).
 - `model_roles.synthesizer` → used by the rolling-summary writer (`roles.synthesizer || roles.default`). The answer-synthesis agent was removed; the role name is kept.
 - `agent.max_history` → how many recent messages are loaded per turn (default `50`). Older history is folded into a per-session rolling summary (`sessions.summary`), so context isn't lost when it scrolls past the window.
 - `agent.default_temperature` → temperature for skills that leave it null.

@@ -21,6 +21,9 @@ export const SEED_MODEL_ROLES = {
   error_correction: "openrouter:google/gemini-3-flash-preview",
   speech: "openrouter:google/gemini-3.1-flash-lite",
   synthesizer: "openrouter:google/gemini-3-flash-preview",
+  // Image turns (Telegram photos/documents). Multimodal model — checked against
+  // the live catalog (`architecture.input_modalities` includes "image").
+  vision: "openrouter:google/gemini-3-flash-preview",
   // Fast typed decisions before the agent (System One models via OpenRouter).
   // Jev (`~typesafe/jev-latest`) answers 451 in some regions (incl. BY) — pplx
   // is the portable default; the alias tracks the current decision release.
